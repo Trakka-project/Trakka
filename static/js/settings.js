@@ -53,6 +53,11 @@ function openUserSettingsModal() {
   // permission/subscription state can change outside the app at any time,
   // most notably the user revoking it via the browser's own site settings.
   refreshPushToggleUI();
+  // refreshAdminConsoleButtonVisibility is defined in admin.js (loaded
+  // after this file — see index.html's script order and install-help.js's
+  // own doc comment on why that's safe: this call only ever runs later, on
+  // click, by which point every deferred script has already run).
+  refreshAdminConsoleButtonVisibility();
   userSettingsEls.modal.hidden = false;
   document.body.classList.add('overflow-hidden');
 }
@@ -68,11 +73,14 @@ userSettingsEls.modal.addEventListener('click', (event) => {
   if (event.target === userSettingsEls.modal) closeUserSettingsModal();
 });
 document.addEventListener('keydown', (event) => {
-  // install-help.js's modal can open on top of this one (from the button
-  // added to the form below) — when it's the one currently visible, let its
-  // own Escape handler close just that one instead of both at once (same
-  // pattern as app.js/spaces.js's new-list/category modal pair).
-  if (event.key === 'Escape' && !userSettingsEls.modal.hidden && installHelpEls.modal.hidden) closeUserSettingsModal();
+  // install-help.js's and admin.js's modals can each open on top of this
+  // one (from buttons added to the form below) — when either is the one
+  // currently visible, let its own Escape handler close just that one
+  // instead of both at once (same pattern as app.js/spaces.js's new-list/
+  // category modal pair).
+  if (event.key === 'Escape' && !userSettingsEls.modal.hidden && installHelpEls.modal.hidden && adminConsoleEls.modal.hidden) {
+    closeUserSettingsModal();
+  }
 });
 
 userSettingsEls.form.addEventListener('submit', async (event) => {

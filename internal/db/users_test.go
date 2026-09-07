@@ -143,3 +143,129 @@ func TestUserLanguagePreference(t *testing.T) {
 		t.Fatalf("expected ErrNotFound updating a nonexistent user, got %v", err)
 	}
 }
+
+// TestListAllUsers exercises the admin "Utilisateurs" panel's data source:
+// every account on the instance, in creation order, regardless of who's
+// asking (authorization is the handler layer's job, not this method's).
+func TestListAllUsers(t *testing.T) {
+	ctx := context.Background()
+	d := openTestDB(t)
+
+	hash := "x"
+	first, err := d.CreateUser(ctx, "first@example.com", &hash, nil, nil, "First")
+	if err != nil {
+		t.Fatalf("creating first user: %v", err)
+	}
+	second, err := d.CreateUser(ctx, "second@example.com", &hash, nil, nil, "Second")
+	if err != nil {
+		t.Fatalf("creating second user: %v", err)
+	}
+
+	users, err := d.ListAllUsers(ctx)
+	if err != nil {
+		t.Fatalf("listing all users: %v", err)
+	}
+	if len(users) != 2 {
+		t.Fatalf("expected 2 users, got %d", len(users))
+	}
+	if users[0].ID != first.ID || users[1].ID != second.ID {
+		t.Fatalf("expected users ordered by id (first then second), got %d then %d", users[0].ID, users[1].ID)
+	}
+	if !users[0].IsAdmin {
+		t.Fatal("expected the first-created user to be reported as admin")
+	}
+	if users[1].IsAdmin {
+		t.Fatal("expected the second-created user to be reported as non-admin")
+	}
+}
+
+// TestSetUserAdminAndCountAdmins exercises the admin-role toggle and the
+// admin-count helper the handler layer uses to refuse demoting/deleting the
+// last remaining admin.
+func TestSetUserAdminAndCountAdmins(t *testing.T) {
+	ctx := context.Background()
+	d := openTestDB(t)
+
+	hash := "x"
+	first, err := d.CreateUser(ctx, "first@example.com", &hash, nil, nil, "First") // becomes admin
+	if err != nil {
+		t.Fatalf("creating first user: %v", err)
+	}
+	second, err := d.CreateUser(ctx, "second@example.com", &hash, nil, nil, "Second")
+	if err != nil {
+		t.Fatalf("creating second user: %v", err)
+	}
+
+	count, err := d.CountAdmins(ctx)
+	if err != nil {
+		t.Fatalf("counting admins: %v", err)
+	}
+	if count != 1 {
+		t.Fatalf("expected 1 admin initially, got %d", count)
+	}
+
+	promoted, err := d.SetUserAdmin(ctx, second.ID, true)
+	if err != nil {
+		t.Fatalf("promoting second user: %v", err)
+	}
+	if !promoted.IsAdmin {
+		t.Fatal("expected the promoted user to be reported as admin")
+	}
+	count, err = d.CountAdmins(ctx)
+	if err != nil {
+		t.Fatalf("counting admins after promotion: %v", err)
+	}
+	if count != 2 {
+		t.Fatalf("expected 2 admins after promotion, got %d", count)
+	}
+
+	demoted, err := d.SetUserAdmin(ctx, first.ID, false)
+	if err != nil {
+		t.Fatalf("demoting first user: %v", err)
+	}
+	if demoted.IsAdmin {
+		t.Fatal("expected the demoted user to be reported as non-admin")
+	}
+
+	if _, err := d.SetUserAdmin(ctx, 999999, true); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("expected ErrNotFound promoting a nonexistent user, got %v", err)
+	}
+}
+
+// TestDeleteUser exercises account deletion and confirms its cascade
+// removes dependent rows (house_members here — the same ON DELETE CASCADE
+// chain removes sessions, custom_categories, shares, etc., per
+// db.DeleteUser's own doc comment).
+func TestDeleteUser(t *testing.T) {
+	ctx := context.Background()
+	d := openTestDB(t)
+
+	hash := "x"
+	user, err := d.CreateUser(ctx, "delete-me@example.com", &hash, nil, nil, "Delete Me")
+	if err != nil {
+		t.Fatalf("creating user: %v", err)
+	}
+	house, err := d.CreateHouseWithOwner(ctx, "Test House", user.ID)
+	if err != nil {
+		t.Fatalf("creating house: %v", err)
+	}
+
+	if err := d.DeleteUser(ctx, user.ID); err != nil {
+		t.Fatalf("deleting user: %v", err)
+	}
+
+	if _, err := d.GetUser(ctx, user.ID); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("expected ErrNotFound reloading a deleted user, got %v", err)
+	}
+	ok, err := d.UserCanAccessHouse(ctx, user.ID, house.ID)
+	if err != nil {
+		t.Fatalf("checking house access after user deletion: %v", err)
+	}
+	if ok {
+		t.Fatal("expected the deleted user's house_members row to have been cascade-deleted")
+	}
+
+	if err := d.DeleteUser(ctx, 999999); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("expected ErrNotFound deleting a nonexistent user, got %v", err)
+	}
+}

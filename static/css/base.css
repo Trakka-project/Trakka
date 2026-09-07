@@ -102,6 +102,180 @@ textarea,
   transition: background-color 150ms ease, border-color 150ms ease, color 150ms ease;
 }
 
+/* Admin Console tabs (#admin-console-tabs, static/js/admin.js's
+   setAdminConsoleTab): color/border/background is driven entirely from
+   here, keyed off the `aria-selected` state attribute setAdminConsoleTab
+   already maintains, instead of toggling a dozen individual Tailwind
+   color/border/background utility classes by hand on every click (the
+   previous approach — see setAdminConsoleTab's own comment for the
+   "invisible until you select the text" bug that caused). Exactly one of
+   these three rules can ever apply to a given button at a time, so there
+   is no click-order-dependent state to get wrong. Sky is used
+   deliberately here rather than the app's usual --tk-accent
+   (indigo/violet) to match the sky-tinted "Console d'Administration"
+   entry-point button elsewhere in this same modal (see index.html);
+   Tailwind's sky-500/600/300 hexes are inlined since tokens.css has no
+   admin-specific token of its own, matching this app's existing
+   convention of reserving --tk-* for the handful of things Tailwind
+   utilities can't reach. */
+#admin-console-tabs button[role="tab"] {
+  border-color: var(--tk-border);
+  background-color: var(--tk-bg);
+  color: var(--tk-text-muted);
+}
+
+#admin-console-tabs button[role="tab"]:hover:not([aria-selected="true"]) {
+  background-color: var(--tk-surface-hover);
+  color: var(--tk-text);
+}
+
+#admin-console-tabs button[role="tab"][aria-selected="true"] {
+  border-color: #0ea5e9;
+  background-color: rgb(14 165 233 / 0.1);
+  color: #0284c7;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) #admin-console-tabs button[role="tab"][aria-selected="true"] {
+    color: #7dd3fc;
+  }
+}
+
+:root[data-theme="dark"] #admin-console-tabs button[role="tab"][aria-selected="true"] {
+  color: #7dd3fc;
+}
+
+/* Explicit isolation layer for the Admin Console tab bar, requested
+   defensively on top of the token-driven rules above: guarantees a tab's
+   label is never unreadable regardless of any Tailwind utility class a
+   future edit might add to these buttons (they currently carry none of
+   their own — see index.html), rather than relying solely on cascade
+   order. `!important` is deliberate here, scoped narrowly to the real
+   selectors static/js/admin.js's DOM actually uses
+   (`#admin-console-tabs button[role="tab"]`), not a generic
+   `.admin-tab-button`/`.admin-nav-item` class this app doesn't have.
+   Every non-selected-state rule below is qualified with
+   `:not([aria-selected="true"])` specifically so it can never end up
+   fighting the selected-tab accent rule on specificity — the two
+   conditions are mutually exclusive on any given button, so whichever one
+   matches simply wins outright regardless of source order. Colors reuse
+   the app's own slate/sky palette so this stays visually identical to the
+   token-driven rules above in the common case. */
+#admin-console-tabs button[role="tab"]:not([aria-selected="true"]) {
+  color: #334155 !important;
+  background-color: #f8fafc !important;
+  opacity: 1 !important;
+}
+
+#admin-console-tabs button[role="tab"][aria-selected="true"] {
+  color: #ffffff !important;
+  background-color: #0ea5e9 !important;
+  opacity: 1 !important;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) #admin-console-tabs button[role="tab"]:not([aria-selected="true"]) {
+    color: #cbd5e1 !important;
+    background-color: #1e293b !important;
+  }
+}
+
+:root[data-theme="dark"] #admin-console-tabs button[role="tab"]:not([aria-selected="true"]) {
+  color: #cbd5e1 !important;
+  background-color: #1e293b !important;
+}
+
+/* Admin Console modal (#admin-console-modal): on a short viewport — a
+   13" laptop, a browser window with DevTools docked at the bottom, a
+   phone in landscape — the dialog's own `max-h-[90vh]`/`flex flex-col
+   overflow-hidden` (index.html) already confines scrolling to
+   `#admin-console-body` alone (`min-h-0 flex-1 overflow-y-auto`):
+   Tailwind's default flex-item `min-height: auto` already floors
+   `#admin-console-header`/`#admin-console-tabs` at their own content
+   size, so the flexbox shrink algorithm takes all the negative space out
+   of the body (whose `min-h-0` override lets it shrink past that) before
+   it ever touches the header or tab bar — they cannot end up scrolled
+   out of view by design, not by accident. The `shrink-0` here (mirrored
+   in index.html's own utility classes) and the low-height rules below
+   are deliberate defense-in-depth on top of that, not the only thing
+   holding the layout together: a future edit that loosens the flex
+   structure above, or an older WebKit engine that mishandles flex
+   `min-height: auto` in a column context (the same class of quirk this
+   app already had to work around for the session-cookie mobile-login
+   fix — see CLAUDE.md's handoff log), would otherwise let the header/tab
+   bar drift into the scrolling flow and disappear under the panel
+   content exactly as the header-only-scroll problem this rule guards
+   against. */
+#admin-console-header,
+#admin-console-tabs {
+  flex-shrink: 0;
+}
+
+/* index.html sets the dialog's own horizontal padding via `px-6` (24px)
+   once, on the shared parent — #admin-console-header/-tabs/-body are all
+   unpadded children of that one box, so by default all three already
+   start and end at the exact same left/right edge. The one thing that
+   breaks that: #admin-console-body's own scrollbar. A native,
+   non-overlay scrollbar (Windows, most of Linux) is drawn *inside* the
+   element's own box, stealing width from its content on the right —
+   header/tabs never scroll, so they never pay that cost, which is what
+   actually produces the "body content sits further left/narrower than
+   the header and tabs" complaint. `scrollbar-gutter: stable` on body
+   alone only half-fixes this: it stops the reserved width from
+   flickering between "no gutter" and "gutter" as you switch to/from a
+   tall tab (Logs), but the reserved gutter itself still isn't paid by
+   header/tabs, so body's inner content stays consistently ~15-17px
+   narrower than theirs (the browser's real native scrollbar width —
+   never hardcoded here, since it differs by OS/browser and a guessed
+   compensation value would be wrong on any platform where it doesn't
+   match, including a ~0px overlay scrollbar on macOS). The fix is to
+   reserve the identical gutter on header/tabs too, even though neither
+   of them ever actually scrolls: `scrollbar-gutter` only takes effect on
+   an element whose overflow computes to something other than `visible`
+   on the relevant axis, so `overflow-y: hidden` below (deliberately not
+   the `overflow` shorthand, which would also zero out #admin-console-tabs'
+   own `overflow-x: auto` — its horizontal tab-scroll-on-narrow-screens
+   behavior — a real regression) is what makes the property apply to them
+   at all. All three elements then reserve the exact same
+   browser-computed width regardless of whether they scroll, so their
+   inner content columns stay pixel-identical in every tab state.
+   Unsupported browsers (older Safari) simply keep the pre-existing
+   behavior everywhere — a harmless, standard progressive enhancement,
+   not a functional dependency. */
+#admin-console-header,
+#admin-console-tabs,
+#admin-console-body {
+  scrollbar-gutter: stable;
+}
+
+#admin-console-header,
+#admin-console-tabs {
+  overflow-y: hidden;
+}
+
+/* Reclaim vertical space for the actual scrollable panel — Logs and the
+   Paramètres form are the two tallest — when the viewport itself is
+   short, rather than leaving the dialog's full py-5/mb-4 chrome spacing
+   untouched and shrinking the body down further than necessary. Only the
+   vertical padding is trimmed here — the horizontal px-6 balance above
+   is unrelated to a short viewport and stays untouched. */
+@media (max-height: 700px) {
+  #admin-console-modal > [role="dialog"] {
+    max-height: 96vh;
+    padding-top: 12px;
+    padding-bottom: 12px;
+  }
+
+  #admin-console-header,
+  #admin-console-tabs {
+    margin-bottom: 8px;
+  }
+
+  #admin-console-body {
+    padding-top: 2px;
+  }
+}
+
 /* Native form-control chrome (checkboxes, <select> menus, scrollbars,
    the OS-level UI relevant to <input type="month">, etc.) is drawn by the
    browser itself and isn't reachable through Tailwind utility classes —

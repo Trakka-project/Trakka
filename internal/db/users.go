@@ -129,6 +129,96 @@ func (d *DB) GetUserByOIDCSubject(ctx context.Context, issuer, subject string) (
 		 FROM users WHERE oidc_issuer = ? AND oidc_subject = ?`, issuer, subject)
 }
 
+// ListAllUsers returns every account on the instance, ordered by id — for
+// the admin "Utilisateurs" panel (GET /api/v1/admin/users), the one place
+// in the app that needs to see every user rather than the caller's own
+// profile. Deliberately not scoped or paginated: Trakka targets small,
+// self-hosted households/groups, not a multi-tenant SaaS with thousands of
+// accounts, so a single unpaginated query stays proportionate.
+func (d *DB) ListAllUsers(ctx context.Context) ([]*models.User, error) {
+	rows, err := d.conn.QueryContext(ctx,
+		`SELECT id, email, display_name, created_at, is_admin, keep_last_page, language FROM users ORDER BY id ASC`)
+	if err != nil {
+		return nil, fmt.Errorf("querying all users: %w", err)
+	}
+	defer rows.Close()
+
+	users := []*models.User{}
+	for rows.Next() {
+		u := &models.User{}
+		var isAdmin, keepLastPage int
+		if err := rows.Scan(&u.ID, &u.Email, &u.DisplayName, &u.CreatedAt, &isAdmin, &keepLastPage, &u.Language); err != nil {
+			return nil, fmt.Errorf("scanning user row: %w", err)
+		}
+		u.IsAdmin = isAdmin != 0
+		u.KeepLastPage = keepLastPage != 0
+		users = append(users, u)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterating user rows: %w", err)
+	}
+	return users, nil
+}
+
+// CountAdmins returns how many accounts currently have is_admin = 1 — used
+// by the admin users handlers to refuse demoting or deleting the very last
+// admin, which (per CreateUser's own doc comment) would permanently lock
+// every future admin action out of the instance, since there is no separate
+// seeding mechanism or CLI to grant the role back.
+func (d *DB) CountAdmins(ctx context.Context) (int, error) {
+	var count int
+	if err := d.conn.QueryRowContext(ctx, `SELECT COUNT(*) FROM users WHERE is_admin = 1`).Scan(&count); err != nil {
+		return 0, fmt.Errorf("counting admins: %w", err)
+	}
+	return count, nil
+}
+
+// SetUserAdmin grants or revokes the system-wide admin role for a single
+// account. Callers (internal/handlers) are responsible for refusing to
+// demote the last remaining admin — this method just performs the write.
+// Returns ErrNotFound if no such user exists.
+func (d *DB) SetUserAdmin(ctx context.Context, id int64, isAdmin bool) (*models.User, error) {
+	res, err := d.conn.ExecContext(ctx, `UPDATE users SET is_admin = ? WHERE id = ?`, boolToInt(isAdmin), id)
+	if err != nil {
+		return nil, fmt.Errorf("updating user %d is_admin: %w", id, err)
+	}
+	affected, err := res.RowsAffected()
+	if err != nil {
+		return nil, fmt.Errorf("reading rows affected updating user %d is_admin: %w", id, err)
+	}
+	if affected == 0 {
+		return nil, ErrNotFound
+	}
+	return d.GetUser(ctx, id)
+}
+
+// DeleteUser permanently removes an account. Every table referencing
+// users(id) does so with ON DELETE CASCADE (sessions, house_members,
+// custom_categories, list_shares/space_shares as the recipient,
+// space_house_pins, push_subscriptions, pending_invitations as the
+// inviter — see internal/db/migrations), so this single DELETE is enough to
+// clean up everything the account owned or was granted; a house left
+// without any remaining member becomes an orphaned row, the same
+// pre-existing, harmless situation ensureDefaultHouse's seed row already is
+// (see CLAUDE.md's Houses section) — not a new problem this introduces.
+// Callers (internal/handlers) are responsible for refusing to delete the
+// caller's own account or the last remaining admin. Returns ErrNotFound if
+// no such user exists.
+func (d *DB) DeleteUser(ctx context.Context, id int64) error {
+	res, err := d.conn.ExecContext(ctx, `DELETE FROM users WHERE id = ?`, id)
+	if err != nil {
+		return fmt.Errorf("deleting user %d: %w", id, err)
+	}
+	affected, err := res.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("reading rows affected deleting user %d: %w", id, err)
+	}
+	if affected == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
 func (d *DB) getUserWithCredentials(ctx context.Context, query string, args ...any) (*models.UserWithCredentials, error) {
 	u := &models.UserWithCredentials{}
 	var isAdmin, keepLastPage int

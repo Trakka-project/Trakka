@@ -17,6 +17,7 @@ import (
 	"trakka/internal/auth"
 	"trakka/internal/config"
 	"trakka/internal/db"
+	"trakka/internal/logbuffer"
 )
 
 // Application holds the dependencies shared by every handler.
@@ -26,6 +27,12 @@ type Application struct {
 	Logger        *slog.Logger
 	Auth          *auth.Service
 	LoginTemplate *template.Template
+	// LogBuffer backs GET /api/v1/admin/logs (see admin_logs.go) — the
+	// in-memory ring buffer of recent log records that cmd/server/main.go
+	// wraps around Logger's own handler. May be nil (e.g. in tests that
+	// build an Application by hand), in which case the logs endpoint
+	// reports an empty list rather than panicking.
+	LogBuffer *logbuffer.Handler
 	// Config is the env-var configuration loaded at startup. Handlers read
 	// it for values that stay env-only even after the admin settings panel
 	// was added — currently just BaseURL, needed to build the OIDC
@@ -133,6 +140,12 @@ func (app *Application) Routes() http.Handler {
 
 	apiMux.HandleFunc("GET /api/v1/admin/settings", app.handleAdminSettingsShow)
 	apiMux.HandleFunc("PATCH /api/v1/admin/settings", app.handleAdminSettingsUpdate)
+	apiMux.HandleFunc("GET /api/v1/admin/users", app.handleAdminUsersList)
+	apiMux.HandleFunc("PATCH /api/v1/admin/users/{id}", app.handleAdminUsersUpdate)
+	apiMux.HandleFunc("DELETE /api/v1/admin/users/{id}", app.handleAdminUsersDelete)
+	apiMux.HandleFunc("GET /api/v1/admin/spaces", app.handleAdminSpacesList)
+	apiMux.HandleFunc("DELETE /api/v1/admin/spaces/{id}", app.handleAdminSpacesDelete)
+	apiMux.HandleFunc("GET /api/v1/admin/logs", app.handleAdminLogsList)
 
 	apiMux.HandleFunc("GET /api/v1/push/vapid-public-key", app.handlePushVAPIDPublicKey)
 	apiMux.HandleFunc("POST /api/v1/push/subscribe", app.handlePushSubscribe)

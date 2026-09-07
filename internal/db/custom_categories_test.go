@@ -141,6 +141,98 @@ func TestListCustomCategoryAssociation(t *testing.T) {
 	}
 }
 
+// TestListAllCustomCategoriesWithOwners exercises the admin "Espaces"
+// panel's data source: every Space across every user, with its owner's
+// identity and a correct per-category count of the lists tagged with it.
+func TestListAllCustomCategoriesWithOwners(t *testing.T) {
+	ctx := context.Background()
+	d := openTestDB(t)
+
+	owner := mustCreateUser(t, ctx, d)
+	house, err := d.CreateHouseWithOwner(ctx, "Test House", owner)
+	if err != nil {
+		t.Fatalf("creating house: %v", err)
+	}
+	category, err := d.CreateCustomCategory(ctx, owner, "Vacances", "🏖️", "#3366ff", 0)
+	if err != nil {
+		t.Fatalf("CreateCustomCategory: %v", err)
+	}
+	if _, err := d.CreateList(ctx, "List A", "shopping", house.ID, &category.ID, ""); err != nil {
+		t.Fatalf("creating list A: %v", err)
+	}
+	if _, err := d.CreateList(ctx, "List B", "shopping", house.ID, &category.ID, ""); err != nil {
+		t.Fatalf("creating list B: %v", err)
+	}
+	// An untagged list must not count toward this category.
+	if _, err := d.CreateList(ctx, "List C", "shopping", house.ID, nil, ""); err != nil {
+		t.Fatalf("creating list C: %v", err)
+	}
+
+	rows, err := d.ListAllCustomCategoriesWithOwners(ctx)
+	if err != nil {
+		t.Fatalf("ListAllCustomCategoriesWithOwners: %v", err)
+	}
+	if len(rows) != 1 {
+		t.Fatalf("expected 1 category, got %d", len(rows))
+	}
+	got := rows[0]
+	if got.ID != category.ID {
+		t.Fatalf("expected category %d, got %d", category.ID, got.ID)
+	}
+	owned, err := d.GetUser(ctx, owner)
+	if err != nil {
+		t.Fatalf("loading owner: %v", err)
+	}
+	if got.OwnerEmail != owned.Email || got.OwnerDisplayName != owned.DisplayName {
+		t.Fatalf("expected owner %q/%q, got %q/%q", owned.Email, owned.DisplayName, got.OwnerEmail, got.OwnerDisplayName)
+	}
+	if got.ListCount != 2 {
+		t.Fatalf("expected list_count 2, got %d", got.ListCount)
+	}
+}
+
+// TestDeleteCustomCategoryAdmin exercises the admin override delete (not
+// scoped to an owner), and confirms it leaves a referencing list intact
+// with custom_category_id reset to NULL — the same ON DELETE SET NULL
+// behavior the owner-scoped delete already has.
+func TestDeleteCustomCategoryAdmin(t *testing.T) {
+	ctx := context.Background()
+	d := openTestDB(t)
+
+	owner := mustCreateUser(t, ctx, d)
+	house, err := d.CreateHouseWithOwner(ctx, "Test House", owner)
+	if err != nil {
+		t.Fatalf("creating house: %v", err)
+	}
+	category, err := d.CreateCustomCategory(ctx, owner, "Vacances", "🏖️", "#3366ff", 0)
+	if err != nil {
+		t.Fatalf("CreateCustomCategory: %v", err)
+	}
+	list, err := d.CreateList(ctx, "List A", "shopping", house.ID, &category.ID, "")
+	if err != nil {
+		t.Fatalf("creating list: %v", err)
+	}
+
+	// An admin (a different user than the owner) can delete it directly.
+	if err := d.DeleteCustomCategory(ctx, category.ID); err != nil {
+		t.Fatalf("DeleteCustomCategory: %v", err)
+	}
+	if _, err := d.GetCustomCategory(ctx, category.ID); err == nil {
+		t.Fatal("expected the category to be gone")
+	}
+	afterDelete, err := d.GetList(ctx, list.ID)
+	if err != nil {
+		t.Fatalf("GetList after category deletion: %v", err)
+	}
+	if afterDelete.CustomCategoryID != nil {
+		t.Fatalf("expected custom_category_id to be cleared, got %+v", afterDelete.CustomCategoryID)
+	}
+
+	if err := d.DeleteCustomCategory(ctx, 999999); err == nil {
+		t.Fatal("expected an error deleting a nonexistent category")
+	}
+}
+
 func mustCreateUserWithEmail(t *testing.T, ctx context.Context, d *DB, email string) int64 {
 	t.Helper()
 	hash := "x"

@@ -55,7 +55,7 @@ Returns the authenticated user. `401 {"error": "authentication required"}` if th
 { "id": 1, "email": "alice@example.com", "display_name": "Alice", "is_admin": false, "created_at": "...", "keep_last_page": true, "language": "en" }
 ```
 
-`is_admin` grants access to the [Admin settings](#admin-settings) endpoints below. The very first account ever created on an instance (local or OIDC-provisioned) becomes an admin automatically — see `internal/db.CreateUser` in [CLAUDE.md](../CLAUDE.md) — and there is currently no endpoint to grant or revoke it for any other account.
+`is_admin` grants access to the [Admin](#admin-settings) endpoints below. The very first account ever created on an instance (local or OIDC-provisioned) becomes an admin automatically — see `internal/db.CreateUser` in [CLAUDE.md](../CLAUDE.md) — and any existing admin can grant or revoke it for any other account via [`PATCH /api/v1/admin/users/{id}`](#patch-apiv1adminusersid).
 
 `keep_last_page` (`bool`, defaults to `true`) controls whether the frontend reopens on the last dashboard tab or list the user had open instead of always landing on the dashboard — see the "keep last page on launch" feature in [CLAUDE.md](../CLAUDE.md). The actual last-visited view itself is tracked purely client-side (`localStorage`, per browser, never sent to the server); only this on/off preference is part of the user's profile.
 
@@ -617,7 +617,9 @@ curl -X POST -b cookies.txt http://localhost:8080/api/v1/push/test
 
 ## Admin settings
 
-Two endpoints, both gated behind `models.User.IsAdmin` (`403 {"error": "admin access required"}` for anyone else) rather than house membership — these are system-wide, not scoped to a house. They manage the `system_settings` table (see [docs/DATABASE.md](DATABASE.md#system_settings)), which takes priority over the equivalent environment variable whenever a row exists (`internal/settings.Resolve`); a value with no row falls back to its env var. The frontend surfaces this as a "Paramètres du Système" panel behind a ⚙️ button in the header, visible only to admins (`static/js/admin.js`).
+Every endpoint below is gated behind `models.User.IsAdmin` (`403 {"error": "admin access required"}` for anyone else) rather than house membership — these are system-wide, not scoped to a house. The frontend surfaces all of them as a "Console d'Administration" panel, reachable from a button inside the ordinary "Paramètres" modal (`#user-settings-modal`) that's only shown to admins (`static/js/admin.js`) — there is no separate header-level admin button; see CLAUDE.md's session-handoff log for the navigation restructuring session that moved it there.
+
+The instance-settings endpoints (`GET`/`PATCH /api/v1/admin/settings`) manage the `system_settings` table (see [docs/DATABASE.md](DATABASE.md#system_settings)), which takes priority over the equivalent environment variable whenever a row exists (`internal/settings.Resolve`); a value with no row falls back to its env var.
 
 ### `GET /api/v1/admin/settings`
 
@@ -660,6 +662,76 @@ curl -X PATCH http://localhost:8080/api/v1/admin/settings \
 Enabling OIDC (or changing its issuer/client id/secret while already enabled) re-runs OIDC discovery synchronously against the new values, bounded to 10s, **before** anything is persisted: `400` with a descriptive message if `oidc_issuer`/`oidc_client_id`/`oidc_client_secret` aren't all non-empty, if the server's `BASE_URL` environment variable isn't set (still required — see [docs/DEPLOYMENT.md](DEPLOYMENT.md) — since it isn't itself one of the dynamic settings), or if discovery against the new issuer fails. On any of these the previously active configuration (and OIDC client) is left completely untouched. On success, the new settings are saved and take effect immediately for the next `/auth/oidc/login` — no server restart needed. `400` also if `instance_name` would end up empty. `200` with the resulting settings (in the same shape as the `GET` above) otherwise.
 
 Like house mutations, this endpoint returns `503` immediately rather than queuing if the browser is offline (`static/sw.js`) — a global, security-sensitive setting change is not something that should silently reapply later once connectivity returns.
+
+### `GET /api/v1/admin/users`
+
+Every account on the instance, ordered by id — unpaginated (Trakka targets small, self-hosted households/groups, not a multi-tenant SaaS).
+
+```bash
+curl -b cookies.txt http://localhost:8080/api/v1/admin/users
+```
+
+```json
+[{ "id": 1, "email": "alice@example.com", "display_name": "Alice", "is_admin": true, "created_at": "...", "keep_last_page": true, "language": "fr" }]
+```
+
+Same shape as `GET /api/v1/me` — see [`GET /api/v1/me`](#get-apiv1me) above.
+
+### `PATCH /api/v1/admin/users/{id}`
+
+Grants or revokes the `is_admin` role for another account — the only attribute of another user's account an admin can change from here (email/password/display name stay self-service).
+
+```bash
+curl -X PATCH http://localhost:8080/api/v1/admin/users/2 -d '{"is_admin": true}'
+```
+
+`is_admin` (bool, required). `400` if it's missing, or if this would demote the very last remaining admin on the instance — since the only way an instance ever gets an admin at all is being the first account ever created (`internal/db.CreateUser`), there is no separate seeding mechanism or CLI to grant the role back once every admin is gone. `404` if `{id}` doesn't exist. `200` with the updated user otherwise.
+
+### `DELETE /api/v1/admin/users/{id}`
+
+Permanently deletes an account — sessions, house memberships, owned Spaces, granted/received shares, push subscriptions, and pending invitations sent by that user are all removed with it (every table referencing `users(id)` does so with `ON DELETE CASCADE`; a house left without any remaining member becomes a harmless orphaned row, the same pre-existing situation `ensureDefaultHouse`'s seed row already is — see [docs/DATABASE.md](DATABASE.md#houses)).
+
+```bash
+curl -X DELETE -b cookies.txt http://localhost:8080/api/v1/admin/users/3
+```
+
+`400` if `{id}` is the calling admin's own account (self-deletion isn't supported from this panel) or the last remaining admin. `404` if `{id}` doesn't exist. `204` on success.
+
+### `GET /api/v1/admin/spaces`
+
+Every Space (`custom_categories` row) on the instance, across every user, enriched with its owner's identity and how many lists currently reference it.
+
+```bash
+curl -b cookies.txt http://localhost:8080/api/v1/admin/spaces
+```
+
+```json
+[{ "id": 1, "user_id": 4, "name": "Vacances", "icon": "🏖️", "color": "#3366ff", "position": 0, "created_at": "...", "owner_email": "alice@example.com", "owner_display_name": "Alice", "list_count": 2 }]
+```
+
+### `DELETE /api/v1/admin/spaces/{id}`
+
+Deletes any user's Space, regardless of ownership — the admin override of [`DELETE /api/v1/custom-categories/{id}`](#custom-categories), which is scoped to the caller's own categories. Any list referencing it has `custom_category_id` reset to `NULL` (`ON DELETE SET NULL`), same as the owner-initiated delete — the list itself is never touched.
+
+```bash
+curl -X DELETE -b cookies.txt http://localhost:8080/api/v1/admin/spaces/1
+```
+
+`404` if `{id}` doesn't exist. `204` on success.
+
+### `GET /api/v1/admin/logs`
+
+The most recent server log entries, most recent first — a live, in-process snapshot with no persistence across a restart (`internal/logbuffer` wraps an in-memory ring buffer of fixed capacity around the application's own `log/slog` handler; see its package doc). `?limit=N` caps how many are returned (default 200, capped at 1000 regardless).
+
+```bash
+curl -b cookies.txt "http://localhost:8080/api/v1/admin/logs?limit=50"
+```
+
+```json
+[{ "time": "...", "level": "INFO", "message": "applied pending invitations", "attrs": { "user_id": 3, "count": 1 } }]
+```
+
+Every mutating admin-management endpoint above (`PATCH`/`DELETE` on `users` and `spaces` — `logs` is read-only, so it has no mutation to gate) returns `503` immediately rather than queuing while offline, the same reasoning as `PATCH /api/v1/admin/settings` above.
 
 ## Static assets
 
