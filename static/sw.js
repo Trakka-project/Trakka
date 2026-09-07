@@ -7,8 +7,8 @@ importScripts('/js/db.js');
 
 // Bump both on any change to APP_SHELL's contents so activate()
 // evicts the old cache instead of serving stale assets forever.
-const SHELL_CACHE = 'trakka-shell-v76';
-const RUNTIME_CACHE = 'trakka-runtime-v76';
+const SHELL_CACHE = 'trakka-shell-v84';
+const RUNTIME_CACHE = 'trakka-runtime-v84';
 const KNOWN_CACHES = [SHELL_CACHE, RUNTIME_CACHE];
 
 const APP_SHELL = [
@@ -622,12 +622,19 @@ async function queueOfflineWrite(method, url, body) {
     );
   }
 
-  // Admin settings (OIDC config, registration policy, instance name) are a
-  // rare, system-wide mutation with real side effects (re-running OIDC
-  // discovery, flipping registration open/closed) — the same reasoning that
+  // Admin settings (OIDC config, registration policy, instance name), and
+  // the admin console's user/Space management actions (granting/revoking
+  // is_admin, deleting a user or a Space) are rare, system-wide/highly
+  // destructive mutations with real side effects — the same reasoning that
   // keeps houses off the offline queue applies here, even more so given
-  // what's at stake if a stale queued change silently reapplied later.
-  if (pathname === '/api/v1/admin/settings') {
+  // what's at stake if a stale queued change (e.g. a demote-the-last-admin
+  // rejection, or a delete against a since-changed admin count) silently
+  // reapplied later instead of failing in front of the admin right away.
+  if (
+    pathname === '/api/v1/admin/settings' ||
+    /^\/api\/v1\/admin\/users\/[^/]+$/.test(pathname) ||
+    /^\/api\/v1\/admin\/spaces\/[^/]+$/.test(pathname)
+  ) {
     return jsonError(
       { 'Content-Type': 'application/json; charset=utf-8' },
       503,

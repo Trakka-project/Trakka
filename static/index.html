@@ -78,11 +78,6 @@
             <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>
           </svg>
         </button>
-        <button type="button" id="admin-settings-button" hidden
-                data-i18n-aria-label="header.adminSettings" aria-label="Paramètres du Système"
-                class="flex h-11 w-11 items-center justify-center rounded-full border border-slate-200 dark:border-slate-700 bg-slate-100 dark:bg-slate-800/60 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-800">
-          <span aria-hidden="true" class="text-lg leading-none">⚙️</span>
-        </button>
         <form method="post" action="/auth/logout">
           <button type="submit" data-i18n-aria-label="header.logout" aria-label="Se déconnecter"
                   class="flex h-11 w-11 items-center justify-center rounded-full border border-slate-200 dark:border-slate-700 bg-slate-100 dark:bg-slate-800/60 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-800">
@@ -660,61 +655,106 @@
     </div>
   </div>
 
-  <div id="admin-settings-modal" hidden class="fixed inset-0 z-40 flex items-end justify-center bg-slate-950/30 dark:bg-slate-950/70 p-0 sm:items-center sm:p-4">
-    <div role="dialog" aria-modal="true" aria-labelledby="admin-settings-modal-title" class="max-h-[90vh] w-full max-w-md overflow-y-auto rounded-t-2xl bg-slate-100 dark:bg-slate-800 p-5 shadow-xl sm:rounded-2xl">
-      <div class="mb-4 flex items-center justify-between">
-        <h2 id="admin-settings-modal-title" data-i18n="modals.adminSettings.title" class="text-lg font-semibold">Paramètres du Système</h2>
-        <button type="button" id="close-admin-settings-modal-button" data-i18n-aria-label="modals.close" aria-label="Fermer"
+  <div id="admin-console-modal" hidden class="fixed inset-0 z-50 flex items-end justify-center bg-slate-950/30 dark:bg-slate-950/70 p-0 sm:items-center sm:p-4">
+    <div role="dialog" aria-modal="true" aria-labelledby="admin-console-modal-title" class="flex max-h-[90vh] w-full max-w-2xl flex-col overflow-hidden rounded-t-2xl bg-slate-100 dark:bg-slate-800 py-5 px-6 shadow-xl sm:rounded-2xl">
+      <div id="admin-console-header" class="mb-4 flex shrink-0 items-center justify-between">
+        <h2 id="admin-console-modal-title" data-i18n="modals.adminConsole.title" class="text-lg font-semibold">Console d'Administration</h2>
+        <button type="button" id="close-admin-console-modal-button" data-i18n-aria-label="modals.close" aria-label="Fermer"
                 class="flex h-9 w-9 items-center justify-center rounded-lg text-slate-500 dark:text-slate-400 hover:bg-slate-300 dark:hover:bg-slate-700 hover:text-slate-900 dark:hover:text-slate-200">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" class="h-5 w-5" aria-hidden="true"><path d="M18 6L6 18M6 6l12 12"/></svg>
         </button>
       </div>
 
-      <form id="admin-settings-form" class="space-y-4">
-        <div>
-          <label for="admin-instance-name" data-i18n="modals.adminSettings.instanceNameLabel" class="mb-1 block text-sm font-medium text-slate-600 dark:text-slate-300">Nom de l'instance</label>
-          <input type="text" id="admin-instance-name" required maxlength="100"
-                 class="w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-4 py-3 text-base text-slate-900 dark:text-slate-100 focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500/30">
+      <div id="admin-console-tabs" class="mb-4 flex shrink-0 gap-2 overflow-x-auto" role="tablist">
+        <button type="button" id="admin-tab-settings" role="tab" aria-selected="true" data-i18n="modals.adminConsole.settingsTab"
+                class="min-h-[40px] shrink-0 rounded-xl border px-3 py-2 text-sm font-medium">
+          Paramètres
+        </button>
+        <button type="button" id="admin-tab-users" role="tab" aria-selected="false" data-i18n="modals.adminConsole.usersTab"
+                class="min-h-[40px] shrink-0 rounded-xl border px-3 py-2 text-sm font-medium">
+          Utilisateurs
+        </button>
+        <button type="button" id="admin-tab-spaces" role="tab" aria-selected="false" data-i18n="modals.adminConsole.spacesTab"
+                class="min-h-[40px] shrink-0 rounded-xl border px-3 py-2 text-sm font-medium">
+          Espaces
+        </button>
+        <button type="button" id="admin-tab-logs" role="tab" aria-selected="false" data-i18n="modals.adminConsole.logsTab"
+                class="min-h-[40px] shrink-0 rounded-xl border px-3 py-2 text-sm font-medium">
+          Logs
+        </button>
+      </div>
+
+      <div id="admin-console-body" class="min-h-0 flex-1 overflow-y-auto">
+        <div id="admin-panel-settings">
+          <form id="admin-settings-form" class="space-y-4">
+            <div>
+              <label for="admin-instance-name" data-i18n="modals.adminSettings.instanceNameLabel" class="mb-1 block text-sm font-medium text-slate-600 dark:text-slate-300">Nom de l'instance</label>
+              <input type="text" id="admin-instance-name" required maxlength="100"
+                     class="w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-4 py-3 text-base text-slate-900 dark:text-slate-100 focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500/30">
+            </div>
+
+            <label class="flex cursor-pointer items-center gap-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-4 py-3 text-sm font-medium text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-800">
+              <input type="checkbox" id="admin-registration-open"
+                     class="h-4 w-4 rounded border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 text-sky-500 focus:ring-sky-500/40">
+              <span data-i18n="modals.adminSettings.registrationOpenLabel">Autoriser les nouvelles inscriptions</span>
+            </label>
+
+            <hr class="border-slate-200 dark:border-slate-700">
+
+            <h3 data-i18n="modals.adminSettings.oidcSectionTitle" class="text-sm font-semibold text-slate-800 dark:text-slate-200">Connexion SSO (OIDC)</h3>
+
+            <label class="flex cursor-pointer items-center gap-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-4 py-3 text-sm font-medium text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-800">
+              <input type="checkbox" id="admin-oidc-enabled"
+                     class="h-4 w-4 rounded border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 text-sky-500 focus:ring-sky-500/40">
+              <span data-i18n="modals.adminSettings.oidcEnabledLabel">Activer la connexion SSO</span>
+            </label>
+
+            <div>
+              <label for="admin-oidc-issuer" data-i18n="modals.adminSettings.oidcIssuerLabel" class="mb-1 block text-sm font-medium text-slate-600 dark:text-slate-300">URL de l'émetteur (Issuer)</label>
+              <input type="url" id="admin-oidc-issuer" placeholder="https://idp.example.com"
+                     class="w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-4 py-3 text-base text-slate-900 dark:text-slate-100 placeholder:text-slate-500 focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500/30">
+            </div>
+
+            <div>
+              <label for="admin-oidc-client-id" data-i18n="modals.adminSettings.oidcClientIdLabel" class="mb-1 block text-sm font-medium text-slate-600 dark:text-slate-300">Client ID</label>
+              <input type="text" id="admin-oidc-client-id"
+                     class="w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-4 py-3 text-base text-slate-900 dark:text-slate-100 focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500/30">
+            </div>
+
+            <div>
+              <label for="admin-oidc-client-secret" data-i18n="modals.adminSettings.oidcClientSecretLabel" class="mb-1 block text-sm font-medium text-slate-600 dark:text-slate-300">Client Secret</label>
+              <input type="password" id="admin-oidc-client-secret" autocomplete="off"
+                     class="w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-4 py-3 text-base text-slate-900 dark:text-slate-100 placeholder:text-slate-500 focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500/30">
+            </div>
+
+            <p id="admin-settings-status" class="text-sm text-emerald-600 dark:text-emerald-400" role="status" hidden></p>
+
+            <button type="submit" data-i18n="modals.adminSettings.submit" class="w-full rounded-xl bg-sky-500 px-4 py-3 text-base font-semibold text-white transition hover:bg-sky-400 active:scale-[0.98]">Enregistrer</button>
+          </form>
         </div>
 
-        <label class="flex cursor-pointer items-center gap-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-4 py-3 text-sm font-medium text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-800">
-          <input type="checkbox" id="admin-registration-open"
-                 class="h-4 w-4 rounded border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 text-sky-500 focus:ring-sky-500/40">
-          <span data-i18n="modals.adminSettings.registrationOpenLabel">Autoriser les nouvelles inscriptions</span>
-        </label>
-
-        <hr class="border-slate-200 dark:border-slate-700">
-
-        <h3 data-i18n="modals.adminSettings.oidcSectionTitle" class="text-sm font-semibold text-slate-800 dark:text-slate-200">Connexion SSO (OIDC)</h3>
-
-        <label class="flex cursor-pointer items-center gap-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-4 py-3 text-sm font-medium text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-800">
-          <input type="checkbox" id="admin-oidc-enabled"
-                 class="h-4 w-4 rounded border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 text-sky-500 focus:ring-sky-500/40">
-          <span data-i18n="modals.adminSettings.oidcEnabledLabel">Activer la connexion SSO</span>
-        </label>
-
-        <div>
-          <label for="admin-oidc-issuer" data-i18n="modals.adminSettings.oidcIssuerLabel" class="mb-1 block text-sm font-medium text-slate-600 dark:text-slate-300">URL de l'émetteur (Issuer)</label>
-          <input type="url" id="admin-oidc-issuer" placeholder="https://idp.example.com"
-                 class="w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-4 py-3 text-base text-slate-900 dark:text-slate-100 placeholder:text-slate-500 focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500/30">
+        <div id="admin-panel-users" hidden class="space-y-4">
+          <p id="admin-users-empty" hidden data-i18n="modals.adminConsole.users.empty" class="text-sm text-slate-500 dark:text-slate-400">Aucun utilisateur.</p>
+          <ul id="admin-users-list" class="space-y-2"></ul>
         </div>
 
-        <div>
-          <label for="admin-oidc-client-id" data-i18n="modals.adminSettings.oidcClientIdLabel" class="mb-1 block text-sm font-medium text-slate-600 dark:text-slate-300">Client ID</label>
-          <input type="text" id="admin-oidc-client-id"
-                 class="w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-4 py-3 text-base text-slate-900 dark:text-slate-100 focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500/30">
+        <div id="admin-panel-spaces" hidden class="space-y-4">
+          <p id="admin-spaces-empty" hidden data-i18n="modals.adminConsole.spaces.empty" class="text-sm text-slate-500 dark:text-slate-400">Aucun espace.</p>
+          <ul id="admin-spaces-list" class="space-y-2"></ul>
         </div>
 
-        <div>
-          <label for="admin-oidc-client-secret" data-i18n="modals.adminSettings.oidcClientSecretLabel" class="mb-1 block text-sm font-medium text-slate-600 dark:text-slate-300">Client Secret</label>
-          <input type="password" id="admin-oidc-client-secret" autocomplete="off"
-                 class="w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-4 py-3 text-base text-slate-900 dark:text-slate-100 placeholder:text-slate-500 focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500/30">
+        <div id="admin-panel-logs" hidden class="space-y-3">
+          <div class="flex items-center justify-between">
+            <p data-i18n="modals.adminConsole.logs.hint" class="text-xs text-slate-500 dark:text-slate-400">Journaux récents, mémoire uniquement (perdus au redémarrage).</p>
+            <button type="button" id="admin-logs-refresh-button" data-i18n="modals.adminConsole.logs.refresh"
+                    class="shrink-0 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-1.5 text-xs font-semibold text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-800">
+              Rafraîchir
+            </button>
+          </div>
+          <p id="admin-logs-empty" hidden data-i18n="modals.adminConsole.logs.empty" class="text-sm text-slate-500 dark:text-slate-400">Aucun journal pour le moment.</p>
+          <ul id="admin-logs-list" class="space-y-1.5 font-mono text-xs"></ul>
         </div>
-
-        <p id="admin-settings-status" class="text-sm text-emerald-600 dark:text-emerald-400" role="status" hidden></p>
-
-        <button type="submit" data-i18n="modals.adminSettings.submit" class="w-full rounded-xl bg-sky-500 px-4 py-3 text-base font-semibold text-white transition hover:bg-sky-400 active:scale-[0.98]">Enregistrer</button>
-      </form>
+      </div>
     </div>
   </div>
 
@@ -727,6 +767,12 @@
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" class="h-5 w-5" aria-hidden="true"><path d="M18 6L6 18M6 6l12 12"/></svg>
         </button>
       </div>
+
+      <button type="button" id="admin-console-button" hidden
+              class="mb-4 flex w-full items-center justify-center gap-2 rounded-xl border border-sky-300 dark:border-sky-700 bg-sky-50 dark:bg-sky-950/40 px-4 py-3 text-sm font-semibold text-sky-700 dark:text-sky-300 hover:bg-sky-100 dark:hover:bg-sky-900/40">
+        <span aria-hidden="true">🛡️</span>
+        <span>Console d'Administration</span>
+      </button>
 
       <div class="mb-4 space-y-4">
         <div class="rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-4 py-3">
@@ -1130,9 +1176,9 @@
   <script src="/js/spaces.js" defer></script>
   <script src="/js/shares.js" defer></script>
   <script src="/js/notifications.js" defer></script>
-  <script src="/js/admin.js" defer></script>
   <script src="/js/settings.js" defer></script>
   <script src="/js/push.js" defer></script>
   <script src="/js/install-help.js" defer></script>
+  <script src="/js/admin.js" defer></script>
 </body>
 </html>

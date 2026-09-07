@@ -155,9 +155,21 @@
     return key.split('.').reduce((acc, part) => (acc && typeof acc === 'object' ? acc[part] : undefined), translations);
   }
 
+  // True only when `translations` actually has a string at this key path.
+  // Used by applyTranslations() below to tell "found" apart from "missing"
+  // without duplicating lookup()'s own traversal logic.
+  function hasTranslation(key) {
+    return typeof lookup(key) === 'string';
+  }
+
   // t() never throws and always returns a string — falling back to the raw
   // key when a translation is missing keeps a broken key visible (rather
-  // than blank) without breaking the caller.
+  // than blank) for a *dynamic* string built in JS (app.js/list_view.js),
+  // which has no other fallback to fall back to. applyTranslations() below
+  // is different: every data-i18n* element already ships real, correct
+  // fallback text baked into index.html itself (that's what a reader sees
+  // before this file's async /locales/*.json fetch ever resolves), so it
+  // deliberately does NOT call t() blindly — see hasTranslation() above.
   function t(key, vars) {
     const value = lookup(key);
     let text = typeof value === 'string' ? value : key;
@@ -169,10 +181,25 @@
     return text;
   }
 
+  // Only overwrites an element's existing text/attribute when a real
+  // translation was actually found for its key — never with the bare key
+  // string t() falls back to for a *dynamic* caller. Without this guard, a
+  // client whose service worker is still serving a locale JSON from before
+  // a given key existed (SW updates are opt-in via the "Mettre à jour"
+  // banner, not automatic — see CLAUDE.md's session-handoff log) would see
+  // that literal key ("modals.userSettings.adminConsoleButton" rather than
+  // "Console d'Administration") replace the element's perfectly good
+  // hardcoded HTML fallback the moment applyTranslations() ran, for as long
+  // as the stale locale file keeps being served. Leaving the DOM untouched
+  // instead means a missing/stale key just quietly keeps whatever text was
+  // already there — the same French fallback every data-i18n element in
+  // index.html/templates already carries — rather than ever surfacing a raw
+  // key to a real user.
   function applyTranslations(root) {
     const scope = root || document;
     scope.querySelectorAll('[data-i18n]').forEach((el) => {
       const key = el.getAttribute('data-i18n');
+      if (!hasTranslation(key)) return;
       const attr = el.getAttribute('data-i18n-attr');
       if (attr) {
         el.setAttribute(attr, t(key));
@@ -181,10 +208,12 @@
       }
     });
     scope.querySelectorAll('[data-i18n-placeholder]').forEach((el) => {
-      el.setAttribute('placeholder', t(el.getAttribute('data-i18n-placeholder')));
+      const key = el.getAttribute('data-i18n-placeholder');
+      if (hasTranslation(key)) el.setAttribute('placeholder', t(key));
     });
     scope.querySelectorAll('[data-i18n-aria-label]').forEach((el) => {
-      el.setAttribute('aria-label', t(el.getAttribute('data-i18n-aria-label')));
+      const key = el.getAttribute('data-i18n-aria-label');
+      if (hasTranslation(key)) el.setAttribute('aria-label', t(key));
     });
     document.documentElement.lang = currentLang;
   }

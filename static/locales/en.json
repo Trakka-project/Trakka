@@ -19,7 +19,6 @@
     "pending": "{count} pending",
     "syncing": "Syncing…",
     "synced": "Synced",
-    "adminSettings": "System Settings",
     "userSettings": "Settings",
     "themeLight": "Light",
     "themeDark": "Dark",
@@ -301,7 +300,6 @@
       "close": "Close preview"
     },
     "adminSettings": {
-      "title": "System Settings",
       "instanceNameLabel": "Instance name",
       "registrationOpenLabel": "Allow new account registration",
       "oidcSectionTitle": "SSO Login (OIDC)",
@@ -313,6 +311,33 @@
       "oidcClientSecretPlaceholderUnset": "No secret set",
       "submit": "Save",
       "saved": "Settings saved."
+    },
+    "adminConsole": {
+      "title": "Admin Console",
+      "settingsTab": "Settings",
+      "usersTab": "Users",
+      "spacesTab": "Spaces",
+      "logsTab": "Logs",
+      "confirmDelete": "Confirm deletion?",
+      "users": {
+        "empty": "No users.",
+        "adminBadge": "Admin",
+        "promote": "Promote to admin",
+        "demote": "Demote",
+        "deleteAriaLabel": "Delete {email}'s account",
+        "lastAdminHint": "Not allowed: this would be the last remaining admin.",
+        "selfDeleteHint": "You can't delete your own account from this panel."
+      },
+      "spaces": {
+        "empty": "No spaces.",
+        "ownerAndCount": "{owner} · {count} list(s)",
+        "deleteAriaLabel": "Delete the space {name}"
+      },
+      "logs": {
+        "hint": "Recent logs, in-memory only (lost on restart).",
+        "refresh": "Refresh",
+        "empty": "No logs yet."
+      }
     },
     "userSettings": {
       "title": "Settings",
@@ -329,7 +354,8 @@
       "pushUnsupported": "Push notifications aren't supported by this browser.",
       "pushNotConfigured": "Push notifications aren't configured on this instance.",
       "pushPermissionDenied": "Permission denied. Change this site's permissions in your browser settings to re-enable.",
-      "installHelpButton": "How do I install the app on my phone?"
+      "installHelpButton": "How do I install the app on my phone?",
+      "adminConsoleButton": "Admin Console"
     },
     "installHelp": {
       "title": "Install Trakka on your phone",

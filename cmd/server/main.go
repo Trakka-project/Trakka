@@ -21,6 +21,7 @@ import (
 	"trakka/internal/config"
 	"trakka/internal/db"
 	"trakka/internal/handlers"
+	"trakka/internal/logbuffer"
 	"trakka/internal/settings"
 	"trakka/internal/webpush"
 )
@@ -40,7 +41,15 @@ func main() {
 		os.Exit(probeHealthz(cfg.Port))
 	}
 
-	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
+	// logHandler wraps the ordinary stdout JSON handler with an in-memory
+	// ring buffer (internal/logbuffer) so the admin console's "Logs" panel
+	// (GET /api/v1/admin/logs) can surface recent activity without this app
+	// needing a log file or a database table for it — see logbuffer's own
+	// package doc for why. Capacity of 500 is generous for "what's happening
+	// right now" at the scale this app targets while staying a small,
+	// bounded amount of memory regardless of how long the process has run.
+	logHandler := logbuffer.NewHandler(slog.NewJSONHandler(os.Stdout, nil), 500)
+	logger := slog.New(logHandler)
 
 	if err := cfg.Validate(); err != nil {
 		logger.Error("invalid configuration", "error", err)
@@ -102,6 +111,7 @@ func main() {
 		Auth:          authService,
 		LoginTemplate: loginTemplate,
 		Config:        cfg,
+		LogBuffer:     logHandler,
 	}
 
 	srv := &http.Server{

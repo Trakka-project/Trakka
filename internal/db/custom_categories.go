@@ -116,6 +116,74 @@ func (d *DB) UpdateCustomCategoryForUser(ctx context.Context, id, userID int64, 
 	return d.GetCustomCategory(ctx, id)
 }
 
+// AdminCustomCategoryRow is a CustomCategory enriched with its owner's
+// identity and how many lists currently reference it — for the admin
+// "Espaces" panel (GET /api/v1/admin/spaces), the one place in the app that
+// needs to see every user's Spaces at once rather than scoping to a single
+// owner the way every other custom-category query in this file does.
+// CustomCategory is embedded rather than duplicated so its fields (id,
+// user_id, name, icon, color, position, created_at) are promoted directly
+// into the JSON response alongside the two admin-only additions.
+type AdminCustomCategoryRow struct {
+	models.CustomCategory
+	OwnerEmail       string `json:"owner_email"`
+	OwnerDisplayName string `json:"owner_display_name"`
+	ListCount        int    `json:"list_count"`
+}
+
+// ListAllCustomCategoriesWithOwners returns every Space on the instance,
+// across every user, ordered by id — deliberately unpaginated for the same
+// "small self-hosted household, not a multi-tenant SaaS" reasoning
+// ListAllUsers documents.
+func (d *DB) ListAllCustomCategoriesWithOwners(ctx context.Context) ([]*AdminCustomCategoryRow, error) {
+	rows, err := d.conn.QueryContext(ctx,
+		`SELECT cc.id, cc.user_id, cc.name, cc.icon, cc.color, cc.position, cc.created_at,
+		        u.email, u.display_name,
+		        (SELECT COUNT(*) FROM lists WHERE lists.custom_category_id = cc.id)
+		 FROM custom_categories cc
+		 JOIN users u ON u.id = cc.user_id
+		 ORDER BY cc.id ASC`)
+	if err != nil {
+		return nil, fmt.Errorf("querying all custom categories: %w", err)
+	}
+	defer rows.Close()
+
+	categories := []*AdminCustomCategoryRow{}
+	for rows.Next() {
+		c := &AdminCustomCategoryRow{}
+		if err := rows.Scan(&c.ID, &c.UserID, &c.Name, &c.Icon, &c.Color, &c.Position, &c.CreatedAt,
+			&c.OwnerEmail, &c.OwnerDisplayName, &c.ListCount); err != nil {
+			return nil, fmt.Errorf("scanning admin custom category row: %w", err)
+		}
+		categories = append(categories, c)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterating admin custom category rows: %w", err)
+	}
+	return categories, nil
+}
+
+// DeleteCustomCategory removes a category regardless of owner — the admin
+// override of DeleteCustomCategoryForUser, used by the "Espaces" panel to
+// let an admin remove any user's Space. Any list referencing it has
+// custom_category_id reset to NULL automatically (ON DELETE SET NULL, the
+// same as the owner-initiated delete), never deleted itself. Returns
+// ErrNotFound if no such category exists.
+func (d *DB) DeleteCustomCategory(ctx context.Context, id int64) error {
+	res, err := d.conn.ExecContext(ctx, `DELETE FROM custom_categories WHERE id = ?`, id)
+	if err != nil {
+		return fmt.Errorf("deleting custom category %d: %w", id, err)
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("reading rows affected for custom category %d: %w", id, err)
+	}
+	if n == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
 // DeleteCustomCategoryForUser removes a category, scoped to its owner the
 // same way GetCustomCategoryForUser is. Any list referencing it has
 // custom_category_id reset to NULL automatically (ON DELETE SET NULL, see

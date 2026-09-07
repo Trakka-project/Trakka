@@ -85,6 +85,7 @@ internal/db/           all database/sql usage: connection setup, schema, paramet
 internal/auth/         non-HTTP auth logic: bcrypt, session tokens, hand-rolled OIDC client + id_token verification
 internal/handlers/     HTTP routing, request validation, security headers, JSON responses, session middleware, /auth/... handlers
 internal/validate/     reusable input validators (currently: strict http(s) URL validation)
+internal/logbuffer/    in-memory ring-buffer slog.Handler backing the admin console's "Logs" panel (GET /api/v1/admin/logs)
 static/                PWA frontend served at "/": index.html, js/app.js, js/list_view.js, js/db.js, sw.js, css/tokens.css, css/base.css, manifest.json, icons/
 templates/             login.html, rendered via html/template with server-injected per-request data (OIDC-enabled flag, mode, error message)
 Dockerfile             multi-stage build (golang:1.27.0-alpine -> alpine:latest)

@@ -19,7 +19,6 @@
     "pending": "{count} en attente",
     "syncing": "Synchronisation…",
     "synced": "Synchronisé",
-    "adminSettings": "Paramètres du Système",
     "userSettings": "Paramètres",
     "themeLight": "Clair",
     "themeDark": "Sombre",
@@ -301,7 +300,6 @@
       "close": "Fermer l'aperçu"
     },
     "adminSettings": {
-      "title": "Paramètres du Système",
       "instanceNameLabel": "Nom de l'instance",
       "registrationOpenLabel": "Autoriser les nouvelles inscriptions",
       "oidcSectionTitle": "Connexion SSO (OIDC)",
@@ -313,6 +311,33 @@
       "oidcClientSecretPlaceholderUnset": "Aucun secret enregistré",
       "submit": "Enregistrer",
       "saved": "Paramètres enregistrés."
+    },
+    "adminConsole": {
+      "title": "Console d'Administration",
+      "settingsTab": "Paramètres",
+      "usersTab": "Utilisateurs",
+      "spacesTab": "Espaces",
+      "logsTab": "Logs",
+      "confirmDelete": "Confirmer la suppression ?",
+      "users": {
+        "empty": "Aucun utilisateur.",
+        "adminBadge": "Admin",
+        "promote": "Promouvoir admin",
+        "demote": "Rétrograder",
+        "deleteAriaLabel": "Supprimer le compte de {email}",
+        "lastAdminHint": "Impossible : ce serait le dernier administrateur restant.",
+        "selfDeleteHint": "Vous ne pouvez pas supprimer votre propre compte depuis ce panneau."
+      },
+      "spaces": {
+        "empty": "Aucun espace.",
+        "ownerAndCount": "{owner} · {count} liste(s)",
+        "deleteAriaLabel": "Supprimer l'espace {name}"
+      },
+      "logs": {
+        "hint": "Journaux récents, mémoire uniquement (perdus au redémarrage).",
+        "refresh": "Rafraîchir",
+        "empty": "Aucun journal pour le moment."
+      }
     },
     "userSettings": {
       "title": "Paramètres",
@@ -329,7 +354,8 @@
       "pushUnsupported": "Les notifications push ne sont pas prises en charge par ce navigateur.",
       "pushNotConfigured": "Les notifications push ne sont pas configurées sur cette instance.",
       "pushPermissionDenied": "Autorisation refusée. Modifiez les autorisations de ce site dans les paramètres de votre navigateur pour réactiver.",
-      "installHelpButton": "Comment installer l'application sur mon téléphone ?"
+      "installHelpButton": "Comment installer l'application sur mon téléphone ?",
+      "adminConsoleButton": "Console d'Administration"
     },
     "installHelp": {
       "title": "Installer Trakka sur votre téléphone",
