@@ -65,6 +65,7 @@ func (app *Application) handleItemsCreate(w http.ResponseWriter, r *http.Request
 		RecurrenceLeadMinutes *int     `json:"recurrence_lead_minutes"`
 		TargetPrice           *float64 `json:"target_price"`
 		AlertOnPriceDrop      bool     `json:"alert_on_price_drop"`
+		Labels                []string `json:"labels"`
 	}
 	if !decodeJSON(w, r, &in) {
 		return
@@ -127,6 +128,11 @@ func (app *Application) handleItemsCreate(w http.ResponseWriter, r *http.Request
 		writeError(w, http.StatusBadRequest, "recurrence_lead_minutes cannot be negative")
 		return
 	}
+	cleanLabels, err := validate.Labels(in.Labels)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
 
 	list, err := app.DB.GetList(r.Context(), in.ListID)
 	if errors.Is(err, db.ErrNotFound) {
@@ -146,6 +152,17 @@ func (app *Application) handleItemsCreate(w http.ResponseWriter, r *http.Request
 	if err != nil {
 		app.serverError(w, r, err)
 		return
+	}
+	// SetItemLabels is a separate call (see its own doc comment) rather than
+	// another CreateItem parameter — only worth the extra write when there's
+	// actually something to store, since a fresh item already defaults to an
+	// empty label set.
+	if len(cleanLabels) > 0 {
+		item, err = app.DB.SetItemLabels(r.Context(), item.ID, cleanLabels)
+		if err != nil {
+			app.serverError(w, r, err)
+			return
+		}
 	}
 	// A brand new item has no "before" state to compare against, so it can
 	// only ever transition from inactive to active — see
@@ -227,6 +244,7 @@ func (app *Application) handleItemsUpdate(w http.ResponseWriter, r *http.Request
 		RecurrenceLeadMinutes *int     `json:"recurrence_lead_minutes"`
 		TargetPrice           *float64 `json:"target_price"`
 		AlertOnPriceDrop      bool     `json:"alert_on_price_drop"`
+		Labels                []string `json:"labels"`
 	}
 	if !decodeJSON(w, r, &in) {
 		return
@@ -285,6 +303,11 @@ func (app *Application) handleItemsUpdate(w http.ResponseWriter, r *http.Request
 		writeError(w, http.StatusBadRequest, "recurrence_lead_minutes cannot be negative")
 		return
 	}
+	cleanLabels, err := validate.Labels(in.Labels)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
 
 	// A scraped image is tied to the url it was found on: if the url just
 	// changed to something new, the existing image no longer describes it
@@ -323,6 +346,15 @@ func (app *Application) handleItemsUpdate(w http.ResponseWriter, r *http.Request
 		writeError(w, http.StatusNotFound, "item not found")
 		return
 	} else if err != nil {
+		app.serverError(w, r, err)
+		return
+	}
+	// PUT is a full replace: an omitted labels field resets it to empty,
+	// the same convention type/custom_category_id already follow here — see
+	// SetItemLabels' own doc comment for why this is a separate call rather
+	// than another UpdateItem parameter.
+	item, err = app.DB.SetItemLabels(r.Context(), item.ID, cleanLabels)
+	if err != nil {
 		app.serverError(w, r, err)
 		return
 	}
@@ -371,6 +403,7 @@ func (app *Application) handleItemsPatch(w http.ResponseWriter, r *http.Request)
 		RecurrenceLeadMinutes json.RawMessage `json:"recurrence_lead_minutes"`
 		TargetPrice           json.RawMessage `json:"target_price"`
 		AlertOnPriceDrop      *bool           `json:"alert_on_price_drop"`
+		Labels                *[]string       `json:"labels"`
 	}
 	if !decodeJSON(w, r, &in) {
 		return
@@ -529,6 +562,21 @@ func (app *Application) handleItemsPatch(w http.ResponseWriter, r *http.Request)
 	if in.AlertOnPriceDrop != nil {
 		item.AlertOnPriceDrop = *in.AlertOnPriceDrop
 	}
+	// A nil in.Labels means the field was absent (leave item.Labels
+	// untouched, e.g. a plain "done" toggle); a present value (including an
+	// explicit empty array) replaces the label set entirely — there's no
+	// meaningful difference between "clear the labels" and "absent" worth a
+	// three-way RawMessage distinction the way Price/TargetPrice need one.
+	var cleanLabels []string
+	if in.Labels != nil {
+		var err error
+		cleanLabels, err = validate.Labels(*in.Labels)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		item.Labels = cleanLabels
+	}
 	// Same absent/null/number three-way as Price above: absent leaves
 	// item.RecurrenceLeadMinutes untouched, "null" clears the per-item
 	// override back to "use the instance default", a number sets it.
@@ -565,6 +613,16 @@ func (app *Application) handleItemsPatch(w http.ResponseWriter, r *http.Request)
 	if err != nil {
 		app.serverError(w, r, err)
 		return
+	}
+	// PATCH's "absent = untouched" convention: only write labels when the
+	// field was actually present in the request (see SetItemLabels' own doc
+	// comment for why this is a separate call).
+	if in.Labels != nil {
+		updated, err = app.DB.SetItemLabels(r.Context(), updated.ID, cleanLabels)
+		if err != nil {
+			app.serverError(w, r, err)
+			return
+		}
 	}
 	// Checked against the manually-supplied price only, before
 	// scrapeProductInfo runs — see the identical reasoning in

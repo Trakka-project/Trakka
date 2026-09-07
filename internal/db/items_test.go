@@ -6,6 +6,7 @@ import (
 	"io"
 	"log/slog"
 	"path/filepath"
+	"reflect"
 	"testing"
 )
 
@@ -457,6 +458,99 @@ func TestReorderItems(t *testing.T) {
 		}
 		if _, err := d.ReorderItems(ctx, list.ID, []int64{itemA.ID, itemB.ID, foreignItem.ID}); !errors.Is(err, ErrInvalidReorder) {
 			t.Fatalf("expected ErrInvalidReorder for a foreign item id, got %v", err)
+		}
+	})
+}
+
+func TestItemLabelsPersistence(t *testing.T) {
+	ctx := context.Background()
+	d := openTestDB(t)
+
+	house, err := d.CreateHouseWithOwner(ctx, "Maison Test", mustCreateUser(t, ctx, d))
+	if err != nil {
+		t.Fatalf("creating house: %v", err)
+	}
+	list, err := d.CreateList(ctx, "Courses", "shopping", house.ID, nil, "")
+	if err != nil {
+		t.Fatalf("creating list: %v", err)
+	}
+
+	t.Run("a freshly created item has an empty, non-nil label set", func(t *testing.T) {
+		item, err := d.CreateItem(ctx, list.ID, "Article", nil, 1, nil, false, 0, nil, nil, nil, nil, false, nil, nil, false)
+		if err != nil {
+			t.Fatalf("creating item: %v", err)
+		}
+		if item.Labels == nil || len(item.Labels) != 0 {
+			t.Fatalf("expected an empty, non-nil label set, got %#v", item.Labels)
+		}
+		got, err := d.GetItem(ctx, item.ID)
+		if err != nil {
+			t.Fatalf("GetItem: %v", err)
+		}
+		if got.Labels == nil || len(got.Labels) != 0 {
+			t.Fatalf("expected an empty, non-nil label set on re-fetch, got %#v", got.Labels)
+		}
+	})
+
+	t.Run("SetItemLabels persists and survives a re-fetch", func(t *testing.T) {
+		item, err := d.CreateItem(ctx, list.ID, "Fromage", nil, 1, nil, false, 0, nil, nil, nil, nil, false, nil, nil, false)
+		if err != nil {
+			t.Fatalf("creating item: %v", err)
+		}
+		updated, err := d.SetItemLabels(ctx, item.ID, []string{"Bio", "Promo"})
+		if err != nil {
+			t.Fatalf("SetItemLabels: %v", err)
+		}
+		if !reflect.DeepEqual(updated.Labels, []string{"Bio", "Promo"}) {
+			t.Fatalf("expected labels [Bio Promo], got %v", updated.Labels)
+		}
+		got, err := d.GetItem(ctx, item.ID)
+		if err != nil {
+			t.Fatalf("GetItem: %v", err)
+		}
+		if !reflect.DeepEqual(got.Labels, []string{"Bio", "Promo"}) {
+			t.Fatalf("expected labels to survive a re-fetch, got %v", got.Labels)
+		}
+	})
+
+	t.Run("SetItemLabels can clear the label set back to empty", func(t *testing.T) {
+		item, err := d.CreateItem(ctx, list.ID, "Pain", nil, 1, nil, false, 0, nil, nil, nil, nil, false, nil, nil, false)
+		if err != nil {
+			t.Fatalf("creating item: %v", err)
+		}
+		if _, err := d.SetItemLabels(ctx, item.ID, []string{"Bio"}); err != nil {
+			t.Fatalf("SetItemLabels: %v", err)
+		}
+		cleared, err := d.SetItemLabels(ctx, item.ID, nil)
+		if err != nil {
+			t.Fatalf("SetItemLabels(nil): %v", err)
+		}
+		if cleared.Labels == nil || len(cleared.Labels) != 0 {
+			t.Fatalf("expected an empty, non-nil label set after clearing, got %#v", cleared.Labels)
+		}
+	})
+
+	t.Run("UpdateItem does not clobber a previously set label set", func(t *testing.T) {
+		item, err := d.CreateItem(ctx, list.ID, "Oeufs", nil, 1, nil, false, 0, nil, nil, nil, nil, false, nil, nil, false)
+		if err != nil {
+			t.Fatalf("creating item: %v", err)
+		}
+		if _, err := d.SetItemLabels(ctx, item.ID, []string{"Bio"}); err != nil {
+			t.Fatalf("SetItemLabels: %v", err)
+		}
+		updated, err := d.UpdateItem(ctx, item.ID, "Oeufs bio", item.URL, item.Quantity, item.Price, item.PriceAuto, item.ImageURL,
+			item.Done, item.Position, item.TargetMonth, item.DueDate, item.RecurrenceRule, item.RecurrenceEndDate, item.IsUrgent, nil, nil, false)
+		if err != nil {
+			t.Fatalf("UpdateItem: %v", err)
+		}
+		if !reflect.DeepEqual(updated.Labels, []string{"Bio"}) {
+			t.Fatalf("expected UpdateItem to leave labels untouched, got %v", updated.Labels)
+		}
+	})
+
+	t.Run("SetItemLabels returns ErrNotFound for a nonexistent item", func(t *testing.T) {
+		if _, err := d.SetItemLabels(ctx, 999999, []string{"Bio"}); !errors.Is(err, ErrNotFound) {
+			t.Fatalf("expected ErrNotFound, got %v", err)
 		}
 	})
 }

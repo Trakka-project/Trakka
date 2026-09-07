@@ -130,7 +130,10 @@
     "decreaseQuantityAriaLabel": "Decrease {title}'s quantity",
     "quantityForItemAriaLabel": "{title}'s quantity",
     "increaseQuantityAriaLabel": "Increase {title}'s quantity",
-    "priceValidationError": "Price must be a positive number."
+    "priceValidationError": "Price must be a positive number.",
+    "viewModeToggleAriaLabelToDetailed": "Switch to detailed view",
+    "viewModeToggleAriaLabelToCompact": "Switch to compact view",
+    "labelsBadgeAriaLabel": "Labels: {labels}"
   },
   "planning": {
     "tabTitle": "Budget & Forecast",
@@ -255,6 +258,7 @@
     },
     "itemActions": {
       "edit": "Edit item",
+      "manageLabels": "Manage labels",
       "openLink": "Open link",
       "copyLink": "Copy link",
       "shareLink": "Share link",
@@ -281,7 +285,16 @@
       "recurrenceLabel": "Repeat",
       "urgentLabel": "Mark as urgent",
       "urgentHint": "E.g. Out of toilet paper",
+      "labelsLabel": "Labels",
+      "manageLabelsButton": "🏷️ Manage labels",
+      "noLabels": "No labels",
       "submit": "Save"
+    },
+    "labelManage": {
+      "searchPlaceholder": "Search or create a label…",
+      "searchAriaLabel": "Search or create a label",
+      "empty": "No labels yet. Type to create one.",
+      "createOption": "+ Create \"{label}\""
     },
     "imagePreview": {
       "ariaLabel": "Item image preview",

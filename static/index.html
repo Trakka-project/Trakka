@@ -306,6 +306,15 @@
                 class="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-100 dark:bg-slate-800/60 text-slate-500 hover:bg-violet-500/10 hover:text-violet-600 dark:hover:text-violet-400">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="h-5 w-5" aria-hidden="true"><path d="M16 11a4 4 0 1 0-4-4"/><path d="M8 21v-2a4 4 0 0 1 4-4h1"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/></svg>
         </button>
+        <!-- Compact/Detailed display toggle (updateViewModeToggleButton in
+             list_view.js swaps its icon/title/aria-label based on the
+             current per-list-type localStorage preference). Hidden the same
+             way #quick-add-toggle already is, for a list type with nothing
+             for either mode to show/hide (see hasAdvancedFields). -->
+        <button type="button" id="view-mode-toggle-button" data-i18n-aria-label="items.viewModeToggleAriaLabelToCompact" aria-label="Passer en affichage compact"
+                class="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-100 dark:bg-slate-800/60 text-slate-500 hover:bg-slate-200 dark:hover:bg-slate-800 hover:text-slate-900 dark:hover:text-slate-200">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="h-5 w-5" aria-hidden="true"><path d="M4 6h16"/><path d="M4 12h16"/><path d="M4 18h16"/></svg>
+        </button>
         <button type="button" id="reorder-list-button" hidden data-i18n-aria-label="items.reorderList" aria-label="Réordonner les articles"
                 class="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-100 dark:bg-slate-800/60 text-slate-500 hover:bg-slate-200 dark:hover:bg-slate-800 hover:text-slate-900 dark:hover:text-slate-200">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="h-5 w-5" aria-hidden="true"><path d="M7 15l5 5 5-5"/><path d="M7 9l5-5 5 5"/></svg>
@@ -923,6 +932,16 @@
           <p class="mt-1 text-xs text-slate-500" data-i18n="modals.editItem.urgentHint">Ex : Papier toilette épuisé</p>
         </div>
 
+        <div>
+          <div class="mb-1 flex items-center justify-between gap-2">
+            <span class="block text-sm font-medium text-slate-600 dark:text-slate-300" data-i18n="modals.editItem.labelsLabel">Labels</span>
+            <button type="button" id="edit-item-manage-labels-button"
+                    class="rounded-full bg-slate-200 dark:bg-slate-700 px-3 py-1 text-xs font-semibold text-slate-700 dark:text-slate-200 hover:bg-slate-300 dark:hover:bg-slate-600"
+                    data-i18n="modals.editItem.manageLabelsButton">🏷️ Gérer les labels</button>
+          </div>
+          <div id="edit-item-labels-preview" class="flex flex-wrap items-center gap-1 text-sm text-slate-500 dark:text-slate-400" data-i18n="modals.editItem.noLabels">Aucun label</div>
+        </div>
+
         <button type="submit" data-i18n="modals.editItem.submit" class="w-full rounded-xl bg-sky-500 px-4 py-3 text-base font-semibold text-white transition hover:bg-sky-400 active:scale-[0.98]">Enregistrer</button>
       </form>
     </div>
@@ -957,6 +976,11 @@
           <span aria-hidden="true">✏️</span>
           <span data-i18n="modals.itemActions.edit">Modifier l'article</span>
         </button>
+        <button type="button" id="item-actions-labels-button"
+                class="flex items-center gap-3 rounded-xl px-3 py-3 text-left text-base font-medium text-slate-900 dark:text-slate-100 hover:bg-slate-200 dark:hover:bg-slate-700">
+          <span aria-hidden="true">🏷️</span>
+          <span data-i18n="modals.itemActions.manageLabels">Gérer les labels</span>
+        </button>
         <div id="item-actions-link-group" class="flex flex-col gap-1">
           <button type="button" id="item-actions-open-link-button"
                   class="flex items-center gap-3 rounded-xl px-3 py-3 text-left text-base font-medium text-slate-900 dark:text-slate-100 hover:bg-slate-200 dark:hover:bg-slate-700">
@@ -985,6 +1009,30 @@
           <span data-i18n="modals.itemActions.delete">Supprimer l'article</span>
         </button>
       </div>
+    </div>
+  </div>
+
+  <!-- Label management bottom sheet: opened from #item-actions-sheet's
+       "Gérer les labels" button (kebab/title/long-press entry points) or the
+       edit-item modal's own "🏷️ Gérer les labels" button (openLabelManageSheet
+       in list_view.js) — a search/create input plus a list of toggleable
+       chips, suggestions drawn from every label already used elsewhere in the
+       current list. Tapping a chip adds/removes it immediately (an
+       optimistic, coalesced PATCH — see commitItemLabels), there is no
+       separate "save" step. -->
+  <div id="label-manage-sheet" hidden class="fixed inset-0 z-40 flex items-end justify-center bg-slate-950/30 dark:bg-slate-950/70 p-0 sm:items-center sm:p-4">
+    <div role="dialog" aria-modal="true" aria-labelledby="label-manage-sheet-title" class="w-full rounded-t-2xl bg-slate-100 dark:bg-slate-800 p-5 shadow-xl sm:max-w-md sm:rounded-2xl">
+      <div class="mb-3 flex items-center justify-between gap-3">
+        <h2 id="label-manage-sheet-title" class="min-w-0 flex-1 truncate text-lg font-semibold"></h2>
+        <button type="button" id="close-label-manage-sheet-button" data-i18n-aria-label="modals.close" aria-label="Fermer"
+                class="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-slate-500 dark:text-slate-400 hover:bg-slate-300 dark:hover:bg-slate-700 hover:text-slate-900 dark:hover:text-slate-200">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" class="h-5 w-5" aria-hidden="true"><path d="M18 6L6 18M6 6l12 12"/></svg>
+        </button>
+      </div>
+      <input type="text" id="label-manage-search" maxlength="30" data-i18n-placeholder="modals.labelManage.searchPlaceholder" data-i18n-aria-label="modals.labelManage.searchAriaLabel"
+             placeholder="Rechercher ou créer un label…" aria-label="Rechercher ou créer un label"
+             class="mb-3 w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-4 py-3 text-base text-slate-900 dark:text-slate-100 placeholder:text-slate-500 focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500/30">
+      <div id="label-manage-chips" class="flex max-h-64 flex-wrap items-start gap-2 overflow-y-auto"></div>
     </div>
   </div>
 

@@ -182,6 +182,16 @@ type Item struct {
 	// drop the background scraper finds after the response has already
 	// been sent, when this field can't be set).
 	PriceAlertTriggered bool `json:"price_alert_triggered,omitempty"`
+	// Labels is a freeform, user-managed set of short tags (e.g. "Bio",
+	// "Promo") attached via the label management bottom sheet (see
+	// static/js/list_view.js's openLabelManageSheet) — independent of
+	// TargetMonth/RecurrenceRule/IsUrgent, the same "plain, unrelated toggle"
+	// relationship those already have to each other. Cleaned and deduplicated
+	// by internal/validate.Labels before being persisted (see
+	// internal/db.SetItemLabels); never nil in a response — an item with no
+	// labels reports an empty array, matching internal/db's own "labels
+	// column defaults to '[]', never NULL" convention (see migration 18).
+	Labels []string `json:"labels"`
 }
 
 // ValidListTypes enumerates the allowed values for List.Type. `shopping`

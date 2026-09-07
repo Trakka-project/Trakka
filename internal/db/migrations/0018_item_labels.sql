@@ -1,0 +1,12 @@
+-- Migration 18 ("Item labels & compact/detailed list view"): a freeform,
+-- per-item list of short tags (e.g. "Bio", "Promo") a user can attach via
+-- the label management bottom sheet (see static/js/list_view.js) to
+-- organize/filter items beyond title/quantity/price. Stored as a JSON array
+-- of strings rather than a normalized labels/item_labels join table —
+-- Trakka's own items.recurrence_rule/target_month columns already establish
+-- "small freeform value, no cross-item querying need" as JSON/plain-TEXT
+-- territory rather than a relational one, and a label has no attributes of
+-- its own (no color/owner/etc.) worth a dedicated table for. Defaults to
+-- '[]' (a valid empty JSON array) rather than NULL so internal/db's
+-- scanItem never has to special-case a NULL labels column.
+ALTER TABLE items ADD COLUMN labels TEXT NOT NULL DEFAULT '[]';

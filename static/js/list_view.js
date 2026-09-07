@@ -15,6 +15,7 @@ const listEls = {
   backButton: document.getElementById('back-button'),
   editListButton: document.getElementById('edit-list-button'),
   shareListButton: document.getElementById('share-list-button'),
+  viewModeToggleButton: document.getElementById('view-mode-toggle-button'),
   financeSummary: document.getElementById('finance-summary'),
   financeTotal: document.getElementById('finance-total'),
   financeTotalCompact: document.getElementById('finance-total-compact'),
@@ -55,6 +56,7 @@ const listEls = {
   itemActionsSheetMeta: document.getElementById('item-actions-sheet-meta'),
   closeItemActionsSheetButton: document.getElementById('close-item-actions-sheet-button'),
   itemActionsEditButton: document.getElementById('item-actions-edit-button'),
+  itemActionsLabelsButton: document.getElementById('item-actions-labels-button'),
   itemActionsLinkGroup: document.getElementById('item-actions-link-group'),
   itemActionsOpenLinkButton: document.getElementById('item-actions-open-link-button'),
   itemActionsCopyLinkButton: document.getElementById('item-actions-copy-link-button'),
@@ -65,6 +67,13 @@ const listEls = {
   imagePreviewModal: document.getElementById('image-preview-modal'),
   imagePreviewImg: document.getElementById('image-preview-img'),
   closeImagePreviewButton: document.getElementById('close-image-preview-button'),
+  editItemManageLabelsButton: document.getElementById('edit-item-manage-labels-button'),
+  editItemLabelsPreview: document.getElementById('edit-item-labels-preview'),
+  labelManageSheet: document.getElementById('label-manage-sheet'),
+  labelManageSheetTitle: document.getElementById('label-manage-sheet-title'),
+  closeLabelManageSheetButton: document.getElementById('close-label-manage-sheet-button'),
+  labelManageSearch: document.getElementById('label-manage-search'),
+  labelManageChips: document.getElementById('label-manage-chips'),
 };
 
 // The item currently open in the item-actions bottom sheet (#item-actions-
@@ -77,6 +86,16 @@ let itemActionsSheetItem = null;
 // The item currently open in the edit modal, or null when the modal is
 // closed — set by openEditItemModal, read by editItemForm's submit handler.
 let editingItem = null;
+
+// The item currently open in the label management bottom sheet
+// (#label-manage-sheet), or null when it's closed — set by
+// openLabelManageSheet, read by renderLabelManageSheetChips and the search
+// input's own listeners below. Reachable from both #item-actions-sheet's
+// "Gérer les labels" button and the edit-item modal's own "🏷️ Gérer les
+// labels" button — either one closes itself first (the same sequential
+// close/open pattern the edit-item entry point already uses), so at most one
+// bottom sheet/modal is ever open at a time.
+let labelManageItem = null;
 
 const PENCIL_ICON_SVG =
   '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="h-5 w-5" aria-hidden="true">' +
@@ -101,6 +120,16 @@ const AUTO_PRICE_ICON_SVG =
 // #item-actions-sheet instead (see buildItemRow and openItemActionsSheet).
 const KEBAB_ICON_SVG =
   '<svg viewBox="0 0 24 24" fill="currentColor" class="h-5 w-5" aria-hidden="true"><circle cx="12" cy="5" r="1.75"/><circle cx="12" cy="12" r="1.75"/><circle cx="12" cy="19" r="1.75"/></svg>';
+
+// Two icon variants for #view-mode-toggle-button (updateViewModeToggleButton
+// below), swapped via innerHTML the same way buildAutoPriceIcon's SVG
+// constant already is — three even bars for "Détaillé" (the default,
+// index.html's own static markup already carries this one), three bars of
+// alternating width for "Compact" (denser-looking, evoking a tighter list).
+const VIEW_MODE_DETAILED_ICON_SVG =
+  '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="h-5 w-5" aria-hidden="true"><path d="M4 6h16"/><path d="M4 12h16"/><path d="M4 18h16"/></svg>';
+const VIEW_MODE_COMPACT_ICON_SVG =
+  '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="h-5 w-5" aria-hidden="true"><path d="M4 7h10"/><path d="M4 12h16"/><path d="M4 17h7"/></svg>';
 
 // ---------------------------------------------------------------------------
 // Link actions — Ouvrir/Copier/Partager, shared by #item-actions-sheet's
@@ -399,11 +428,70 @@ function applyListTypeVisibility(type) {
   const advanced = hasAdvancedFields(visibility);
   listEls.quickAddToggle.hidden = !advanced;
   if (!advanced) setQuickAddAdvancedExpanded(false);
+
+  updateViewModeToggleButton(type, visibility);
 }
 
 function hasAdvancedFields(visibility) {
   return visibility.url || visibility.price || visibility.targetMonth || visibility.recurrence || visibility.quantity || visibility.urgent;
 }
+
+// ---------------------------------------------------------------------------
+// Compact/Detailed view mode — a per-list-type display preference, distinct
+// from FIELD_VISIBILITY_BY_TYPE above (which is about what a list *type*
+// structurally has to show at all): "Détaillé" is the ordinary two-row card
+// (checkbox, title, quantity stepper, price, label chips under the title);
+// "Compact" collapses it to a single line (checkbox, title, a small label
+// indicator, and the [⋮] actions menu), hiding the quantity stepper and
+// price pill even for a list type that would otherwise show them — they stay
+// fully editable via the edit modal/actions sheet, just not drawn on the
+// row. A `todo`/`custom` list already renders as a single line regardless of
+// this preference (see buildItemRow's own structural `compact` derivation),
+// since it never had a quantity/price to hide in the first place.
+// Persisted per list `type` (not globally, and not per-list) in localStorage
+// so switching a `shopping` list to Compact doesn't affect a `todo` list.
+// ---------------------------------------------------------------------------
+
+const VIEW_MODE_STORAGE_PREFIX = 'trakka:viewMode:';
+
+function getViewMode(listType) {
+  try {
+    return localStorage.getItem(VIEW_MODE_STORAGE_PREFIX + listType) === 'compact' ? 'compact' : 'detailed';
+  } catch {
+    return 'detailed'; // localStorage unavailable (private mode, quota) — fall back to the default rather than throwing.
+  }
+}
+
+function setViewMode(listType, mode) {
+  try {
+    localStorage.setItem(VIEW_MODE_STORAGE_PREFIX + listType, mode);
+  } catch {
+    // Same as above: the toggle just won't persist across reloads, not fatal.
+  }
+}
+
+// Reflects the current list's view mode on #view-mode-toggle-button — icon,
+// title/aria-label describing what a click switches *to* (matching this
+// app's existing convention for a two-state toggle, e.g. the theme/language
+// buttons before they moved into Paramètres) — and hides the button
+// altogether for a list type with nothing for either mode to show or hide
+// (mirrors #quick-add-toggle's own hasAdvancedFields gating just above,
+// since the two controls apply to exactly the same set of fields).
+function updateViewModeToggleButton(type, visibility) {
+  const compact = getViewMode(type) === 'compact';
+  listEls.viewModeToggleButton.hidden = !hasAdvancedFields(visibility);
+  listEls.viewModeToggleButton.innerHTML = compact ? VIEW_MODE_COMPACT_ICON_SVG : VIEW_MODE_DETAILED_ICON_SVG;
+  const label = t(compact ? 'items.viewModeToggleAriaLabelToDetailed' : 'items.viewModeToggleAriaLabelToCompact');
+  listEls.viewModeToggleButton.title = label;
+  listEls.viewModeToggleButton.setAttribute('aria-label', label);
+}
+
+listEls.viewModeToggleButton.addEventListener('click', () => {
+  if (!state.currentList) return;
+  const type = state.currentList.type;
+  setViewMode(type, getViewMode(type) === 'compact' ? 'detailed' : 'compact');
+  renderItems();
+});
 
 // Expands/collapses the quick-add bar's advanced panel (URL/quantity/price/
 // target month/recurrence/urgent) — collapsed is the default "épuré" state;
@@ -579,6 +667,97 @@ function buildUrgentBadge() {
   return badge;
 }
 
+// ---------------------------------------------------------------------------
+// Labels — a freeform, user-managed set of short tags (models.Item.Labels,
+// e.g. "Bio"/"Promo"), managed through openLabelManageSheet below. Rendering
+// only: buildLabelChipsRow (a full pastel-chip row under the title, for
+// Détaillé view) and buildLabelMiniBadge (a compact colored-dot indicator
+// next to the title, for Compact view — see buildItemRow's own compact
+// branch) both read directly from item.labels; a stable hash-based palette
+// is what gives each distinct label its own consistent color across every
+// render and every item, without needing a color picker or per-label state
+// of its own.
+// ---------------------------------------------------------------------------
+
+const LABEL_CHIP_PALETTE = [
+  'bg-sky-500/10 text-sky-600 dark:text-sky-300',
+  'bg-emerald-500/10 text-emerald-600 dark:text-emerald-300',
+  'bg-amber-500/10 text-amber-600 dark:text-amber-300',
+  'bg-rose-500/10 text-rose-600 dark:text-rose-300',
+  'bg-violet-500/10 text-violet-600 dark:text-violet-300',
+  'bg-cyan-500/10 text-cyan-600 dark:text-cyan-300',
+];
+const LABEL_DOT_PALETTE = ['bg-sky-500', 'bg-emerald-500', 'bg-amber-500', 'bg-rose-500', 'bg-violet-500', 'bg-cyan-500'];
+
+// A small, stable (not cryptographic — just needs to consistently pick the
+// same palette entry for the same label text every time) string hash, so a
+// given label always renders in the same color everywhere it appears.
+function hashLabel(label) {
+  let hash = 0;
+  for (let i = 0; i < label.length; i++) {
+    hash = (hash * 31 + label.charCodeAt(i)) | 0;
+  }
+  return Math.abs(hash);
+}
+
+function labelChipClasses(label) {
+  return LABEL_CHIP_PALETTE[hashLabel(label) % LABEL_CHIP_PALETTE.length];
+}
+
+function labelDotClass(label) {
+  return LABEL_DOT_PALETTE[hashLabel(label) % LABEL_DOT_PALETTE.length];
+}
+
+// A full row of small pastel pills, one per label, shown under an item's
+// title in Détaillé view — see buildItemRow's topGroup wrapper below for how
+// this ends up positioned. Returns null when the item has no labels, so the
+// caller can skip reserving any space for it at all (unlike the always-
+// reserved status slots elsewhere in this file, an item's label set is
+// naturally sparse and variable-height, so there is no alignment reason to
+// keep an empty row around).
+function buildLabelChipsRow(item) {
+  if (!item.labels || item.labels.length === 0) return null;
+  const row = document.createElement('div');
+  row.className = 'flex flex-wrap items-center gap-1';
+  for (const label of item.labels) {
+    const chip = document.createElement('span');
+    chip.className = `rounded-full px-2 py-0.5 text-xs font-medium ${labelChipClasses(label)}`;
+    chip.textContent = label;
+    row.appendChild(chip);
+  }
+  return row;
+}
+
+// A compact indicator for Compact view: up to three small colored dots (one
+// per label, in the same stable palette buildLabelChipsRow uses) plus a
+// "+N" text for any remainder, all wrapped in one element carrying the full
+// label list as a title/aria-label tooltip — a single glyph-sized slot next
+// to the title rather than a second line, matching Compact view's whole
+// point of staying to one line. Returns null when the item has no labels.
+function buildLabelMiniBadge(item) {
+  if (!item.labels || item.labels.length === 0) return null;
+  const badge = document.createElement('span');
+  badge.className = 'flex shrink-0 items-center gap-0.5';
+  const tooltip = t('items.labelsBadgeAriaLabel', { labels: item.labels.join(', ') });
+  badge.title = tooltip;
+  badge.setAttribute('aria-label', tooltip);
+  const shown = item.labels.slice(0, 3);
+  for (const label of shown) {
+    const dot = document.createElement('span');
+    dot.className = `h-2 w-2 rounded-full ${labelDotClass(label)}`;
+    dot.setAttribute('aria-hidden', 'true');
+    badge.appendChild(dot);
+  }
+  if (item.labels.length > shown.length) {
+    const extra = document.createElement('span');
+    extra.className = 'text-[10px] font-semibold text-slate-500 dark:text-slate-400';
+    extra.setAttribute('aria-hidden', 'true');
+    extra.textContent = `+${item.labels.length - shown.length}`;
+    badge.appendChild(extra);
+  }
+  return badge;
+}
+
 // A discreet ⏳ dot (not a text pill — see the header comment on buildItemRow
 // for why the single-line card only ever shows single-glyph indicators) for
 // an item that either was itself created while offline and hasn't reached
@@ -708,6 +887,49 @@ function buildInlineLinkIcon(item) {
   link.textContent = '🔗';
   link.addEventListener('click', (event) => event.stopPropagation());
   return link;
+}
+
+// The trailing-group figure a Compact-view row shows in place of
+// buildInlineLinkIcon above, for a price-showing list type (shopping/
+// recurring_shopping — see buildItemRow's `compact && showPrice` gate on its
+// only caller). Compact's whole point is a dense, single-line scan of what
+// still needs buying; the running cost is more useful there at a glance than
+// a link icon that's still one tap away regardless — via #item-actions-sheet's
+// own "Ouvrir le lien" entry, or a long press on the title (see buildItemRow).
+// Deliberately plain, discreet text rather than buildPriceBlock's bordered
+// pill: this sits inline with the title/kebab group on an already-packed
+// single line, not a dedicated price row of its own. Reuses
+// buildPendingPriceIcon for the same two pending states buildPriceBlock
+// itself shows, so a Compact row's price slot tells the same story as a
+// Détaillé one would while it's still resolving. Returns null when there's
+// nothing to show yet (no price, nothing pending either) — the empty slot
+// buildItemRow falls back to in that case only.
+function buildCompactPriceLabel(item) {
+  if (item.price != null) {
+    // A priced item still carries its own ✨ auto-fetch indicator here — see
+    // buildAutoPriceIcon just below, the exact same badge Détaillé shows in
+    // buildPriceBlock's status slot — rather than dropping it the moment a
+    // list switches to Compact, which otherwise silently loses the "was this
+    // typed in or found by the scraper" signal for every priced row at once.
+    // Wrapped in its own small flex group (not just appended as a sibling)
+    // so the price text and its badge read as one unit, "129,90 € ✨", and
+    // stay glued together if this row's other trailing content ever wraps.
+    const wrapper = document.createElement('span');
+    wrapper.className = 'flex shrink-0 items-center gap-1';
+    const label = document.createElement('span');
+    label.className = 'text-sm font-semibold tabular-nums text-[color:var(--tk-money-total)]';
+    label.textContent = formatEuro(lineTotal(item));
+    wrapper.appendChild(label);
+    if (item.price_auto) wrapper.appendChild(buildAutoPriceIcon(item));
+    return wrapper;
+  }
+  if (item.url && isOfflineQueuedItem(item)) {
+    return buildPendingPriceIcon('⏳', t('items.priceSyncPending'), 'text-amber-600 dark:text-amber-300');
+  }
+  if (item.url && item.priceScrapePending) {
+    return buildPendingPriceIcon('🔄', t('items.priceDetecting'), 'animate-pulse text-sky-600 dark:text-sky-300');
+  }
+  return null;
 }
 
 // Builds the small clickable ⚡ sparkle badge marking a price internal/
@@ -864,6 +1086,10 @@ function buildItemActionsMeta(item) {
     fragment.appendChild(buildMetaRow('🔥', t('items.targetPriceInfo', { target: formatEuro(item.target_price) })));
   }
 
+  if (item.labels && item.labels.length > 0) {
+    fragment.appendChild(buildMetaRow('🏷️', item.labels.join(', ')));
+  }
+
   // hasPendingItemChanges is defined in app.js; isOfflineQueuedItem (above)
   // already covers an item still carrying its temp-item-* id — this also
   // catches an already-synced item with some other write (an edit, a
@@ -950,23 +1176,40 @@ function buildItemActionsMeta(item) {
 // viewport width (see the `compact` local below), rather than keeping a
 // second row that would carry nothing but the always-reserved sync dot (and,
 // for `todo`, an empty link-icon slot on a linkless item).
-function buildItemRow(item, { showCheckbox = true, index, showQuantity = true, showPrice = true, showLink = true } = {}) {
+function buildItemRow(item, { showCheckbox = true, index, showQuantity = true, showPrice = true, showLink = true, compactView = false } = {}) {
   const li = document.createElement('li');
   const urgent = item.is_urgent && !item.done;
 
   // A "compact" row is one with neither a quantity stepper nor a price cell
-  // to show at all (`todo`/`custom` — see FIELD_VISIBILITY_BY_TYPE) — the
-  // only two things the two-row rowTop/rowBottom split below exists to give
-  // room to. Splitting a task/note row the same way as a priced one left
-  // rowBottom carrying little more than the always-reserved 8px sync dot
-  // (or, for `todo`, a 32px empty link-icon slot when the item has no url)
-  // — an almost entirely blank second row under every single task/note
+  // to show at all — either structurally (`todo`/`custom`, which have
+  // nothing to show in the first place — see FIELD_VISIBILITY_BY_TYPE) or
+  // because the user picked "Compact" in the Compact/Detailed view toggle
+  // for this list's type (`compactView`, see updateViewModeToggleButton),
+  // which hides quantity/price on the row even for a list type that
+  // structurally supports them — they stay reachable via the edit modal/
+  // actions sheet either way (see buildQuantityStepper/buildPriceBlock's own
+  // callers below, both now additionally gated on `!compact`). Either way
+  // this is the same thing rowTop/rowBottom's two-row split below exists to
+  // give room to. Splitting a task/note row the same way as a priced one
+  // left rowBottom carrying little more than the always-reserved 8px sync
+  // dot (or, for `todo`, a 32px empty link-icon slot when the item has no
+  // url) — an almost entirely blank second row under every single task/note
   // title, which is exactly the disproportionate blank space this variant
   // removes. A compact row instead folds every element onto one flex line,
   // at every viewport width, by aliasing rowBottom to rowTop below instead
   // of creating it as a second element — see .item-card--compact in
   // base.css for the accompanying min-height rule.
-  const compact = !showQuantity && !showPrice;
+  //
+  // `structurallyCompact` isolates the "todo/custom, nothing to show in the
+  // first place" half of that from the `compactView` toggle: a task/note
+  // title has no quantity stepper or price cell competing for room on its
+  // line even in Détaillé, so it's free to wrap onto as many lines as it
+  // needs instead of eliding (see the title element below) — a
+  // compactView-toggled price row (shopping/recurring_shopping) still has a
+  // price figure to show inline (see the trailing-group price/link swap
+  // below) and keeps truncating, since it's genuinely short on room.
+  const structurallyCompact = !showQuantity && !showPrice;
+  const compact = compactView || structurallyCompact;
 
   // An unfinished urgent item gets a distinctive rose border so it stands
   // out at a glance in the (already sorted-to-top, see renderItems) active
@@ -1052,9 +1295,19 @@ function buildItemRow(item, { showCheckbox = true, index, showQuantity = true, s
   // it isn't sharing the line with as many neighbors, so there's room to
   // spend on legibility instead.
   const titleSize = compact ? 'text-base' : 'text-sm';
+  // A structurally compact row (a task/note — see `structurallyCompact`
+  // above) has no quantity stepper or price figure sharing its line, so
+  // there's nothing to protect by clipping a long title down to one line —
+  // it wraps instead (`whitespace-normal break-words`, overriding Tailwind's
+  // `truncate` default), and `mr-2` gives it its own small breathing room
+  // before the sync-dot/link/kebab group that follows, on top of (not
+  // instead of) `li`'s regular flex `gap`. Every other row (including a
+  // compactView-toggled price list) keeps `truncate`, since it still has to
+  // share the line with a price figure.
+  const titleOverflowClass = structurallyCompact ? 'whitespace-normal break-words mr-2' : 'truncate';
   title.className = item.done
-    ? `min-w-0 flex-1 cursor-pointer truncate ${titleSize} font-semibold text-slate-500 line-through opacity-60`
-    : `min-w-0 flex-1 cursor-pointer truncate ${titleSize} font-semibold text-slate-900 dark:text-slate-100`;
+    ? `min-w-0 flex-1 cursor-pointer ${titleOverflowClass} ${titleSize} font-semibold text-slate-500 line-through opacity-60`
+    : `min-w-0 flex-1 cursor-pointer ${titleOverflowClass} ${titleSize} font-semibold text-slate-900 dark:text-slate-100`;
   // When the stepper below is shown, it's the canonical place quantity is
   // displayed/edited, so the title stays plain; otherwise (custom lists,
   // where quantity is hidden entirely) fall back to the old "title × N"
@@ -1062,6 +1315,17 @@ function buildItemRow(item, { showCheckbox = true, index, showQuantity = true, s
   title.textContent = !showQuantity && item.quantity > 1 ? `${item.title} × ${item.quantity}` : item.title;
   title.addEventListener('click', () => openItemActionsSheet(item));
   rowTop.appendChild(title);
+
+  // Compact view's whole point is a single line with nothing but checkbox +
+  // title + a label indicator + actions — see buildItemRow's header comment
+  // — so a compact row gets buildLabelMiniBadge's small colored-dot
+  // indicator here, right next to the title, instead of the full chip row
+  // buildLabelChipsRow renders for a non-compact row (appended further down,
+  // once rowTop/rowBottom are back together under `li`).
+  if (compact) {
+    const miniBadge = buildLabelMiniBadge(item);
+    if (miniBadge) rowTop.appendChild(miniBadge);
+  }
 
   // Quantity/price/trailing-group are appended before edit/delete/kebab
   // below — a change from this row's very first cut, which built
@@ -1079,12 +1343,16 @@ function buildItemRow(item, { showCheckbox = true, index, showQuantity = true, s
   // within that column), and a `trailing` wrapper grouping the sync dot with
   // the link icon (right, `auto`). showQuantity and showPrice are always
   // equal in practice (see buildItemRow's header comment), so this is
-  // always exactly three children, matching the column template.
-  if (showQuantity) {
+  // always exactly three children, matching the column template. Both are
+  // additionally gated on `!compact` now — a list type that structurally has
+  // a quantity/price (showQuantity/showPrice true) but is being rendered
+  // compact via the user's own view-mode choice must still hide both, the
+  // same as a structurally compact `todo`/`custom` row already does.
+  if (showQuantity && !compact) {
     rowBottom.appendChild(buildQuantityStepper(item));
   }
 
-  const priceBlock = buildPriceBlock(item, { showPrice });
+  const priceBlock = !compact ? buildPriceBlock(item, { showPrice }) : null;
   if (priceBlock) rowBottom.appendChild(priceBlock);
 
   const trailing = document.createElement('div');
@@ -1102,7 +1370,22 @@ function buildItemRow(item, { showCheckbox = true, index, showQuantity = true, s
   );
 
   const hasLink = Boolean(item.url && isSafeHttpUrl(item.url));
-  if (showLink) {
+  // A Compact row for a price-showing list type (shopping/recurring_shopping
+  // — the only types where `showPrice` can be true at all while `compact` is
+  // also true, since that combination only arises from the compactView
+  // toggle, never structurally — see `structurallyCompact` above) swaps the
+  // link icon for buildCompactPriceLabel's discreet price figure instead:
+  // Compact's whole point is a dense, at-a-glance list of what's still left
+  // to buy, and the running cost earns that slot more than a link that's
+  // still one tap away regardless, via #item-actions-sheet's own "Ouvrir le
+  // lien" entry (or a long press on the title, kept below either way). Every
+  // other row (Détaillé price lists, and compact `todo`/`custom`, which have
+  // no price to show) keeps the plain link-icon-or-empty-slot behavior.
+  if (compact && showPrice) {
+    const priceLabel = buildCompactPriceLabel(item);
+    if (priceLabel) trailing.appendChild(priceLabel);
+    if (hasLink) attachLongPress(title, () => openItemActionsSheet(item, { focusLink: true }));
+  } else if (showLink) {
     if (hasLink) {
       const linkIcon = buildInlineLinkIcon(item);
       trailing.appendChild(linkIcon);
@@ -1154,7 +1437,28 @@ function buildItemRow(item, { showCheckbox = true, index, showQuantity = true, s
   rowTop.appendChild(kebabBtn);
 
   if (!compact) {
-    li.appendChild(rowTop);
+    // A non-compact row's label chips (buildLabelChipsRow) render "under the
+    // title" — rowTop itself is a single horizontal line (checkbox/
+    // thumbnail/title/actions/kebab), so getting a chip row to sit below
+    // just that line, rather than sharing `li`'s own two-column
+    // flex-row-from-`sm` layout as a disruptive third sibling, needs one
+    // extra wrapper: `topGroup`, a small flex-col stacking rowTop above the
+    // chips, taking over rowTop's own `sm:flex-1` sizing so it — not rowTop
+    // alone — is what claims the leftover width next to rowBottom from `sm`
+    // up. Only built when there's actually a chip row to show, so an item
+    // with no labels renders byte-for-byte the same DOM as before this
+    // feature existed.
+    const chipsRow = buildLabelChipsRow(item);
+    if (chipsRow) {
+      rowTop.className = 'item-card__row-top flex min-w-0 items-center gap-2';
+      const topGroup = document.createElement('div');
+      topGroup.className = 'flex min-w-0 flex-col gap-1 sm:flex-1';
+      topGroup.appendChild(rowTop);
+      topGroup.appendChild(chipsRow);
+      li.appendChild(topGroup);
+    } else {
+      li.appendChild(rowTop);
+    }
     li.appendChild(rowBottom);
   }
 
@@ -1164,9 +1468,10 @@ function buildItemRow(item, { showCheckbox = true, index, showQuantity = true, s
   // as the checkbox/trash button above already do. Touch-only and a no-op
   // on a device with no touchscreen — see that file's own header comment.
   // It moves every direct child of `li` into its own foreground wrapper —
-  // rowTop/rowBottom themselves for a non-compact row, or every element
-  // appended straight onto `li` for a compact one — so it needs no changes
-  // for either shape.
+  // rowTop and rowBottom (or, when a label chip row pushed rowTop into its
+  // own topGroup wrapper above, topGroup and rowBottom) for a non-compact
+  // row, or every element appended straight onto `li` for a compact one —
+  // so it needs no changes for any of those shapes.
   attachItemSwipeGestures(li, item, { canToggleDone: showCheckbox });
 
   return li;
@@ -1222,6 +1527,10 @@ function renderItems() {
 
   const visibility = fieldVisibilityFor(list.type);
   if (visibility.price) updateFinanceSummary(items);
+  // getViewMode is defined above — the user's own Compact/Detailed choice
+  // for this list's type, re-read on every render so switching the toggle
+  // (or reopening a differently-typed list) is reflected immediately.
+  const compactView = getViewMode(list.type) === 'compact';
 
   listEls.itemsActive.replaceChildren();
   if (items.length === 0) {
@@ -1237,6 +1546,7 @@ function renderItems() {
           showQuantity: visibility.quantity,
           showPrice: visibility.price,
           showLink: visibility.url,
+          compactView,
         })
       );
     });
@@ -1256,6 +1566,7 @@ function renderItems() {
         showQuantity: visibility.quantity,
         showPrice: visibility.price,
         showLink: visibility.url,
+        compactView,
       })
     );
   }
@@ -1869,6 +2180,20 @@ listEls.shareListButton.addEventListener('click', () => {
 // (on shopping lists) price via PATCH, without touching its done/position.
 // ---------------------------------------------------------------------------
 
+// Read-only chip preview shown in the edit-item modal, next to its "🏷️ Gérer
+// les labels" button — reuses buildLabelChipsRow's own chip styling so the
+// preview matches exactly what the item's row itself shows in Détaillé view.
+// Falls back to a plain "Aucun label" line when there are none.
+function renderEditItemLabelsPreview(item) {
+  const chipsRow = buildLabelChipsRow(item);
+  if (chipsRow) {
+    listEls.editItemLabelsPreview.replaceChildren(...chipsRow.children);
+  } else {
+    listEls.editItemLabelsPreview.replaceChildren();
+    listEls.editItemLabelsPreview.textContent = t('modals.editItem.noLabels');
+  }
+}
+
 function openEditItemModal(item) {
   editingItem = item;
   listEls.editItemTitle.value = item.title;
@@ -1879,10 +2204,21 @@ function openEditItemModal(item) {
   listEls.editItemTargetMonth.value = item.target_month || '';
   listEls.editItemRecurrence.value = item.recurrence_rule || '';
   listEls.editItemUrgent.checked = Boolean(item.is_urgent);
+  renderEditItemLabelsPreview(item);
   listEls.editItemModal.hidden = false;
   document.body.classList.add('overflow-hidden');
   listEls.editItemTitle.focus();
 }
+
+// Closes the edit modal first, then opens the label management sheet for
+// the same item — the same sequential close/open pattern
+// itemActionsEditButton already uses, so at most one modal/sheet is ever
+// open at once.
+listEls.editItemManageLabelsButton.addEventListener('click', () => {
+  const item = editingItem;
+  closeEditItemModal();
+  if (item) openLabelManageSheet(item);
+});
 
 // Editing the price field by hand is what "modifier en un clic" means in
 // practice — as soon as the user touches it, the auto-detected badge no
@@ -1959,6 +2295,12 @@ listEls.itemActionsEditButton.addEventListener('click', () => {
   if (item) openEditItemModal(item);
 });
 
+listEls.itemActionsLabelsButton.addEventListener('click', () => {
+  const item = itemActionsSheetItem;
+  closeItemActionsSheet();
+  if (item) openLabelManageSheet(item);
+});
+
 listEls.itemActionsOpenLinkButton.addEventListener('click', () => {
   const item = itemActionsSheetItem;
   closeItemActionsSheet();
@@ -1987,6 +2329,176 @@ listEls.itemActionsDeleteButton.addEventListener('click', () => {
   const item = itemActionsSheetItem;
   closeItemActionsSheet();
   if (item) removeItem(item);
+});
+
+// ---------------------------------------------------------------------------
+// Label management bottom sheet (#label-manage-sheet) — a search/create
+// input plus a list of toggleable chips, opened from either
+// #item-actions-sheet's "Gérer les labels" button or the edit-item modal's
+// own one (both close their own modal/sheet first — see those two click
+// handlers above). Every chip tap commits immediately (commitItemLabels,
+// the same optimistic-with-rollback + coalesced-in-flight-request pattern
+// changeQuantity/toggleUrgent already use above) — there is no separate
+// "save" step, matching the "d'un simple tap" requirement.
+// ---------------------------------------------------------------------------
+
+// Same coalescing pattern as pendingQuantityUpdates/pendingUrgentUpdates
+// above: tracks the last server-confirmed label set plus an in-flight
+// request id per item, so a slower response from an earlier tap can never
+// clobber a set the user has since moved past with further taps.
+const pendingLabelUpdates = new Map();
+
+function commitItemLabels(item, newLabels) {
+  hideError();
+
+  const pending = pendingLabelUpdates.get(item);
+  const committedLabels = pending ? pending.committedLabels : item.labels || [];
+  const requestId = Symbol('labels-update');
+
+  item.labels = newLabels;
+  pendingLabelUpdates.set(item, { committedLabels, requestId });
+  renderItems();
+  if (labelManageItem === item) renderLabelManageSheetChips();
+
+  (async () => {
+    try {
+      const updated = await apiRequest(`/items/${item.id}`, { method: 'PATCH', body: JSON.stringify({ labels: newLabels }) });
+      if (pendingLabelUpdates.get(item)?.requestId !== requestId) return; // superseded by a newer tap
+      Object.assign(item, updated);
+      pendingLabelUpdates.delete(item);
+    } catch (err) {
+      if (pendingLabelUpdates.get(item)?.requestId !== requestId) return;
+      item.labels = committedLabels;
+      pendingLabelUpdates.delete(item);
+      if (!isNetworkError(err)) showError(err.message);
+    } finally {
+      renderItems();
+      if (labelManageItem === item) renderLabelManageSheetChips();
+      if (editingItem === item) renderEditItemLabelsPreview(item);
+    }
+    await refreshPendingBadge();
+  })();
+}
+
+function toggleItemLabel(item, label) {
+  const current = item.labels || [];
+  const has = current.some((l) => l.toLowerCase() === label.toLowerCase());
+  const next = has ? current.filter((l) => l.toLowerCase() !== label.toLowerCase()) : [...current, label];
+  commitItemLabels(item, next);
+}
+
+// Every distinct label used anywhere in the currently open list, deduped
+// case-insensitively (keeping the first casing seen) and sorted — the
+// autocomplete suggestions offered in the sheet, independent of which item
+// is currently being edited (an item's own already-applied labels are
+// always included, since they came from somewhere in this same list).
+function collectListLabelSuggestions() {
+  const seen = new Map();
+  for (const item of (state.currentList && state.currentList.items) || []) {
+    for (const label of item.labels || []) {
+      const key = label.toLowerCase();
+      if (!seen.has(key)) seen.set(key, label);
+    }
+  }
+  return Array.from(seen.values()).sort((a, b) => a.localeCompare(b));
+}
+
+function buildLabelToggleChip(item, label, isSelected) {
+  const chip = document.createElement('button');
+  chip.type = 'button';
+  chip.className = isSelected
+    ? `flex items-center gap-1 rounded-full px-3 py-1.5 text-sm font-semibold ring-2 ring-offset-1 ring-offset-slate-100 dark:ring-offset-slate-800 ${labelChipClasses(label)}`
+    : 'flex items-center gap-1 rounded-full bg-slate-200/70 dark:bg-slate-700/50 px-3 py-1.5 text-sm font-medium text-slate-600 dark:text-slate-300 hover:bg-slate-300 dark:hover:bg-slate-600';
+  chip.textContent = isSelected ? `✓ ${label}` : label;
+  chip.setAttribute('aria-pressed', String(isSelected));
+  chip.addEventListener('click', () => toggleItemLabel(item, label));
+  return chip;
+}
+
+function buildCreateLabelChip(item, text) {
+  const chip = document.createElement('button');
+  chip.type = 'button';
+  chip.className =
+    'flex items-center gap-1 rounded-full border border-dashed border-sky-400 dark:border-sky-500 px-3 py-1.5 text-sm font-medium text-sky-600 dark:text-sky-300 hover:bg-sky-500/10';
+  chip.textContent = t('modals.labelManage.createOption', { label: text });
+  chip.addEventListener('click', () => {
+    const next = [...(item.labels || []), text];
+    listEls.labelManageSearch.value = '';
+    commitItemLabels(item, next);
+  });
+  return chip;
+}
+
+function renderLabelManageSheetChips() {
+  if (!labelManageItem) return;
+  const item = labelManageItem;
+  const query = listEls.labelManageSearch.value.trim();
+  const queryLower = query.toLowerCase();
+  const selected = new Set((item.labels || []).map((l) => l.toLowerCase()));
+  const suggestions = collectListLabelSuggestions();
+  const filtered = query ? suggestions.filter((l) => l.toLowerCase().includes(queryLower)) : suggestions;
+
+  listEls.labelManageChips.replaceChildren();
+  if (filtered.length === 0 && !query) {
+    const empty = document.createElement('p');
+    empty.className = 'w-full px-1 py-2 text-sm text-slate-500 dark:text-slate-400';
+    empty.textContent = t('modals.labelManage.empty');
+    listEls.labelManageChips.appendChild(empty);
+  }
+  for (const label of filtered) {
+    listEls.labelManageChips.appendChild(buildLabelToggleChip(item, label, selected.has(label.toLowerCase())));
+  }
+  // Offer creating a brand-new label only when the typed text doesn't
+  // already match an existing suggestion or one of the item's own labels
+  // (case-insensitively) — validated client-side the same way
+  // internal/validate.Labels validates server-side (via the input's own
+  // maxlength="30"), so a reject here never surprises the user with a 400.
+  const exists = suggestions.some((l) => l.toLowerCase() === queryLower) || selected.has(queryLower);
+  if (query && !exists) {
+    listEls.labelManageChips.appendChild(buildCreateLabelChip(item, query));
+  }
+}
+
+function openLabelManageSheet(item) {
+  labelManageItem = item;
+  listEls.labelManageSheetTitle.textContent = item.title;
+  listEls.labelManageSearch.value = '';
+  renderLabelManageSheetChips();
+  listEls.labelManageSheet.hidden = false;
+  document.body.classList.add('overflow-hidden');
+  listEls.labelManageSearch.focus();
+}
+
+function closeLabelManageSheet() {
+  labelManageItem = null;
+  listEls.labelManageSheet.hidden = true;
+  document.body.classList.remove('overflow-hidden');
+}
+
+listEls.closeLabelManageSheetButton.addEventListener('click', closeLabelManageSheet);
+listEls.labelManageSheet.addEventListener('click', (event) => {
+  if (event.target === listEls.labelManageSheet) closeLabelManageSheet();
+});
+document.addEventListener('keydown', (event) => {
+  if (event.key === 'Escape' && !listEls.labelManageSheet.hidden) closeLabelManageSheet();
+});
+
+listEls.labelManageSearch.addEventListener('input', renderLabelManageSheetChips);
+listEls.labelManageSearch.addEventListener('keydown', (event) => {
+  if (event.key !== 'Enter') return;
+  event.preventDefault();
+  if (!labelManageItem) return;
+  const query = listEls.labelManageSearch.value.trim();
+  if (!query) return;
+  const queryLower = query.toLowerCase();
+  const alreadySelected = (labelManageItem.labels || []).some((l) => l.toLowerCase() === queryLower);
+  if (alreadySelected) return;
+  // Prefer an existing suggestion's own casing over whatever the user just
+  // typed, so pressing Enter on "bio" adds the list's existing "Bio" rather
+  // than a second, differently-cased near-duplicate.
+  const canonical = collectListLabelSuggestions().find((l) => l.toLowerCase() === queryLower) || query;
+  listEls.labelManageSearch.value = '';
+  toggleItemLabel(labelManageItem, canonical);
 });
 
 listEls.editItemForm.addEventListener('submit', async (event) => {

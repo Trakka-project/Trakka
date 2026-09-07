@@ -130,7 +130,10 @@
     "decreaseQuantityAriaLabel": "Diminuer la quantité de {title}",
     "quantityForItemAriaLabel": "Quantité de {title}",
     "increaseQuantityAriaLabel": "Augmenter la quantité de {title}",
-    "priceValidationError": "Le prix doit être un nombre positif."
+    "priceValidationError": "Le prix doit être un nombre positif.",
+    "viewModeToggleAriaLabelToDetailed": "Passer en affichage détaillé",
+    "viewModeToggleAriaLabelToCompact": "Passer en affichage compact",
+    "labelsBadgeAriaLabel": "Labels : {labels}"
   },
   "planning": {
     "tabTitle": "Budget & Prévisions",
@@ -255,6 +258,7 @@
     },
     "itemActions": {
       "edit": "Modifier l'article",
+      "manageLabels": "Gérer les labels",
       "openLink": "Ouvrir le lien",
       "copyLink": "Copier le lien",
       "shareLink": "Partager le lien",
@@ -281,7 +285,16 @@
       "recurrenceLabel": "Récurrence",
       "urgentLabel": "Marquer comme urgent",
       "urgentHint": "Ex : Papier toilette épuisé",
+      "labelsLabel": "Labels",
+      "manageLabelsButton": "🏷️ Gérer les labels",
+      "noLabels": "Aucun label",
       "submit": "Enregistrer"
+    },
+    "labelManage": {
+      "searchPlaceholder": "Rechercher ou créer un label…",
+      "searchAriaLabel": "Rechercher ou créer un label",
+      "empty": "Aucun label pour l'instant. Tapez pour en créer un.",
+      "createOption": "+ Créer « {label} »"
     },
     "imagePreview": {
       "ariaLabel": "Aperçu de l'image de l'article",
