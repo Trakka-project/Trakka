@@ -889,6 +889,49 @@ function buildInlineLinkIcon(item) {
   return link;
 }
 
+// The trailing-group figure a Compact-view row shows in place of
+// buildInlineLinkIcon above, for a price-showing list type (shopping/
+// recurring_shopping — see buildItemRow's `compact && showPrice` gate on its
+// only caller). Compact's whole point is a dense, single-line scan of what
+// still needs buying; the running cost is more useful there at a glance than
+// a link icon that's still one tap away regardless — via #item-actions-sheet's
+// own "Ouvrir le lien" entry, or a long press on the title (see buildItemRow).
+// Deliberately plain, discreet text rather than buildPriceBlock's bordered
+// pill: this sits inline with the title/kebab group on an already-packed
+// single line, not a dedicated price row of its own. Reuses
+// buildPendingPriceIcon for the same two pending states buildPriceBlock
+// itself shows, so a Compact row's price slot tells the same story as a
+// Détaillé one would while it's still resolving. Returns null when there's
+// nothing to show yet (no price, nothing pending either) — the empty slot
+// buildItemRow falls back to in that case only.
+function buildCompactPriceLabel(item) {
+  if (item.price != null) {
+    // A priced item still carries its own ✨ auto-fetch indicator here — see
+    // buildAutoPriceIcon just below, the exact same badge Détaillé shows in
+    // buildPriceBlock's status slot — rather than dropping it the moment a
+    // list switches to Compact, which otherwise silently loses the "was this
+    // typed in or found by the scraper" signal for every priced row at once.
+    // Wrapped in its own small flex group (not just appended as a sibling)
+    // so the price text and its badge read as one unit, "129,90 € ✨", and
+    // stay glued together if this row's other trailing content ever wraps.
+    const wrapper = document.createElement('span');
+    wrapper.className = 'flex shrink-0 items-center gap-1';
+    const label = document.createElement('span');
+    label.className = 'text-sm font-semibold tabular-nums text-[color:var(--tk-money-total)]';
+    label.textContent = formatEuro(lineTotal(item));
+    wrapper.appendChild(label);
+    if (item.price_auto) wrapper.appendChild(buildAutoPriceIcon(item));
+    return wrapper;
+  }
+  if (item.url && isOfflineQueuedItem(item)) {
+    return buildPendingPriceIcon('⏳', t('items.priceSyncPending'), 'text-amber-600 dark:text-amber-300');
+  }
+  if (item.url && item.priceScrapePending) {
+    return buildPendingPriceIcon('🔄', t('items.priceDetecting'), 'animate-pulse text-sky-600 dark:text-sky-300');
+  }
+  return null;
+}
+
 // Builds the small clickable ⚡ sparkle badge marking a price internal/
 // scraper filled in automatically rather than the user having typed it in.
 // Clicking it opens the same edit modal as the actions sheet's "Modifier"
@@ -1156,7 +1199,17 @@ function buildItemRow(item, { showCheckbox = true, index, showQuantity = true, s
   // at every viewport width, by aliasing rowBottom to rowTop below instead
   // of creating it as a second element — see .item-card--compact in
   // base.css for the accompanying min-height rule.
-  const compact = compactView || (!showQuantity && !showPrice);
+  //
+  // `structurallyCompact` isolates the "todo/custom, nothing to show in the
+  // first place" half of that from the `compactView` toggle: a task/note
+  // title has no quantity stepper or price cell competing for room on its
+  // line even in Détaillé, so it's free to wrap onto as many lines as it
+  // needs instead of eliding (see the title element below) — a
+  // compactView-toggled price row (shopping/recurring_shopping) still has a
+  // price figure to show inline (see the trailing-group price/link swap
+  // below) and keeps truncating, since it's genuinely short on room.
+  const structurallyCompact = !showQuantity && !showPrice;
+  const compact = compactView || structurallyCompact;
 
   // An unfinished urgent item gets a distinctive rose border so it stands
   // out at a glance in the (already sorted-to-top, see renderItems) active
@@ -1242,9 +1295,19 @@ function buildItemRow(item, { showCheckbox = true, index, showQuantity = true, s
   // it isn't sharing the line with as many neighbors, so there's room to
   // spend on legibility instead.
   const titleSize = compact ? 'text-base' : 'text-sm';
+  // A structurally compact row (a task/note — see `structurallyCompact`
+  // above) has no quantity stepper or price figure sharing its line, so
+  // there's nothing to protect by clipping a long title down to one line —
+  // it wraps instead (`whitespace-normal break-words`, overriding Tailwind's
+  // `truncate` default), and `mr-2` gives it its own small breathing room
+  // before the sync-dot/link/kebab group that follows, on top of (not
+  // instead of) `li`'s regular flex `gap`. Every other row (including a
+  // compactView-toggled price list) keeps `truncate`, since it still has to
+  // share the line with a price figure.
+  const titleOverflowClass = structurallyCompact ? 'whitespace-normal break-words mr-2' : 'truncate';
   title.className = item.done
-    ? `min-w-0 flex-1 cursor-pointer truncate ${titleSize} font-semibold text-slate-500 line-through opacity-60`
-    : `min-w-0 flex-1 cursor-pointer truncate ${titleSize} font-semibold text-slate-900 dark:text-slate-100`;
+    ? `min-w-0 flex-1 cursor-pointer ${titleOverflowClass} ${titleSize} font-semibold text-slate-500 line-through opacity-60`
+    : `min-w-0 flex-1 cursor-pointer ${titleOverflowClass} ${titleSize} font-semibold text-slate-900 dark:text-slate-100`;
   // When the stepper below is shown, it's the canonical place quantity is
   // displayed/edited, so the title stays plain; otherwise (custom lists,
   // where quantity is hidden entirely) fall back to the old "title × N"
@@ -1307,7 +1370,22 @@ function buildItemRow(item, { showCheckbox = true, index, showQuantity = true, s
   );
 
   const hasLink = Boolean(item.url && isSafeHttpUrl(item.url));
-  if (showLink) {
+  // A Compact row for a price-showing list type (shopping/recurring_shopping
+  // — the only types where `showPrice` can be true at all while `compact` is
+  // also true, since that combination only arises from the compactView
+  // toggle, never structurally — see `structurallyCompact` above) swaps the
+  // link icon for buildCompactPriceLabel's discreet price figure instead:
+  // Compact's whole point is a dense, at-a-glance list of what's still left
+  // to buy, and the running cost earns that slot more than a link that's
+  // still one tap away regardless, via #item-actions-sheet's own "Ouvrir le
+  // lien" entry (or a long press on the title, kept below either way). Every
+  // other row (Détaillé price lists, and compact `todo`/`custom`, which have
+  // no price to show) keeps the plain link-icon-or-empty-slot behavior.
+  if (compact && showPrice) {
+    const priceLabel = buildCompactPriceLabel(item);
+    if (priceLabel) trailing.appendChild(priceLabel);
+    if (hasLink) attachLongPress(title, () => openItemActionsSheet(item, { focusLink: true }));
+  } else if (showLink) {
     if (hasLink) {
       const linkIcon = buildInlineLinkIcon(item);
       trailing.appendChild(linkIcon);

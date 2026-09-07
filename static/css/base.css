@@ -309,20 +309,35 @@ body {
   margin: 0;
 }
 
-/* Compact item rows — a task (`todo`) or note (`custom`) list, i.e. one
-   whose FIELD_VISIBILITY_BY_TYPE hides both quantity and price
-   (static/js/list_view.js's buildItemRow, `.item-card--compact`). Every
-   other list type still splits into the two-row rowTop/rowBottom layout
+/* Compact item rows — either structurally (a task `todo` or note `custom`
+   list, i.e. one whose FIELD_VISIBILITY_BY_TYPE hides both quantity and
+   price) or because the user picked "Compact" in the Compact/Detailed view
+   toggle for a list type that otherwise shows both (`shopping`/
+   `recurring_shopping` — see `structurallyCompact`/`compactView` in
+   static/js/list_view.js's buildItemRow, `.item-card--compact`). Every
+   other list row still splits into the two-row rowTop/rowBottom layout
    described above, since a quantity stepper and a price cell genuinely need
    their own line on a narrow screen; a compact row has nothing left to put
-   on a second line once those two are hidden, so buildItemRow folds
-   everything — checkbox, title, the sync-status dot, the link icon,
-   edit/delete/kebab — onto one flex line instead, at every viewport width,
-   rather than reserving a second, almost entirely empty row under every
-   single task/note (previously just an 8px sync dot, or a 32px empty
-   link-icon slot, was enough on its own to add a whole extra ~40px-tall
-   blank row below a two-word task title — the "grand rectangle blanc
-   disproportionné" this variant exists to remove). Padding/gap/font-size/
+   on a second line once those two are hidden (or hidden for this view), so
+   buildItemRow folds everything onto one flex line instead, at every
+   viewport width, rather than reserving a second, almost entirely empty row
+   under every single task/note (previously just an 8px sync dot, or a 32px
+   empty link-icon slot, was enough on its own to add a whole extra
+   ~40px-tall blank row below a two-word task title — the "grand rectangle
+   blanc disproportionné" this variant exists to remove). What sits in that
+   one line's trailing slot differs by list type: a structurally compact
+   task/note row keeps the sync-status dot and the inline 🔗 link icon; a
+   compactView-toggled shopping/recurring_shopping row swaps that link icon
+   for a discreet price figure instead (buildCompactPriceLabel) — Compact's
+   whole point there is a dense, at-a-glance running cost, with the link
+   itself still one tap away via #item-actions-sheet's "Ouvrir le lien" entry
+   or a long press on the title. A structurally compact row's title also
+   drops truncation in favor of wrapping onto as many lines as it needs
+   (`whitespace-normal break-words`, buildItemRow's own `titleOverflowClass`)
+   — with no quantity/price sharing its line, there's nothing left to protect
+   by eliding a long task/note sentence down to one line; every other row
+   (including a compactView-toggled price row, which still shares its line
+   with that price figure) keeps `truncate`. Padding/gap/font-size/
    checkbox-size are all expressed as ordinary Tailwind utility classes
    directly in buildItemRow (consistent with how every other conditional
    style in that function is already written) rather than fought over here;
