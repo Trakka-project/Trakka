@@ -132,7 +132,8 @@
     "priceValidationError": "Le prix doit être un nombre positif.",
     "viewModeToggleAriaLabelToDetailed": "Passer en affichage détaillé",
     "viewModeToggleAriaLabelToCompact": "Passer en affichage compact",
-    "labelsBadgeAriaLabel": "Labels : {labels}"
+    "labelsBadgeAriaLabel": "Labels : {labels}",
+    "sortItemsAriaLabel": "Trier les articles"
   },
   "planning": {
     "tabTitle": "Budget & Prévisions",
@@ -270,6 +271,15 @@
       "unpin": "Retirer du tableau de bord",
       "pinSpace": "Épingler l'espace sur mon tableau de bord",
       "unpinSpace": "Retirer l'espace de mon tableau de bord"
+    },
+    "sortItems": {
+      "title": "Trier les articles",
+      "manual": "Ordre par défaut",
+      "nameAsc": "Nom (A → Z)",
+      "nameDesc": "Nom (Z → A)",
+      "priceAsc": "Prix (croissant)",
+      "priceDesc": "Prix (décroissant)",
+      "label": "Label"
     },
     "editItem": {
       "title": "Modifier l'article",

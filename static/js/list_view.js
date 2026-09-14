@@ -15,6 +15,9 @@ const listEls = {
   backButton: document.getElementById('back-button'),
   editListButton: document.getElementById('edit-list-button'),
   shareListButton: document.getElementById('share-list-button'),
+  sortItemsButton: document.getElementById('sort-items-button'),
+  sortItemsSheet: document.getElementById('sort-items-sheet'),
+  closeSortItemsSheetButton: document.getElementById('close-sort-items-sheet-button'),
   viewModeToggleButton: document.getElementById('view-mode-toggle-button'),
   financeSummary: document.getElementById('finance-summary'),
   financeTotal: document.getElementById('finance-total'),
@@ -492,6 +495,147 @@ listEls.viewModeToggleButton.addEventListener('click', () => {
   setViewMode(type, getViewMode(type) === 'compact' ? 'detailed' : 'compact');
   renderItems();
 });
+
+// ---------------------------------------------------------------------------
+// Dynamic item sort — a per-list display preference (persisted per list
+// *id*, not per list type like the Compact/Detailed toggle above, since two
+// lists of the same type may well want a different order): "Ordre par
+// défaut" keeps this list's original behavior — items in their server-
+// assigned position, with unfinished urgent items still floated to the top,
+// see renderItems below — while the other four modes ignore urgency
+// entirely and sort every row purely by name or price, in whichever
+// direction was picked. Applied separately to the active and done sections
+// in renderItems, so checking/unchecking an item still moves it between the
+// two exactly as before — only the order *within* each section changes.
+// Entirely client-side (no request to the server, no change to any item's
+// stored `position`), so switching modes is instant and never touches the
+// offline sync queue.
+// ---------------------------------------------------------------------------
+
+const SORT_MODE_STORAGE_PREFIX = 'trakka:sortMode:';
+const DEFAULT_SORT_MODE = 'manual';
+
+function getSortMode(listId) {
+  try {
+    return localStorage.getItem(SORT_MODE_STORAGE_PREFIX + listId) || DEFAULT_SORT_MODE;
+  } catch {
+    return DEFAULT_SORT_MODE; // localStorage unavailable (private mode, quota) — fall back to the default.
+  }
+}
+
+function setSortMode(listId, mode) {
+  try {
+    localStorage.setItem(SORT_MODE_STORAGE_PREFIX + listId, mode);
+  } catch {
+    // Same as above: the choice just won't persist across reloads, not fatal.
+  }
+}
+
+// The label-sort grouping key for one item: every label it carries, sorted
+// alphabetically and joined so two items sharing the same *set* of labels
+// (added in whatever order) sort adjacently, lowercased so casing alone
+// never splits an otherwise-identical group into two. `null` (not a string)
+// for an unlabeled item, so applySortMode's comparator below can send it to
+// the bottom explicitly instead of relying on how a sentinel string happens
+// to collate.
+function labelSortKey(item) {
+  const labels = item.labels || [];
+  if (labels.length === 0) return null;
+  return labels.slice().sort((a, b) => a.localeCompare(b)).join(',').toLowerCase();
+}
+
+// Sorts `items` (a fresh array — every caller in renderItems passes its own
+// `.filter()` result, never state.currentList.items itself) in place
+// according to `mode`, and returns it. Array.prototype.sort is stable, so
+// within any tie (equal names, equal prices, both unlabeled, ...) items keep
+// their existing relative order rather than being reshuffled — the same
+// stable, position-preserving guarantee the pre-existing urgent-first sort
+// already relies on. An item missing the field being sorted on (no price,
+// no labels) always sorts after every item that has one, in *either*
+// direction: "trier par prix" on an item with no price at all is
+// meaningless, so it consistently drops to the bottom rather than jumping to
+// the top the moment "décroissant" is picked.
+function applySortMode(items, mode) {
+  switch (mode) {
+    case 'name-asc':
+      return items.sort((a, b) => a.title.localeCompare(b.title));
+    case 'name-desc':
+      return items.sort((a, b) => b.title.localeCompare(a.title));
+    case 'price-asc':
+      return items.sort((a, b) => (a.price ?? Infinity) - (b.price ?? Infinity));
+    case 'price-desc':
+      return items.sort((a, b) => (b.price ?? -Infinity) - (a.price ?? -Infinity));
+    case 'label':
+      return items.sort((a, b) => {
+        const ka = labelSortKey(a);
+        const kb = labelSortKey(b);
+        if (ka === null && kb === null) return 0;
+        if (ka === null) return 1;
+        if (kb === null) return -1;
+        return ka.localeCompare(kb);
+      });
+    default:
+      return items; // 'manual'/unrecognized — leave as-is, caller applies its own ordering.
+  }
+}
+
+// Reflects whether a non-default sort is active for the current list on
+// #sort-items-button — the same "highlighted while active" treatment
+// #quick-add-toggle already gives itself while its advanced panel is open —
+// a discreet, at-a-glance signal that the list isn't showing its ordinary
+// order without having to open the sheet to check. Called from renderItems
+// on every render, same as updateViewModeToggleButton.
+function updateSortButtonHighlight(listId) {
+  const active = getSortMode(listId) !== DEFAULT_SORT_MODE;
+  listEls.sortItemsButton.classList.toggle('bg-sky-500/10', active);
+  listEls.sortItemsButton.classList.toggle('text-sky-600', active);
+  listEls.sortItemsButton.classList.toggle('dark:text-sky-400', active);
+}
+
+const sortOptionButtons = document.querySelectorAll('#sort-items-sheet [data-sort-mode]');
+
+// Toggles the ✓ next to whichever row matches the current list's sort mode
+// — called right before the sheet is shown, so it can never go stale while
+// the sheet itself is closed (unlike the header button's own highlight,
+// which needs to stay current on every render, this only matters at the
+// moment the sheet opens).
+function updateSortOptionChecks(listId) {
+  const mode = getSortMode(listId);
+  for (const button of sortOptionButtons) {
+    const check = button.querySelector('.sort-option-check');
+    if (check) check.hidden = button.dataset.sortMode !== mode;
+  }
+}
+
+function openSortItemsSheet() {
+  if (!state.currentList) return;
+  updateSortOptionChecks(state.currentList.id);
+  listEls.sortItemsSheet.hidden = false;
+  document.body.classList.add('overflow-hidden');
+}
+
+function closeSortItemsSheet() {
+  listEls.sortItemsSheet.hidden = true;
+  document.body.classList.remove('overflow-hidden');
+}
+
+listEls.sortItemsButton.addEventListener('click', openSortItemsSheet);
+listEls.closeSortItemsSheetButton.addEventListener('click', closeSortItemsSheet);
+listEls.sortItemsSheet.addEventListener('click', (event) => {
+  if (event.target === listEls.sortItemsSheet) closeSortItemsSheet();
+});
+document.addEventListener('keydown', (event) => {
+  if (event.key === 'Escape' && !listEls.sortItemsSheet.hidden) closeSortItemsSheet();
+});
+
+for (const button of sortOptionButtons) {
+  button.addEventListener('click', () => {
+    if (!state.currentList) return;
+    setSortMode(state.currentList.id, button.dataset.sortMode);
+    closeSortItemsSheet();
+    renderItems();
+  });
+}
 
 // Expands/collapses the quick-add bar's advanced panel (URL/quantity/price/
 // target month/recurrence/urgent) — collapsed is the default "épuré" state;
@@ -1498,6 +1642,7 @@ function renderItems() {
   // fixed icon for its type, same as every list card on the dashboard.
   listEls.itemsHeading.textContent = `${listIcon(list)} ${list.name} (${typeLabel(list.type)})`;
   applyListTypeVisibility(list.type);
+  updateSortButtonHighlight(list.id);
 
   // hasPendingListChanges is defined in app.js — see the "Network status +
   // offline sync indicators" section there. Re-checked on every render
@@ -1519,11 +1664,23 @@ function renderItems() {
   // kept in sync here since every mutation (toggleDone, add, delete, the
   // swipe gestures in gestures.js) re-runs this whole function.
   listEls.itemsRemainingCount.textContent = remainingItemsLabel(items);
-  // Array.prototype.sort is stable, so this only ever moves unfinished
-  // urgent items ahead of everything else — items within each group keep
-  // their existing relative order (position/id) instead of being reshuffled.
-  const active = items.filter((item) => !item.done).sort((a, b) => (b.is_urgent ? 1 : 0) - (a.is_urgent ? 1 : 0));
+  // getSortMode/applySortMode are defined above. 'manual' (the default)
+  // keeps this list's original behavior: Array.prototype.sort is stable, so
+  // this only ever moves unfinished urgent items ahead of everything else —
+  // items within each group keep their existing relative order (position/
+  // id) instead of being reshuffled. Every other mode replaces that
+  // ordering entirely, applied independently to the active and done
+  // sections so items keep moving between the two on toggle exactly as
+  // before — only the order *within* each section changes.
+  const sortMode = getSortMode(list.id);
+  const active = items.filter((item) => !item.done);
   const done = items.filter((item) => item.done);
+  if (sortMode === DEFAULT_SORT_MODE) {
+    active.sort((a, b) => (b.is_urgent ? 1 : 0) - (a.is_urgent ? 1 : 0));
+  } else {
+    applySortMode(active, sortMode);
+    applySortMode(done, sortMode);
+  }
 
   const visibility = fieldVisibilityFor(list.type);
   if (visibility.price) updateFinanceSummary(items);

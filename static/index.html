@@ -301,6 +301,17 @@
                 class="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-100 dark:bg-slate-800/60 text-slate-500 hover:bg-violet-500/10 hover:text-violet-600 dark:hover:text-violet-400">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="h-5 w-5" aria-hidden="true"><path d="M16 11a4 4 0 1 0-4-4"/><path d="M8 21v-2a4 4 0 0 1 4-4h1"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/></svg>
         </button>
+        <!-- Sort menu: opens #sort-items-sheet, offering Nom (A→Z/Z→A)/Prix
+             (croissant/décroissant, hidden on a list type with no price via
+             the same data-item-field="price" gating every other price-only
+             control here already uses)/Label/Ordre par défaut. See
+             applySortMode/getSortMode/setSortMode in list_view.js.
+             updateSortButtonHighlight toggles this button's own highlighted
+             state whenever a non-default sort is active for the open list. -->
+        <button type="button" id="sort-items-button" data-i18n-aria-label="items.sortItemsAriaLabel" aria-label="Trier les articles"
+                class="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-100 dark:bg-slate-800/60 text-slate-500 hover:bg-slate-200 dark:hover:bg-slate-800 hover:text-slate-900 dark:hover:text-slate-200">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="h-5 w-5" aria-hidden="true"><path d="M3 6h13"/><path d="M3 12h9"/><path d="M3 18h5"/><path d="M17 18V6"/><path d="M14 9l3-3 3 3"/></svg>
+        </button>
         <!-- Compact/Detailed display toggle (updateViewModeToggleButton in
              list_view.js swaps its icon/title/aria-label based on the
              current per-list-type localStorage preference). Hidden the same
@@ -910,8 +921,8 @@
   </div>
 
   <div id="edit-item-modal" hidden class="fixed inset-0 z-40 flex items-end justify-center bg-slate-950/30 dark:bg-slate-950/70 p-0 sm:items-center sm:p-4">
-    <div role="dialog" aria-modal="true" aria-labelledby="edit-item-modal-title" class="w-full max-w-md rounded-t-2xl bg-slate-100 dark:bg-slate-800 p-5 shadow-xl sm:rounded-2xl">
-      <div class="mb-4 flex items-center justify-between">
+    <div role="dialog" aria-modal="true" aria-labelledby="edit-item-modal-title" class="flex max-h-[90vh] w-full max-w-md flex-col overflow-hidden rounded-t-2xl bg-slate-100 dark:bg-slate-800 p-5 shadow-xl sm:rounded-2xl">
+      <div id="edit-item-modal-header" class="mb-4 flex shrink-0 items-center justify-between">
         <h2 id="edit-item-modal-title" data-i18n="modals.editItem.title" class="text-lg font-semibold">Modifier l'article</h2>
         <button type="button" id="close-edit-item-modal-button" data-i18n-aria-label="modals.close" aria-label="Fermer"
                 class="flex h-9 w-9 items-center justify-center rounded-lg text-slate-500 dark:text-slate-400 hover:bg-slate-300 dark:hover:bg-slate-700 hover:text-slate-900 dark:hover:text-slate-200">
@@ -919,7 +930,7 @@
         </button>
       </div>
 
-      <form id="edit-item-form" class="space-y-4">
+      <form id="edit-item-form" class="min-h-0 flex-1 space-y-4 overflow-y-auto">
         <div>
           <label for="edit-item-title" data-i18n="modals.editItem.nameLabel" class="mb-1 block text-sm font-medium text-slate-600 dark:text-slate-300">Nom</label>
           <input type="text" id="edit-item-title" required maxlength="500"
@@ -1079,6 +1090,67 @@
              placeholder="Rechercher ou créer un label…" aria-label="Rechercher ou créer un label"
              class="mb-3 w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-4 py-3 text-base text-slate-900 dark:text-slate-100 placeholder:text-slate-500 focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500/30">
       <div id="label-manage-chips" class="flex max-h-64 flex-wrap items-start gap-2 overflow-y-auto"></div>
+    </div>
+  </div>
+
+  <!-- Sort-items bottom sheet: opened by the header's "⇅" sort button
+       (#sort-items-button) next to the Compact/Detailed toggle — a small,
+       fixed set of mutually-exclusive display orders for the currently open
+       list's items (see applySortMode/getSortMode/setSortMode in
+       list_view.js). The two "Prix" rows share the same
+       data-item-field="price" gating every other price-only control in this
+       app already uses (applyListTypeVisibility), so they disappear on a
+       list type with no price at all (todo/custom) exactly like the price
+       input on the create/edit-item forms does. The ✓ next to the currently
+       active option is toggled by updateSortOptionChecks right before the
+       sheet is shown. -->
+  <div id="sort-items-sheet" hidden class="fixed inset-0 z-40 flex items-end justify-center bg-slate-950/30 dark:bg-slate-950/70 p-0 sm:items-center sm:p-4">
+    <div role="dialog" aria-modal="true" aria-labelledby="sort-items-sheet-title" class="w-full rounded-t-2xl bg-slate-100 dark:bg-slate-800 p-5 shadow-xl sm:max-w-md sm:rounded-2xl">
+      <div class="mb-3 flex items-center justify-between gap-3">
+        <h2 id="sort-items-sheet-title" data-i18n="modals.sortItems.title" class="min-w-0 flex-1 truncate text-lg font-semibold">Trier les articles</h2>
+        <button type="button" id="close-sort-items-sheet-button" data-i18n-aria-label="modals.close" aria-label="Fermer"
+                class="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-slate-500 dark:text-slate-400 hover:bg-slate-300 dark:hover:bg-slate-700 hover:text-slate-900 dark:hover:text-slate-200">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" class="h-5 w-5" aria-hidden="true"><path d="M18 6L6 18M6 6l12 12"/></svg>
+        </button>
+      </div>
+      <div class="flex flex-col gap-1">
+        <button type="button" id="sort-option-manual" data-sort-mode="manual"
+                class="flex items-center gap-3 rounded-xl px-3 py-3 text-left text-base font-medium text-slate-900 dark:text-slate-100 hover:bg-slate-200 dark:hover:bg-slate-700">
+          <span aria-hidden="true">↕️</span>
+          <span data-i18n="modals.sortItems.manual">Ordre par défaut</span>
+          <span class="sort-option-check ml-auto text-lg text-sky-500 dark:text-sky-400" hidden aria-hidden="true">✓</span>
+        </button>
+        <button type="button" id="sort-option-name-asc" data-sort-mode="name-asc"
+                class="flex items-center gap-3 rounded-xl px-3 py-3 text-left text-base font-medium text-slate-900 dark:text-slate-100 hover:bg-slate-200 dark:hover:bg-slate-700">
+          <span aria-hidden="true">🔤</span>
+          <span data-i18n="modals.sortItems.nameAsc">Nom (A → Z)</span>
+          <span class="sort-option-check ml-auto text-lg text-sky-500 dark:text-sky-400" hidden aria-hidden="true">✓</span>
+        </button>
+        <button type="button" id="sort-option-name-desc" data-sort-mode="name-desc"
+                class="flex items-center gap-3 rounded-xl px-3 py-3 text-left text-base font-medium text-slate-900 dark:text-slate-100 hover:bg-slate-200 dark:hover:bg-slate-700">
+          <span aria-hidden="true">🔤</span>
+          <span data-i18n="modals.sortItems.nameDesc">Nom (Z → A)</span>
+          <span class="sort-option-check ml-auto text-lg text-sky-500 dark:text-sky-400" hidden aria-hidden="true">✓</span>
+        </button>
+        <button type="button" id="sort-option-price-asc" data-sort-mode="price-asc" data-item-field="price"
+                class="flex items-center gap-3 rounded-xl px-3 py-3 text-left text-base font-medium text-slate-900 dark:text-slate-100 hover:bg-slate-200 dark:hover:bg-slate-700">
+          <span aria-hidden="true">💶</span>
+          <span data-i18n="modals.sortItems.priceAsc">Prix (croissant)</span>
+          <span class="sort-option-check ml-auto text-lg text-sky-500 dark:text-sky-400" hidden aria-hidden="true">✓</span>
+        </button>
+        <button type="button" id="sort-option-price-desc" data-sort-mode="price-desc" data-item-field="price"
+                class="flex items-center gap-3 rounded-xl px-3 py-3 text-left text-base font-medium text-slate-900 dark:text-slate-100 hover:bg-slate-200 dark:hover:bg-slate-700">
+          <span aria-hidden="true">💶</span>
+          <span data-i18n="modals.sortItems.priceDesc">Prix (décroissant)</span>
+          <span class="sort-option-check ml-auto text-lg text-sky-500 dark:text-sky-400" hidden aria-hidden="true">✓</span>
+        </button>
+        <button type="button" id="sort-option-label" data-sort-mode="label"
+                class="flex items-center gap-3 rounded-xl px-3 py-3 text-left text-base font-medium text-slate-900 dark:text-slate-100 hover:bg-slate-200 dark:hover:bg-slate-700">
+          <span aria-hidden="true">🏷️</span>
+          <span data-i18n="modals.sortItems.label">Label</span>
+          <span class="sort-option-check ml-auto text-lg text-sky-500 dark:text-sky-400" hidden aria-hidden="true">✓</span>
+        </button>
+      </div>
     </div>
   </div>
 
