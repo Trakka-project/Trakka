@@ -7,8 +7,8 @@ importScripts('/js/db.js');
 
 // Bump both on any change to APP_SHELL's contents so activate()
 // evicts the old cache instead of serving stale assets forever.
-const SHELL_CACHE = 'trakka-shell-v86';
-const RUNTIME_CACHE = 'trakka-runtime-v86';
+const SHELL_CACHE = 'trakka-shell-v87';
+const RUNTIME_CACHE = 'trakka-runtime-v87';
 const KNOWN_CACHES = [SHELL_CACHE, RUNTIME_CACHE];
 
 const APP_SHELL = [
@@ -442,10 +442,29 @@ async function mirrorReadResponse(url, response) {
       // `done: true` into the mirror, would otherwise silently revert it.
       const freshItemsArr = await self.TrakkaDB.freshItems(items);
       await self.TrakkaDB.putItems(freshItemsArr);
+      // This GET's `items` array is the server's complete, authoritative
+      // set for this list — reconcile the mirror against it (see
+      // pruneRemovedListItems' own doc comment) so an item deleted
+      // server-side while this device was offline doesn't linger in the
+      // local mirror forever, silently inflating this list's own "N
+      // restant(s)" count relative to what a fresh online load reports.
+      // Built from the raw `items` array, not freshItemsArr, so a
+      // genuinely-current item merely skipped by the staleness guard above
+      // (an out-of-order response) is never mistaken for one that no
+      // longer exists.
+      await self.TrakkaDB.pruneRemovedListItems(list.id, items.map((item) => item.id));
     }
   } else if (url.pathname === '/api/v1/items' && Array.isArray(data)) {
     const items = await self.TrakkaDB.freshItems(data);
     await self.TrakkaDB.putItems(items);
+    // Same reconciliation as the listMatch branch above, only when this was
+    // a single list's full item set (?list_id=) — an unscoped fetch of
+    // every item the caller can see says nothing about which ones a given
+    // list should still contain, so pruning would be unsafe there.
+    const listIdParam = decodeId(url.searchParams.get('list_id'));
+    if (listIdParam != null) {
+      await self.TrakkaDB.pruneRemovedListItems(listIdParam, data.map((item) => item.id));
+    }
   } else if (isSharedCategoriesQuery && Array.isArray(data)) {
     await self.TrakkaDB.replaceSharedCategories(data);
   } else if (url.pathname === '/api/v1/custom-categories' && Array.isArray(data)) {
