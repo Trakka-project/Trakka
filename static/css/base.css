@@ -276,6 +276,83 @@ textarea,
   }
 }
 
+/* Edit-item modal (#edit-item-modal, static/js/list_view.js's
+   openEditItemModal): a shopping-list item's edit form has a lot of
+   possible fields (name, URL, price, target price, target month,
+   recurrence, urgent, labels) — tall enough on a short/narrow viewport
+   that the dialog's own content can exceed the screen height. Without an
+   internal scroll region the dialog either overflowed past the top/bottom
+   of the viewport with no way to reach the clipped fields (the actual bug
+   this rule exists to fix), or would have to grow past its own
+   `max-h-[90vh]` and get silently clipped by the browser instead.
+
+   The fix mirrors #admin-console-modal's own dialog structure exactly
+   (see that block above, including the "why" for each piece): the dialog
+   itself (`[role="dialog"]` in index.html) is `flex max-h-[90vh]
+   flex-col overflow-hidden`, its header (`#edit-item-modal-header`) is
+   `shrink-0` so it can never be pushed out of view by the flexbox shrink
+   algorithm, and `#edit-item-form` — the one child left, so it's also the
+   entire scrollable body — is `min-h-0 flex-1 overflow-y-auto` (`min-h-0`
+   overrides the flex-item default `min-height: auto`, which would
+   otherwise floor the form at its own full unscrolled content height and
+   defeat the scroll region entirely). This keeps the modal perfectly
+   centered (via index.html's `items-center`/`justify-center` on the
+   backdrop, `items-end` for the bottom-sheet look below `sm`) whether or
+   not a given item's fields actually need to scroll, since the dialog's
+   own box never grows past `max-h-[90vh]` either way — there is no layout
+   difference between the scrolling and non-scrolling case beyond the
+   scrollbar itself. */
+#edit-item-modal-header,
+#edit-item-form {
+  /* Reserves the same gutter width on both regardless of which one
+     actually has a scrollbar — the identical "a native, non-overlay
+     scrollbar only steals width from the element that has one, throwing
+     sibling elements out of horizontal alignment" fix already explained
+     in detail for #admin-console-header/-tabs/-body above. `overflow-y:
+     hidden` on the header (next rule) is what makes `scrollbar-gutter`
+     apply to it at all — the property is a no-op on an element whose
+     overflow computes to `visible` on the relevant axis. */
+  scrollbar-gutter: stable;
+}
+
+#edit-item-modal-header {
+  overflow-y: hidden;
+}
+
+/* A slim, discreet scrollbar for the form's own internal scroll region —
+   this app's ordinary native scrollbar (see the global `scrollbar-color`
+   rule further below, which only recolors the thumb/track, not its width)
+   would otherwise compete with a dense edit form's own fields for space.
+   Firefox honors `scrollbar-width` directly; Chrome/Safari/Edge need the
+   `::-webkit-*` pseudo-elements instead, since neither currently maps
+   `scrollbar-width: thin` to a fixed pixel value. Colors reuse this app's
+   existing `--tk-border-strong`/`--tk-text-subtle` tokens (already
+   theme-aware via tokens.css, and `--tk-text-subtle` happens to resolve to
+   the identical `#64748b` in both Light and Dark — see tokens.css — so a
+   single hover rule already gets darker-on-light/lighter-on-dark contrast
+   for free) rather than a hardcoded rgba(0,0,0,…) pair, which would fade
+   to near-invisible against a dark background. */
+#edit-item-form {
+  scrollbar-width: thin;
+}
+
+#edit-item-form::-webkit-scrollbar {
+  width: 6px;
+}
+
+#edit-item-form::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+#edit-item-form::-webkit-scrollbar-thumb {
+  background-color: var(--tk-border-strong);
+  border-radius: 10px;
+}
+
+#edit-item-form::-webkit-scrollbar-thumb:hover {
+  background-color: var(--tk-text-subtle);
+}
+
 /* Native form-control chrome (checkboxes, <select> menus, scrollbars,
    the OS-level UI relevant to <input type="month">, etc.) is drawn by the
    browser itself and isn't reachable through Tailwind utility classes —

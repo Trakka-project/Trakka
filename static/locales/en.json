@@ -132,7 +132,8 @@
     "priceValidationError": "Price must be a positive number.",
     "viewModeToggleAriaLabelToDetailed": "Switch to detailed view",
     "viewModeToggleAriaLabelToCompact": "Switch to compact view",
-    "labelsBadgeAriaLabel": "Labels: {labels}"
+    "labelsBadgeAriaLabel": "Labels: {labels}",
+    "sortItemsAriaLabel": "Sort items"
   },
   "planning": {
     "tabTitle": "Budget & Forecast",
@@ -270,6 +271,15 @@
       "unpin": "Unpin from dashboard",
       "pinSpace": "Pin the space to my dashboard",
       "unpinSpace": "Unpin the space from my dashboard"
+    },
+    "sortItems": {
+      "title": "Sort items",
+      "manual": "Default order",
+      "nameAsc": "Name (A → Z)",
+      "nameDesc": "Name (Z → A)",
+      "priceAsc": "Price (ascending)",
+      "priceDesc": "Price (descending)",
+      "label": "Label"
     },
     "editItem": {
       "title": "Edit item",
