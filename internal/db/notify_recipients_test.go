@@ -74,7 +74,7 @@ func TestListNotificationRecipients(t *testing.T) {
 	}
 
 	// excludeUserID = 0 (no real user ever has this id) excludes nobody —
-	// the shape RunRecurringDueScan uses, since a due-date reminder has no
+	// the shape RunDueReminderScan uses, since a due-date reminder has no
 	// single actor to exclude.
 	all, err := d.ListNotificationRecipients(ctx, list.ID, 0)
 	if err != nil {

@@ -59,8 +59,9 @@ func (d *DB) GetUser(ctx context.Context, id int64) (*models.User, error) {
 	u := &models.User{}
 	var isAdmin, keepLastPage int
 	err := d.conn.QueryRowContext(ctx,
-		`SELECT id, email, display_name, created_at, is_admin, keep_last_page, language FROM users WHERE id = ?`, id,
-	).Scan(&u.ID, &u.Email, &u.DisplayName, &u.CreatedAt, &isAdmin, &keepLastPage, &u.Language)
+		`SELECT id, email, display_name, created_at, is_admin, keep_last_page, language, reminder_default_offset_days, reminder_default_time
+		 FROM users WHERE id = ?`, id,
+	).Scan(&u.ID, &u.Email, &u.DisplayName, &u.CreatedAt, &isAdmin, &keepLastPage, &u.Language, &u.ReminderDefaultOffsetDays, &u.ReminderDefaultTime)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrNotFound
 	}
@@ -112,12 +113,37 @@ func (d *DB) UpdateUserLanguage(ctx context.Context, id int64, lang string) (*mo
 	return d.GetUser(ctx, id)
 }
 
+// UpdateUserReminderDefaults sets the caller's own default due-date-reminder
+// timing (see models.User.ReminderDefaultOffsetDays/ReminderDefaultTime),
+// applied to any item whose own reminder is left as "use the default" (see
+// internal/handlers' reminder-resolution logic in items.go). offsetDays and
+// timeOfDay must already be validated by the caller (offsetDays >= 0,
+// timeOfDay via internal/validate.TimeOfDay) — this method doesn't
+// re-validate, mirroring UpdateUserLanguage's own division of
+// responsibility. Returns ErrNotFound if no such user exists.
+func (d *DB) UpdateUserReminderDefaults(ctx context.Context, id int64, offsetDays int, timeOfDay string) (*models.User, error) {
+	res, err := d.conn.ExecContext(ctx,
+		`UPDATE users SET reminder_default_offset_days = ?, reminder_default_time = ? WHERE id = ?`,
+		offsetDays, timeOfDay, id)
+	if err != nil {
+		return nil, fmt.Errorf("updating user %d reminder defaults: %w", id, err)
+	}
+	affected, err := res.RowsAffected()
+	if err != nil {
+		return nil, fmt.Errorf("reading rows affected updating user %d reminder defaults: %w", id, err)
+	}
+	if affected == 0 {
+		return nil, ErrNotFound
+	}
+	return d.GetUser(ctx, id)
+}
+
 // GetUserByEmail fetches a user (with credentials, for authentication) by
 // email, compared case-insensitively. Returns ErrNotFound if no such user
 // exists.
 func (d *DB) GetUserByEmail(ctx context.Context, email string) (*models.UserWithCredentials, error) {
 	return d.getUserWithCredentials(ctx,
-		`SELECT id, email, display_name, created_at, is_admin, keep_last_page, language, password_hash, oidc_subject, oidc_issuer
+		`SELECT id, email, display_name, created_at, is_admin, keep_last_page, language, reminder_default_offset_days, reminder_default_time, password_hash, oidc_subject, oidc_issuer
 		 FROM users WHERE email = ?`, email)
 }
 
@@ -125,7 +151,7 @@ func (d *DB) GetUserByEmail(ctx context.Context, email string) (*models.UserWith
 // identity (issuer + subject). Returns ErrNotFound if no such user exists.
 func (d *DB) GetUserByOIDCSubject(ctx context.Context, issuer, subject string) (*models.UserWithCredentials, error) {
 	return d.getUserWithCredentials(ctx,
-		`SELECT id, email, display_name, created_at, is_admin, keep_last_page, language, password_hash, oidc_subject, oidc_issuer
+		`SELECT id, email, display_name, created_at, is_admin, keep_last_page, language, reminder_default_offset_days, reminder_default_time, password_hash, oidc_subject, oidc_issuer
 		 FROM users WHERE oidc_issuer = ? AND oidc_subject = ?`, issuer, subject)
 }
 
@@ -137,7 +163,7 @@ func (d *DB) GetUserByOIDCSubject(ctx context.Context, issuer, subject string) (
 // accounts, so a single unpaginated query stays proportionate.
 func (d *DB) ListAllUsers(ctx context.Context) ([]*models.User, error) {
 	rows, err := d.conn.QueryContext(ctx,
-		`SELECT id, email, display_name, created_at, is_admin, keep_last_page, language FROM users ORDER BY id ASC`)
+		`SELECT id, email, display_name, created_at, is_admin, keep_last_page, language, reminder_default_offset_days, reminder_default_time FROM users ORDER BY id ASC`)
 	if err != nil {
 		return nil, fmt.Errorf("querying all users: %w", err)
 	}
@@ -147,7 +173,7 @@ func (d *DB) ListAllUsers(ctx context.Context) ([]*models.User, error) {
 	for rows.Next() {
 		u := &models.User{}
 		var isAdmin, keepLastPage int
-		if err := rows.Scan(&u.ID, &u.Email, &u.DisplayName, &u.CreatedAt, &isAdmin, &keepLastPage, &u.Language); err != nil {
+		if err := rows.Scan(&u.ID, &u.Email, &u.DisplayName, &u.CreatedAt, &isAdmin, &keepLastPage, &u.Language, &u.ReminderDefaultOffsetDays, &u.ReminderDefaultTime); err != nil {
 			return nil, fmt.Errorf("scanning user row: %w", err)
 		}
 		u.IsAdmin = isAdmin != 0
@@ -223,7 +249,7 @@ func (d *DB) getUserWithCredentials(ctx context.Context, query string, args ...a
 	u := &models.UserWithCredentials{}
 	var isAdmin, keepLastPage int
 	err := d.conn.QueryRowContext(ctx, query, args...).Scan(
-		&u.ID, &u.Email, &u.DisplayName, &u.CreatedAt, &isAdmin, &keepLastPage, &u.Language, &u.PasswordHash, &u.OIDCSubject, &u.OIDCIssuer)
+		&u.ID, &u.Email, &u.DisplayName, &u.CreatedAt, &isAdmin, &keepLastPage, &u.Language, &u.ReminderDefaultOffsetDays, &u.ReminderDefaultTime, &u.PasswordHash, &u.OIDCSubject, &u.OIDCIssuer)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrNotFound
 	}

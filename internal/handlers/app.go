@@ -13,6 +13,7 @@ import (
 	"path"
 	"strings"
 	"sync"
+	"time"
 
 	"trakka/internal/auth"
 	"trakka/internal/config"
@@ -41,6 +42,16 @@ type Application struct {
 	// as the fallback under whatever's stored in system_settings.
 	Config config.Config
 
+	// Location is the time.Location reminder times of day (see
+	// models.User.ReminderDefaultTime, models.Item.ReminderTime) are
+	// interpreted in — resolved once at startup from Config.AppTimeZone
+	// (cmd/server/main.go), falling back to UTC there with a startup
+	// warning on an unrecognized zone name. May be nil (e.g. in tests that
+	// build an Application by hand), in which case location() below falls
+	// back to time.UTC — the same "zero value must stay usable" contract
+	// the rate-limiter fields below already follow.
+	Location *time.Location
+
 	// Authentication rate-limiter state (see ratelimit.go). Lazily built
 	// through sync.Once rather than in a constructor, because Application is
 	// built as a plain struct literal in cmd/server and in tests — a zero
@@ -61,6 +72,16 @@ func (app *Application) authIPLimiter() *rateLimiter {
 func (app *Application) authEmailLimiter() *rateLimiter {
 	app.authEmailLimiterOnce.Do(func() { app.authEmailLimiterVal = newRateLimiter(authRateWindow) })
 	return app.authEmailLimiterVal
+}
+
+// location returns app.Location, falling back to time.UTC when it hasn't
+// been set (see Location's own doc comment) — every reminder-time
+// computation goes through this rather than reading the field directly.
+func (app *Application) location() *time.Location {
+	if app.Location == nil {
+		return time.UTC
+	}
+	return app.Location
 }
 
 // Routes builds the full HTTP handler: middleware chain + route table.

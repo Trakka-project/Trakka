@@ -86,7 +86,7 @@ Both the browser's `PushManager.subscribe()` call and the underlying service wor
 Push delivery isn't a standalone worker/cron binary — it's goroutines started inline by the same `trakka` process, from `cmd/server/main.go`:
 
 - **Shared-list changes** (an item added, or checked off) fire immediately, in a detached goroutine started right from the HTTP handler that made the change (`notifyListChange`, `internal/handlers/push.go`) — there is nothing to schedule for this one; it happens the moment the triggering request is handled.
-- **Recurring-task due-date reminders** run on a `time.Ticker` (`runRecurringNotifyScanLoop`), started only when `NOTIF_RECURRING_SCAN_INTERVAL_MINUTES > 0` **and** `PushEnabled()` is true — i.e. this loop doesn't even start if VAPID isn't configured, since it would have nothing to send. It runs one scan immediately at startup, then again every `NOTIF_RECURRING_SCAN_INTERVAL_MINUTES` (default `30`). `NOTIF_RECURRING_TASK_LEAD_TIME` (default `24h`, accepts a plain Go duration like `2h`/`30m` or a whole number of days like `1d`) is how far ahead of a recurring item's `due_date` the reminder fires; a single item can override this via its own `recurrence_lead_minutes`.
+- **Task due-date reminders** (any item with a `due_date`, not just a recurring one — see [docs/API.md](API.md#reminders)) run on a `time.Ticker` (`runDueReminderScanLoop`), started only when `NOTIF_DUE_SCAN_INTERVAL_MINUTES > 0` **and** `PushEnabled()` is true — i.e. this loop doesn't even start if VAPID isn't configured, since it would have nothing to send. It runs one scan immediately at startup, then again every `NOTIF_DUE_SCAN_INTERVAL_MINUTES` (default `30`). Each item carries its own already-resolved `reminder_offset_days`/`reminder_time` (how many days before `due_date`, and at what time of day, interpreted in `APP_TIMEZONE`) rather than an instance-wide lead time — set explicitly, or resolved from the account's own `reminder_default_offset_days`/`reminder_default_time` (`PATCH /api/v1/me`) at the moment the item was last created/edited.
 
 Both mechanisms share the same underlying fan-out (`sendToUsers`): every subscription belonging to every user with access to the affected list is sent to concurrently and best-effort — one recipient's unreachable device never blocks or fails delivery to another's, and a subscription the push service reports as permanently gone (HTTP 404/410) is deleted automatically so future scans stop retrying it.
 
@@ -107,7 +107,7 @@ If the process is running at all past this point, your three variables are at le
 **A correctly-loaded config starts the reminder scan.** Grep the startup logs for:
 
 ```json
-{"level":"INFO","msg":"starting periodic recurring due-date notification scan","interval":1800000000000}
+{"level":"INFO","msg":"starting periodic due-date reminder scan","interval":1800000000000}
 ```
 
 This line is only ever logged when `cfg.PushEnabled()` (all three VAPID vars non-empty) is true — its absence means push is currently disabled on this instance, even if the process started fine otherwise (an all-empty VAPID config is a valid, silent "disabled" state, not an error).
@@ -159,11 +159,11 @@ A real device with the toggle enabled should show a system notification titled "
 Once the test endpoint confirms basic delivery works, validate the actual features it's standing in for:
 
 - **Shared-list change**: from a *second* account with access to a shared list (see [docs/API.md#sharing](API.md#sharing)), add an item or check one off. The first account should receive a push within moments — no scan or delay involved, since this path fires synchronously off the triggering request.
-- **Recurring due-date reminder**: set a recurring item's `due_date` to fall within its lead time (`NOTIF_RECURRING_TASK_LEAD_TIME`, or the item's own `recurrence_lead_minutes`), then either wait for the next scan tick or temporarily lower `NOTIF_RECURRING_SCAN_INTERVAL_MINUTES` for a faster test loop. Watch for the `"running recurring due-date notification scan"` log line (carries `item_count`) to confirm the scan itself ran, and confirm the push arrives.
+- **Task due-date reminder**: on any item (recurring or not), set `due_date` to today and `reminder_enabled`/`reminder_offset_days`/`reminder_time` (e.g. `{"reminder_enabled": true, "reminder_offset_days": 0, "reminder_time": "00:00"}`, via `PATCH /api/v1/items/{id}`) so its reminder moment has already passed, then either wait for the next scan tick or temporarily lower `NOTIF_DUE_SCAN_INTERVAL_MINUTES` for a faster test loop. Watch for the `"running due-date reminder scan"` log line (carries `item_count`) to confirm the scan itself ran, and confirm the push arrives.
 
 ## See also
 
 - [docs/API.md#push-notifications](API.md#push-notifications) — full endpoint reference.
-- [docs/DEPLOYMENT.md](DEPLOYMENT.md) — the complete environment-variable table, including every other `NOTIF_RECURRING_*`/`SCRAPE_INTERVAL` knob.
+- [docs/DEPLOYMENT.md](DEPLOYMENT.md) — the complete environment-variable table, including every other `NOTIF_DUE_SCAN_INTERVAL_MINUTES`/`APP_TIMEZONE`/`SCRAPE_INTERVAL` knob.
 - [docs/PWA.md](PWA.md) — why HTTPS (or `localhost`) is required for service workers in general, not just push.
 - [docs/DOC_TEST_PRICE_ALERTS.md](DOC_TEST_PRICE_ALERTS.md) — a similar manual QA walkthrough for the *other* notification-adjacent feature (per-item target-price alerts), useful as a template if you need to script a fuller push-notification QA pass later.

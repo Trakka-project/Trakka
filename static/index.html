@@ -450,6 +450,22 @@
               <option value="MONTHLY" data-i18n="items.recurrenceMonthly">Tous les mois</option>
               <option value="YEARLY" data-i18n="items.recurrenceYearly">Tous les ans</option>
             </select>
+            <input type="date" id="item-due-date" data-item-field="due-date" data-i18n-aria-label="items.dueDateAriaLabel" aria-label="Date d'échéance (optionnel)"
+                   class="rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-3 text-base text-slate-900 dark:text-slate-100 focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500/30">
+            <select id="item-reminder" data-item-field="due-date" data-i18n-aria-label="items.reminderAriaLabel" aria-label="Rappel"
+                    class="rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-3 text-base text-slate-900 dark:text-slate-100 focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500/30">
+              <option value="default" data-i18n="items.reminderDefault">Rappel : par défaut</option>
+              <option value="same_day" data-i18n="items.reminderSameDay">Rappel : le jour même</option>
+              <option value="day_before" data-i18n="items.reminderDayBefore">Rappel : la veille</option>
+              <option value="custom" data-i18n="items.reminderCustom">Rappel : personnalisé</option>
+              <option value="off" data-i18n="items.reminderOff">Rappel : désactivé</option>
+            </select>
+            <div id="item-reminder-custom-fields" hidden class="flex items-center gap-2">
+              <input type="number" min="0" id="item-reminder-offset" data-i18n-aria-label="items.reminderOffsetAriaLabel" aria-label="Jours avant l'échéance"
+                     class="w-20 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-3 text-base text-slate-900 dark:text-slate-100 focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500/30">
+              <input type="time" id="item-reminder-time" data-i18n-aria-label="items.reminderTimeAriaLabel" aria-label="Heure du rappel"
+                     class="rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-3 text-base text-slate-900 dark:text-slate-100 focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500/30">
+            </div>
             <label data-item-field="urgent" class="flex min-h-[44px] cursor-pointer items-center gap-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 text-sm font-medium text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-800">
               <input type="checkbox" id="item-urgent" data-i18n-aria-label="items.urgentAriaLabel" aria-label="Marquer comme urgent"
                      class="h-4 w-4 rounded border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 text-rose-600 dark:text-rose-500 focus:ring-rose-500/40">
@@ -857,6 +873,26 @@
           </span>
         </label>
 
+        <div class="rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-4 py-3">
+          <label for="user-settings-reminder-preset" class="block text-sm font-medium text-slate-600 dark:text-slate-300" data-i18n="modals.userSettings.reminderDefaultLabel">Rappel par défaut</label>
+          <p class="mt-0.5 text-xs font-normal text-slate-500 dark:text-slate-400" data-i18n="modals.userSettings.reminderDefaultHint">Moment auquel vous être rappelé pour une tâche, sauf si vous le personnalisez pour cette tâche.</p>
+          <select id="user-settings-reminder-preset"
+                  class="mt-2 min-h-[44px] w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 text-sm text-slate-900 dark:text-slate-100 focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500/30">
+            <option value="same_day" data-i18n="modals.userSettings.reminderPresetSameDay">Le jour même</option>
+            <option value="day_before" data-i18n="modals.userSettings.reminderPresetDayBefore">La veille</option>
+            <option value="custom" data-i18n="modals.userSettings.reminderPresetCustom">Personnalisé</option>
+          </select>
+          <div class="mt-2 flex items-center gap-2">
+            <input type="number" min="0" id="user-settings-reminder-offset" hidden
+                   class="min-h-[44px] w-20 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 text-sm text-slate-900 dark:text-slate-100 focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500/30"
+                   data-i18n-aria-label="modals.userSettings.reminderOffsetAriaLabel" aria-label="Jours avant l'échéance">
+            <span id="user-settings-reminder-offset-suffix" hidden class="text-xs text-slate-500 dark:text-slate-400" data-i18n="modals.userSettings.reminderOffsetSuffix">jour(s) avant à</span>
+            <input type="time" id="user-settings-reminder-time"
+                   class="min-h-[44px] flex-1 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 text-sm text-slate-900 dark:text-slate-100 focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500/30"
+                   data-i18n-aria-label="modals.userSettings.reminderTimeAriaLabel" aria-label="Heure du rappel">
+          </div>
+        </div>
+
         <p id="user-settings-status" class="text-sm text-emerald-600 dark:text-emerald-400" role="status" hidden></p>
 
         <button type="submit" data-i18n="modals.userSettings.submit" class="w-full rounded-xl bg-sky-500 px-4 py-3 text-base font-semibold text-white transition hover:bg-sky-400 active:scale-[0.98]">Enregistrer</button>
@@ -1026,6 +1062,30 @@
             <option value="MONTHLY" data-i18n="items.recurrenceMonthly">Tous les mois</option>
             <option value="YEARLY" data-i18n="items.recurrenceYearly">Tous les ans</option>
           </select>
+        </div>
+
+        <div id="edit-item-due-date-field" data-item-field="due-date">
+          <label for="edit-item-due-date" data-i18n="modals.editItem.dueDateLabel" class="mb-1 block text-sm font-medium text-slate-600 dark:text-slate-300">Date d'échéance (optionnel)</label>
+          <input type="date" id="edit-item-due-date"
+                 class="w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-4 py-3 text-base text-slate-900 dark:text-slate-100 focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500/30">
+        </div>
+
+        <div id="edit-item-reminder-field" data-item-field="due-date">
+          <label for="edit-item-reminder" data-i18n="modals.editItem.reminderLabel" class="mb-1 block text-sm font-medium text-slate-600 dark:text-slate-300">Rappel</label>
+          <select id="edit-item-reminder"
+                  class="w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-4 py-3 text-base text-slate-900 dark:text-slate-100 focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500/30">
+            <option value="default" data-i18n="items.reminderDefault">Rappel : par défaut</option>
+            <option value="same_day" data-i18n="items.reminderSameDay">Rappel : le jour même</option>
+            <option value="day_before" data-i18n="items.reminderDayBefore">Rappel : la veille</option>
+            <option value="custom" data-i18n="items.reminderCustom">Rappel : personnalisé</option>
+            <option value="off" data-i18n="items.reminderOff">Rappel : désactivé</option>
+          </select>
+          <div id="edit-item-reminder-custom-fields" hidden class="mt-2 flex items-center gap-2">
+            <input type="number" min="0" id="edit-item-reminder-offset" data-i18n-aria-label="items.reminderOffsetAriaLabel" aria-label="Jours avant l'échéance"
+                   class="w-20 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-3 text-base text-slate-900 dark:text-slate-100 focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500/30">
+            <input type="time" id="edit-item-reminder-time" data-i18n-aria-label="items.reminderTimeAriaLabel" aria-label="Heure du rappel"
+                   class="flex-1 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-3 text-base text-slate-900 dark:text-slate-100 focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500/30">
+          </div>
         </div>
 
         <div data-item-field="urgent">

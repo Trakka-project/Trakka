@@ -61,6 +61,11 @@ const listEls = {
   itemTargetPrice: document.getElementById('item-target-price'),
   itemTargetMonth: document.getElementById('item-target-month'),
   itemRecurrence: document.getElementById('item-recurrence'),
+  itemDueDate: document.getElementById('item-due-date'),
+  itemReminder: document.getElementById('item-reminder'),
+  itemReminderCustomFields: document.getElementById('item-reminder-custom-fields'),
+  itemReminderOffset: document.getElementById('item-reminder-offset'),
+  itemReminderTime: document.getElementById('item-reminder-time'),
   itemUrgent: document.getElementById('item-urgent'),
   itemsActive: document.getElementById('items-active'),
   itemsDone: document.getElementById('items-done'),
@@ -76,6 +81,11 @@ const listEls = {
   editItemTargetPrice: document.getElementById('edit-item-target-price'),
   editItemTargetMonth: document.getElementById('edit-item-target-month'),
   editItemRecurrence: document.getElementById('edit-item-recurrence'),
+  editItemDueDate: document.getElementById('edit-item-due-date'),
+  editItemReminder: document.getElementById('edit-item-reminder'),
+  editItemReminderCustomFields: document.getElementById('edit-item-reminder-custom-fields'),
+  editItemReminderOffset: document.getElementById('edit-item-reminder-offset'),
+  editItemReminderTime: document.getElementById('edit-item-reminder-time'),
   editItemUrgent: document.getElementById('edit-item-urgent'),
   itemActionsSheet: document.getElementById('item-actions-sheet'),
   itemActionsSheetTitle: document.getElementById('item-actions-sheet-title'),
@@ -388,13 +398,13 @@ function typeLabel(type) {
 // same shape every list had before groceries/recurring_shopping/custom/todo
 // existed: URL and recurrence shown, price/target month/quantity hidden.
 const FIELD_VISIBILITY_BY_TYPE = {
-  groceries: { url: false, price: false, targetMonth: false, recurrence: false, quantity: true, urgent: true, done: true },
-  shopping: { url: true, price: true, targetMonth: true, recurrence: false, quantity: true, urgent: true, done: true },
-  recurring_shopping: { url: true, price: true, targetMonth: false, recurrence: true, quantity: true, urgent: true, done: true },
-  todo: { url: true, price: false, targetMonth: false, recurrence: true, quantity: false, urgent: true, done: true },
-  custom: { url: false, price: false, targetMonth: false, recurrence: false, quantity: false, urgent: false, done: false },
+  groceries: { url: false, price: false, targetMonth: false, recurrence: false, dueDate: false, quantity: true, urgent: true, done: true },
+  shopping: { url: true, price: true, targetMonth: true, recurrence: false, dueDate: false, quantity: true, urgent: true, done: true },
+  recurring_shopping: { url: true, price: true, targetMonth: false, recurrence: true, dueDate: true, quantity: true, urgent: true, done: true },
+  todo: { url: true, price: false, targetMonth: false, recurrence: true, dueDate: true, quantity: false, urgent: true, done: true },
+  custom: { url: false, price: false, targetMonth: false, recurrence: false, dueDate: false, quantity: false, urgent: false, done: false },
 };
-const DEFAULT_FIELD_VISIBILITY = { url: true, price: false, targetMonth: false, recurrence: true, quantity: false, urgent: true, done: true };
+const DEFAULT_FIELD_VISIBILITY = { url: true, price: false, targetMonth: false, recurrence: true, dueDate: true, quantity: false, urgent: true, done: true };
 
 function fieldVisibilityFor(type) {
   return FIELD_VISIBILITY_BY_TYPE[type] || DEFAULT_FIELD_VISIBILITY;
@@ -443,6 +453,7 @@ function applyListTypeVisibility(type) {
   for (const el of document.querySelectorAll('[data-item-field="price"]')) el.hidden = !visibility.price;
   for (const el of document.querySelectorAll('[data-item-field="target-month"]')) el.hidden = !visibility.targetMonth;
   for (const el of document.querySelectorAll('[data-item-field="recurrence"]')) el.hidden = !visibility.recurrence;
+  for (const el of document.querySelectorAll('[data-item-field="due-date"]')) el.hidden = !visibility.dueDate;
   for (const el of document.querySelectorAll('[data-item-field="quantity"]')) el.hidden = !visibility.quantity;
   for (const el of document.querySelectorAll('[data-item-field="urgent"]')) el.hidden = !visibility.urgent;
   listEls.itemTitle.placeholder = t(type === 'custom' ? 'items.titlePlaceholderCustom' : 'items.titlePlaceholder');
@@ -459,7 +470,67 @@ function applyListTypeVisibility(type) {
 }
 
 function hasAdvancedFields(visibility) {
-  return visibility.url || visibility.price || visibility.targetMonth || visibility.recurrence || visibility.quantity || visibility.urgent;
+  return visibility.url || visibility.price || visibility.targetMonth || visibility.recurrence || visibility.dueDate || visibility.quantity || visibility.urgent;
+}
+
+// updateReminderCustomFieldsVisibility shows the inline "N jour(s) avant à
+// HH:MM" inputs only when the reminder <select> itself is both visible (its
+// list type shows a due date at all — see applyListTypeVisibility) and set
+// to "custom" — every other option (par défaut/le jour même/la veille/
+// désactivé) needs no further input. Called both right after
+// applyListTypeVisibility (a list-type switch can hide the select entirely)
+// and from the select's own 'change' listener.
+function updateReminderCustomFieldsVisibility(reminderSelect, customFieldsEl) {
+  customFieldsEl.hidden = reminderSelect.hidden || reminderSelect.value !== 'custom';
+}
+
+// reminderSelectionToPayload reads a reminder <select>'s current value
+// (plus, for "custom", its paired offset/time inputs) into the
+// reminder_enabled/reminder_offset_days/reminder_time fields
+// POST/PUT/PATCH /api/v1/items expect (see docs/API.md). "default" (the
+// selection a freshly-added due date starts on) sends reminder_offset_days
+// as `null` and reminder_time as `""` — the one representation that means
+// "use my current default" under both a POST/PUT full value and a PATCH's
+// three-way absent/null/value convention (see internal/handlers/items.go's
+// reminder-resolution logic) — rather than this client guessing at what
+// that default currently is. "Le jour même"/"la veille" are fixed,
+// no-further-input presets (09:00/20:00) — only "Personnalisé" reads the
+// extra inputs.
+function reminderSelectionToPayload(select, offsetInput, timeInput) {
+  switch (select.value) {
+    case 'off':
+      return { reminder_enabled: false };
+    case 'same_day':
+      return { reminder_enabled: true, reminder_offset_days: 0, reminder_time: '09:00' };
+    case 'day_before':
+      return { reminder_enabled: true, reminder_offset_days: 1, reminder_time: '20:00' };
+    case 'custom': {
+      const offsetDays = Math.max(0, Number.parseInt(offsetInput.value, 10) || 0);
+      return { reminder_enabled: true, reminder_offset_days: offsetDays, reminder_time: timeInput.value || '09:00' };
+    }
+    default: // 'default'
+      return { reminder_enabled: true, reminder_offset_days: null, reminder_time: '' };
+  }
+}
+
+// reminderItemToSelection is reminderSelectionToPayload's inverse, used to
+// populate the edit-item modal's reminder select/offset/time from an
+// already-persisted item. Since the server always resolves "use the
+// default" to concrete offset/time values at write time (see
+// models.Item.ReminderOffsetDays' own doc comment for why), there is no way
+// to tell "the user explicitly chose 09:00/day-of" apart from "the user
+// picked 'par défaut' and that happened to resolve to 09:00/day-of" after
+// the fact — this simply shows whichever named preset the stored values
+// match, or "Personnalisé" if they match neither. Re-opening the edit modal
+// therefore never shows "Par défaut" again for an existing item, which is
+// an accepted, deliberate simplification of the same resolve-once design.
+function reminderItemToSelection(item) {
+  if (!item.reminder_enabled) return { preset: 'off', offsetDays: 0, time: '09:00' };
+  const offsetDays = item.reminder_offset_days ?? 0;
+  const time = item.reminder_time || '09:00';
+  if (offsetDays === 0 && time === '09:00') return { preset: 'same_day', offsetDays, time };
+  if (offsetDays === 1 && time === '20:00') return { preset: 'day_before', offsetDays, time };
+  return { preset: 'custom', offsetDays, time };
 }
 
 // ---------------------------------------------------------------------------
@@ -1047,6 +1118,13 @@ function setQuickAddAdvancedExpanded(expanded) {
 
 listEls.quickAddToggle.addEventListener('click', () => {
   setQuickAddAdvancedExpanded(listEls.quickAddAdvanced.hidden);
+});
+
+listEls.itemReminder.addEventListener('change', () => {
+  updateReminderCustomFieldsVisibility(listEls.itemReminder, listEls.itemReminderCustomFields);
+});
+listEls.editItemReminder.addEventListener('change', () => {
+  updateReminderCustomFieldsVisibility(listEls.editItemReminder, listEls.editItemReminderCustomFields);
 });
 
 // Recomputes the financial summary bar directly from state.currentList.items
@@ -2034,6 +2112,7 @@ function renderItems() {
   // fixed icon for its type, same as every list card on the dashboard.
   listEls.itemsHeading.textContent = `${listIcon(list)} ${list.name} (${typeLabel(list.type)})`;
   applyListTypeVisibility(list.type);
+  updateReminderCustomFieldsVisibility(listEls.itemReminder, listEls.itemReminderCustomFields);
   updateSortButtonHighlight(list.id);
   updateFilterButtonHighlight(list.id);
 
@@ -2746,6 +2825,7 @@ listEls.createItemForm.addEventListener('submit', async (event) => {
   if (visibility.targetMonth) targetMonth = listEls.itemTargetMonth.value;
 
   const recurrenceRule = visibility.recurrence ? listEls.itemRecurrence.value : '';
+  const dueDate = visibility.dueDate ? listEls.itemDueDate.value : '';
   const isUrgent = visibility.urgent ? listEls.itemUrgent.checked : false;
 
   const payload = { list_id: state.currentListId, title, quantity };
@@ -2762,6 +2842,16 @@ listEls.createItemForm.addEventListener('submit', async (event) => {
   }
   if (targetMonth) payload.target_month = targetMonth;
   if (recurrenceRule) payload.recurrence_rule = recurrenceRule;
+  let reminder = {};
+  if (dueDate) {
+    payload.due_date = dueDate;
+    // reminderSelectionToPayload is defined above (shared with the edit-item
+    // modal) — the reminder select is meaningless without a due date, so it
+    // is only read (and only affects anything server-side) when one was
+    // actually entered.
+    reminder = reminderSelectionToPayload(listEls.itemReminder, listEls.itemReminderOffset, listEls.itemReminderTime);
+    Object.assign(payload, reminder);
+  }
   if (isUrgent) payload.is_urgent = true;
 
   // Locally-scoped id, distinct from the server's own `temp-item-*` ids
@@ -2779,6 +2869,10 @@ listEls.createItemForm.addEventListener('submit', async (event) => {
     alert_on_price_drop: targetPrice !== null,
     target_month: targetMonth || null,
     recurrence_rule: recurrenceRule || null,
+    due_date: dueDate || null,
+    reminder_enabled: reminder.reminder_enabled ?? true,
+    reminder_offset_days: reminder.reminder_offset_days ?? null,
+    reminder_time: reminder.reminder_time ?? null,
     is_urgent: isUrgent,
     done: false,
     position: 0,
@@ -2791,6 +2885,7 @@ listEls.createItemForm.addEventListener('submit', async (event) => {
   // letting several items be added back-to-back without re-tapping the field.
   listEls.createItemForm.reset();
   listEls.itemQuantity.value = '1';
+  updateReminderCustomFieldsVisibility(listEls.itemReminder, listEls.itemReminderCustomFields);
   setQuickAddAdvancedExpanded(false);
   listEls.itemTitle.focus();
 
@@ -2874,6 +2969,12 @@ function openEditItemModal(item) {
   listEls.editItemTargetPrice.value = item.target_price != null ? item.target_price : '';
   listEls.editItemTargetMonth.value = item.target_month || '';
   listEls.editItemRecurrence.value = item.recurrence_rule || '';
+  listEls.editItemDueDate.value = item.due_date || '';
+  const reminderSelection = reminderItemToSelection(item);
+  listEls.editItemReminder.value = reminderSelection.preset;
+  listEls.editItemReminderOffset.value = reminderSelection.offsetDays;
+  listEls.editItemReminderTime.value = reminderSelection.time;
+  updateReminderCustomFieldsVisibility(listEls.editItemReminder, listEls.editItemReminderCustomFields);
   listEls.editItemUrgent.checked = Boolean(item.is_urgent);
   renderEditItemLabelsPreview(item);
   listEls.editItemModal.hidden = false;
@@ -3240,6 +3341,10 @@ listEls.editItemForm.addEventListener('submit', async (event) => {
   }
   if (visibility.targetMonth) payload.target_month = listEls.editItemTargetMonth.value;
   if (visibility.recurrence) payload.recurrence_rule = listEls.editItemRecurrence.value;
+  if (visibility.dueDate) {
+    payload.due_date = listEls.editItemDueDate.value;
+    Object.assign(payload, reminderSelectionToPayload(listEls.editItemReminder, listEls.editItemReminderOffset, listEls.editItemReminderTime));
+  }
 
   const item = editingItem;
   const previous = {
@@ -3250,6 +3355,10 @@ listEls.editItemForm.addEventListener('submit', async (event) => {
     alert_on_price_drop: item.alert_on_price_drop,
     target_month: item.target_month,
     recurrence_rule: item.recurrence_rule,
+    due_date: item.due_date,
+    reminder_enabled: item.reminder_enabled,
+    reminder_offset_days: item.reminder_offset_days,
+    reminder_time: item.reminder_time,
     is_urgent: item.is_urgent,
   };
   item.title = title;
@@ -3259,6 +3368,10 @@ listEls.editItemForm.addEventListener('submit', async (event) => {
   if ('alert_on_price_drop' in payload) item.alert_on_price_drop = payload.alert_on_price_drop;
   if ('target_month' in payload) item.target_month = payload.target_month || null;
   if ('recurrence_rule' in payload) item.recurrence_rule = payload.recurrence_rule || null;
+  if ('due_date' in payload) item.due_date = payload.due_date || null;
+  if ('reminder_enabled' in payload) item.reminder_enabled = payload.reminder_enabled;
+  if ('reminder_offset_days' in payload) item.reminder_offset_days = payload.reminder_offset_days;
+  if ('reminder_time' in payload) item.reminder_time = payload.reminder_time || null;
   item.is_urgent = payload.is_urgent;
   renderItems();
   closeEditItemModal();

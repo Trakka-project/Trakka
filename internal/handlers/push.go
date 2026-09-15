@@ -16,7 +16,7 @@ import (
 	"trakka/internal/webpush"
 )
 
-// pushSendTimeout bounds one whole notifyListChange/RunRecurringDueScan
+// pushSendTimeout bounds one whole notifyListChange/RunDueReminderScan
 // fan-out to every recipient's subscriptions — generous for a handful of
 // household members' devices, short enough that a slow or hanging push
 // service can't leak a goroutine indefinitely. Each individual
@@ -134,7 +134,7 @@ func (app *Application) handlePushUnsubscribe(w http.ResponseWriter, r *http.Req
 
 // handlePushTest sends one push notification to every subscription the
 // calling user has registered, as an end-to-end diagnostic: unlike
-// notifyListChange/RunRecurringDueScan, whose delivery is always a
+// notifyListChange/RunDueReminderScan, whose delivery is always a
 // best-effort side effect of some other action, this endpoint's entire
 // purpose is the delivery itself, so it runs synchronously (bounded by
 // pushSendTimeout, same as every other fan-out in this file) rather than in
@@ -193,7 +193,7 @@ type pushPayload struct {
 // fails another's, and this function itself never returns an error — a
 // push notification is always a secondary effect of some other action that
 // has already succeeded by the time this is called (see notifyListChange
-// and RunRecurringDueScan below), and must never be able to make that
+// and RunDueReminderScan below), and must never be able to make that
 // action look like it failed. A subscription the push service reports as
 // permanently gone (webpush.ErrSubscriptionGone — 404/410) is deleted so
 // future notifications stop trying it; any other failure is just logged.
@@ -286,70 +286,74 @@ func (app *Application) notifyListChange(list *models.List, actor *models.User, 
 }
 
 // ---------------------------------------------------------------------------
-// Recurring task due-date reminders ("Use Case 2")
+// Task due-date reminders ("Use Case 2")
 // ---------------------------------------------------------------------------
 
-// recurringDueScanTimeout bounds one whole periodic scan across every
+// dueReminderScanTimeout bounds one whole periodic scan across every
 // eligible item — generous for the modest item counts this app targets
 // (CLAUDE.md's <20MB RAM footprint implies a small-household scale
 // throughout), while still guaranteeing the scan can't hang the process
 // indefinitely if something goes wrong partway through.
-const recurringDueScanTimeout = 5 * time.Minute
+const dueReminderScanTimeout = 5 * time.Minute
 
-// RunRecurringDueScan checks every recurring, not-done item with a due date
-// (see db.ListItemsForRecurringNotifyScan) and sends a reminder push to
-// every user with access to its list once the current time is within its
-// lead time of that due date — NOTIF_RECURRING_TASK_LEAD_TIME
-// (internal/config) by default, or the item's own recurrence_lead_minutes
-// override if it has one. Called on a timer from cmd/server/main.go; also
-// safe to call directly for an immediate, whole-catalog scan. Best-effort
-// throughout, mirroring RunPriceAlertScan: one item's failure (a bad due
-// date, a db error resolving its list/recipients) is logged and never stops
-// the rest of the scan.
-func (app *Application) RunRecurringDueScan(ctx context.Context) {
+// RunDueReminderScan checks every not-done item with a due date and an
+// active reminder (see db.ListItemsForDueReminderScan) and sends a push to
+// every user with access to its list once the current time has reached that
+// item's own (already-resolved) reminder moment — computed from its
+// due date, reminder_offset_days, and reminder_time, interpreted in
+// app.location(). Applies to any item with a due date, not only a recurring
+// one — see models.Item.ReminderEnabled/ReminderOffsetDays/ReminderTime and
+// the reminder-resolution logic in items.go for how those get set. Called
+// on a timer from cmd/server/main.go; also safe to call directly for an
+// immediate, whole-catalog scan. Best-effort throughout, mirroring
+// RunPriceAlertScan: one item's failure (a bad due date, a db error
+// resolving its list/recipients) is logged and never stops the rest of the
+// scan.
+func (app *Application) RunDueReminderScan(ctx context.Context) {
 	if !app.Config.PushEnabled() {
 		return
 	}
 
-	scanCtx, cancel := context.WithTimeout(ctx, recurringDueScanTimeout)
+	scanCtx, cancel := context.WithTimeout(ctx, dueReminderScanTimeout)
 	defer cancel()
 
-	candidates, err := app.DB.ListItemsForRecurringNotifyScan(scanCtx)
+	candidates, err := app.DB.ListItemsForDueReminderScan(scanCtx)
 	if err != nil {
-		app.Logger.Error("listing items for recurring due scan", "error", err)
+		app.Logger.Error("listing items for due reminder scan", "error", err)
 		return
 	}
 
-	app.Logger.Info("running recurring due-date notification scan", "item_count", len(candidates))
-	now := time.Now().UTC()
+	app.Logger.Info("running due-date reminder scan", "item_count", len(candidates))
+	now := time.Now()
 	for _, c := range candidates {
 		if scanCtx.Err() != nil {
 			return
 		}
-		if err := app.checkItemForRecurringDue(scanCtx, c, now); err != nil {
-			app.Logger.Error("recurring due scan check failed", "item_id", c.ItemID, "error", err)
+		if err := app.checkItemForDueReminder(scanCtx, c, now); err != nil {
+			app.Logger.Error("due reminder scan check failed", "item_id", c.ItemID, "error", err)
 		}
 	}
 }
 
-// checkItemForRecurringDue evaluates one candidate: if now is already
-// within its (effective) lead time of its due date, it notifies every user
-// with access to its list and records that the reminder was sent for this
-// exact due date (db.MarkRecurringReminderSent) so the next scan tick
-// doesn't repeat it — see that method's own comment for why storing the due
-// date value itself, rather than a plain boolean, is what makes this
-// automatically re-arm once the item's due date next changes.
-func (app *Application) checkItemForRecurringDue(ctx context.Context, c *db.RecurringDueCandidate, now time.Time) error {
-	dueDate, err := time.Parse("2006-01-02", c.DueDate)
+// checkItemForDueReminder evaluates one candidate: if now has already
+// reached its computed reminder moment, it notifies every user with access
+// to its list and records that the reminder was sent for this exact due
+// date (db.MarkDueReminderSent) so the next scan tick doesn't repeat it —
+// see that method's own comment for why storing the due date value itself,
+// rather than a plain boolean, is what makes this automatically re-arm once
+// the item's due date next changes.
+func (app *Application) checkItemForDueReminder(ctx context.Context, c *db.DueReminderCandidate, now time.Time) error {
+	loc := app.location()
+	due, err := time.ParseInLocation("2006-01-02", c.DueDate, loc)
 	if err != nil {
 		return fmt.Errorf("parsing due date %q: %w", c.DueDate, err)
 	}
-
-	leadTime := app.Config.NotifRecurringLeadTime
-	if c.LeadMinutes != nil {
-		leadTime = time.Duration(*c.LeadMinutes) * time.Minute
+	hour, minute, err := parseTimeOfDay(c.TimeOfDay)
+	if err != nil {
+		return fmt.Errorf("parsing reminder time %q: %w", c.TimeOfDay, err)
 	}
-	if now.Before(dueDate.Add(-leadTime)) {
+	reminderAt := time.Date(due.Year(), due.Month(), due.Day()-c.OffsetDays, hour, minute, 0, 0, loc)
+	if now.Before(reminderAt) {
 		return nil // not due soon enough yet
 	}
 
@@ -383,8 +387,19 @@ func (app *Application) checkItemForRecurringDue(ctx context.Context, c *db.Recu
 		})
 	}
 
-	if err := app.DB.MarkRecurringReminderSent(ctx, c.ItemID, c.DueDate); err != nil {
+	if err := app.DB.MarkDueReminderSent(ctx, c.ItemID, c.DueDate); err != nil {
 		return fmt.Errorf("marking reminder sent: %w", err)
 	}
 	return nil
+}
+
+// parseTimeOfDay parses an HH:MM (24h) string — already validated by
+// internal/validate.TimeOfDay before it was ever stored — into its hour and
+// minute components.
+func parseTimeOfDay(raw string) (hour, minute int, err error) {
+	t, err := time.Parse("15:04", raw)
+	if err != nil {
+		return 0, 0, err
+	}
+	return t.Hour(), t.Minute(), nil
 }

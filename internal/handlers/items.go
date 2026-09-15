@@ -17,6 +17,33 @@ import (
 // figures; a shopping list never legitimately needs more than this.
 const maxItemQuantity = 100000
 
+// resolveReminderDefaults fills in whichever of offsetDays/timeOfDay is nil
+// (or, for timeOfDay, empty) with actingUser's own current reminder default
+// (models.User.ReminderDefaultOffsetDays/ReminderDefaultTime) — but only
+// when enabled is true, since a disabled reminder has nothing to resolve
+// and both come back nil. Called from handleItemsCreate/Update/Patch right
+// before persisting via db.SetItemReminder: resolving here, once, at write
+// time, rather than leaving a nil to be re-derived later, is deliberate —
+// see models.Item.ReminderOffsetDays' own doc comment for why a shared
+// list's item can't simply defer to "whichever recipient is reading it"'s
+// own default at scan/notify time.
+func resolveReminderDefaults(actingUser *models.User, enabled bool, offsetDays *int, timeOfDay *string) (*int, *string) {
+	if !enabled {
+		return nil, nil
+	}
+	resolvedOffset := offsetDays
+	if resolvedOffset == nil {
+		d := actingUser.ReminderDefaultOffsetDays
+		resolvedOffset = &d
+	}
+	resolvedTime := timeOfDay
+	if resolvedTime == nil || *resolvedTime == "" {
+		t := actingUser.ReminderDefaultTime
+		resolvedTime = &t
+	}
+	return resolvedOffset, resolvedTime
+}
+
 func (app *Application) handleItemsIndex(w http.ResponseWriter, r *http.Request) {
 	listIDStr := r.URL.Query().Get("list_id")
 	if listIDStr == "" {
@@ -66,6 +93,9 @@ func (app *Application) handleItemsCreate(w http.ResponseWriter, r *http.Request
 		TargetPrice           *float64 `json:"target_price"`
 		AlertOnPriceDrop      bool     `json:"alert_on_price_drop"`
 		Labels                []string `json:"labels"`
+		ReminderEnabled       bool     `json:"reminder_enabled"`
+		ReminderOffsetDays    *int     `json:"reminder_offset_days"`
+		ReminderTime          string   `json:"reminder_time"`
 	}
 	if !decodeJSON(w, r, &in) {
 		return
@@ -133,6 +163,15 @@ func (app *Application) handleItemsCreate(w http.ResponseWriter, r *http.Request
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
+	if in.ReminderOffsetDays != nil && *in.ReminderOffsetDays < 0 {
+		writeError(w, http.StatusBadRequest, "reminder_offset_days cannot be negative")
+		return
+	}
+	cleanReminderTime, err := validate.TimeOfDay(in.ReminderTime)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
 
 	list, err := app.DB.GetList(r.Context(), in.ListID)
 	if errors.Is(err, db.ErrNotFound) {
@@ -163,6 +202,16 @@ func (app *Application) handleItemsCreate(w http.ResponseWriter, r *http.Request
 			app.serverError(w, r, err)
 			return
 		}
+	}
+	// Always written (unlike labels above): CreateItem's own column default
+	// for reminder_enabled (true) can't distinguish "the request never
+	// mentioned it" from "explicitly wants the default timing", and the
+	// latter needs resolveReminderDefaults to run regardless.
+	resolvedOffsetDays, resolvedReminderTime := resolveReminderDefaults(userFromContext(r), in.ReminderEnabled, in.ReminderOffsetDays, nullableString(cleanReminderTime))
+	item, err = app.DB.SetItemReminder(r.Context(), item.ID, in.ReminderEnabled, resolvedOffsetDays, resolvedReminderTime)
+	if err != nil {
+		app.serverError(w, r, err)
+		return
 	}
 	// A brand new item has no "before" state to compare against, so it can
 	// only ever transition from inactive to active — see
@@ -245,6 +294,9 @@ func (app *Application) handleItemsUpdate(w http.ResponseWriter, r *http.Request
 		TargetPrice           *float64 `json:"target_price"`
 		AlertOnPriceDrop      bool     `json:"alert_on_price_drop"`
 		Labels                []string `json:"labels"`
+		ReminderEnabled       bool     `json:"reminder_enabled"`
+		ReminderOffsetDays    *int     `json:"reminder_offset_days"`
+		ReminderTime          string   `json:"reminder_time"`
 	}
 	if !decodeJSON(w, r, &in) {
 		return
@@ -308,6 +360,15 @@ func (app *Application) handleItemsUpdate(w http.ResponseWriter, r *http.Request
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
+	if in.ReminderOffsetDays != nil && *in.ReminderOffsetDays < 0 {
+		writeError(w, http.StatusBadRequest, "reminder_offset_days cannot be negative")
+		return
+	}
+	cleanReminderTime, err := validate.TimeOfDay(in.ReminderTime)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
 
 	// A scraped image is tied to the url it was found on: if the url just
 	// changed to something new, the existing image no longer describes it
@@ -358,6 +419,17 @@ func (app *Application) handleItemsUpdate(w http.ResponseWriter, r *http.Request
 		app.serverError(w, r, err)
 		return
 	}
+	// PUT is a full replace: an omitted reminder_enabled resets it to false,
+	// the same convention every other boolean field follows here — see
+	// resolveReminderDefaults' own doc comment for why offset/time are
+	// resolved from the caller's own current defaults right here rather
+	// than left for the scan to re-derive later.
+	resolvedOffsetDays, resolvedReminderTime := resolveReminderDefaults(userFromContext(r), in.ReminderEnabled, in.ReminderOffsetDays, nullableString(cleanReminderTime))
+	item, err = app.DB.SetItemReminder(r.Context(), item.ID, in.ReminderEnabled, resolvedOffsetDays, resolvedReminderTime)
+	if err != nil {
+		app.serverError(w, r, err)
+		return
+	}
 	// Checked against the manually-supplied price only, before
 	// scrapeProductInfo runs — see the identical reasoning in
 	// handleItemsCreate for why a scraper-filled price is checked
@@ -404,6 +476,9 @@ func (app *Application) handleItemsPatch(w http.ResponseWriter, r *http.Request)
 		TargetPrice           json.RawMessage `json:"target_price"`
 		AlertOnPriceDrop      *bool           `json:"alert_on_price_drop"`
 		Labels                *[]string       `json:"labels"`
+		ReminderEnabled       *bool           `json:"reminder_enabled"`
+		ReminderOffsetDays    json.RawMessage `json:"reminder_offset_days"`
+		ReminderTime          *string         `json:"reminder_time"`
 	}
 	if !decodeJSON(w, r, &in) {
 		return
@@ -562,6 +637,44 @@ func (app *Application) handleItemsPatch(w http.ResponseWriter, r *http.Request)
 	if in.AlertOnPriceDrop != nil {
 		item.AlertOnPriceDrop = *in.AlertOnPriceDrop
 	}
+	// touchedReminder tracks whether any of the three reminder fields was
+	// actually present in the request, mirroring in.Labels' own "only write
+	// when the field was present" gate below — a plain "done" toggle must
+	// not trigger an extra SetItemReminder write.
+	touchedReminder := in.ReminderEnabled != nil || in.ReminderOffsetDays != nil || in.ReminderTime != nil
+	if in.ReminderEnabled != nil {
+		item.ReminderEnabled = *in.ReminderEnabled
+	}
+	// Same absent/null/number three-way as Price/TargetPrice above: absent
+	// leaves item.ReminderOffsetDays untouched, "null" clears the per-item
+	// override back to "use my current default", a number sets it.
+	if in.ReminderOffsetDays != nil {
+		if string(in.ReminderOffsetDays) == "null" {
+			item.ReminderOffsetDays = nil
+		} else {
+			var offsetDays int
+			if err := json.Unmarshal(in.ReminderOffsetDays, &offsetDays); err != nil {
+				writeError(w, http.StatusBadRequest, "reminder_offset_days must be a number")
+				return
+			}
+			if offsetDays < 0 {
+				writeError(w, http.StatusBadRequest, "reminder_offset_days cannot be negative")
+				return
+			}
+			item.ReminderOffsetDays = &offsetDays
+		}
+	}
+	// A nil in.ReminderTime means the field was absent (leave
+	// item.ReminderTime untouched); present-but-empty means "use my current
+	// default", mirroring how TargetMonth/DueDate are cleared above.
+	if in.ReminderTime != nil {
+		cleanReminderTime, err := validate.TimeOfDay(*in.ReminderTime)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		item.ReminderTime = nullableString(cleanReminderTime)
+	}
 	// A nil in.Labels means the field was absent (leave item.Labels
 	// untouched, e.g. a plain "done" toggle); a present value (including an
 	// explicit empty array) replaces the label set entirely — there's no
@@ -619,6 +732,18 @@ func (app *Application) handleItemsPatch(w http.ResponseWriter, r *http.Request)
 	// comment for why this is a separate call).
 	if in.Labels != nil {
 		updated, err = app.DB.SetItemLabels(r.Context(), updated.ID, cleanLabels)
+		if err != nil {
+			app.serverError(w, r, err)
+			return
+		}
+	}
+	// Same "only write when actually touched" gate as labels above — see
+	// resolveReminderDefaults' own doc comment for why offset/time are
+	// resolved from the caller's own current defaults right here rather
+	// than left for the scan to re-derive later.
+	if touchedReminder {
+		resolvedOffsetDays, resolvedReminderTime := resolveReminderDefaults(userFromContext(r), item.ReminderEnabled, item.ReminderOffsetDays, item.ReminderTime)
+		updated, err = app.DB.SetItemReminder(r.Context(), updated.ID, item.ReminderEnabled, resolvedOffsetDays, resolvedReminderTime)
 		if err != nil {
 			app.serverError(w, r, err)
 			return

@@ -140,14 +140,32 @@ type Item struct {
 	// item to the top of its list and surfaces it in the cross-list
 	// "Achats & Tâches Urgentes" dashboard widget (static/js/urgent.js).
 	IsUrgent bool `json:"is_urgent"`
-	// RecurrenceLeadMinutes optionally overrides the instance-wide
-	// NOTIF_RECURRING_TASK_LEAD_TIME (internal/config) for this specific
-	// recurring item — how long before DueDate
-	// internal/handlers.RunRecurringDueScan sends a reminder push. Nil means
-	// "use the instance default"; meaningless unless RecurrenceRule is also
-	// set, the same relationship DueDate/RecurrenceEndDate already have to
-	// it.
+	// RecurrenceLeadMinutes optionally overrode the instance-wide
+	// NOTIF_RECURRING_TASK_LEAD_TIME for a recurring item. Superseded by
+	// ReminderEnabled/ReminderOffsetDays/ReminderTime below, which apply to
+	// any item with a DueDate rather than only a recurring one — kept here
+	// purely for API backward compatibility (still stored and echoed back),
+	// but no longer read by any scan (see internal/handlers.RunDueReminderScan).
 	RecurrenceLeadMinutes *int `json:"recurrence_lead_minutes,omitempty"`
+	// ReminderEnabled gates whether this item's DueDate (if any) should ever
+	// produce a reminder push at all — meaningless unless DueDate is also
+	// set, the same "gate + payload" relationship AlertOnPriceDrop has to
+	// TargetPrice. Defaults to true (a Google-Tasks-style "any due-dated
+	// task reminds you unless you turn it off" default).
+	ReminderEnabled bool `json:"reminder_enabled"`
+	// ReminderOffsetDays is how many whole days before DueDate the reminder
+	// fires (0 = the same day, 1 = the day before, ...). Always resolved to
+	// a concrete value by internal/handlers whenever ReminderEnabled ends up
+	// true — see internal/handlers.resolveReminderDefaults — from either an
+	// explicit per-item override or, if the request asked to use "the
+	// default", the acting user's own current
+	// User.ReminderDefaultOffsetDays at write time. Meaningless while
+	// ReminderEnabled is false, in which case it's typically nil.
+	ReminderOffsetDays *int `json:"reminder_offset_days,omitempty"`
+	// ReminderTime is the wall-clock time of day (HH:MM, 24h,
+	// internal/validate.TimeOfDay) the reminder fires at on its computed
+	// day, resolved the same way as ReminderOffsetDays.
+	ReminderTime *string `json:"reminder_time,omitempty"`
 	// TargetPrice is a user-set threshold (see AlertOnPriceDrop): once
 	// Price drops to or below it, internal/handlers.checkPriceDropAlert
 	// fires an in-app toast (via PriceAlertTriggered below) and a push
@@ -243,6 +261,19 @@ type User struct {
 	// no explicit preference recorded — internal/db.GetUser can still read
 	// the underlying users.language column as "" for such an account.
 	Language string `json:"language"`
+	// ReminderDefaultOffsetDays/ReminderDefaultTime are this account's own
+	// default for "when should I be reminded before a task's due date",
+	// applied to a new/edited item whenever its reminder is left as "use the
+	// default" rather than given an explicit per-item override (see
+	// Item.ReminderOffsetDays/ReminderTime). Expressed as a number of whole
+	// days before the due date plus a wall-clock time of day (HH:MM, 24h)
+	// rather than a plain duration, so it can represent "the same day at
+	// 09:00" (0, "09:00", the default below), "the evening before at 20:00"
+	// (1, "20:00"), or any custom combination — the frontend derives which
+	// named preset to show from these two values rather than a separate
+	// mode field. Settable via PATCH /api/v1/me.
+	ReminderDefaultOffsetDays int    `json:"reminder_default_offset_days"`
+	ReminderDefaultTime       string `json:"reminder_default_time"`
 }
 
 // UserWithCredentials is returned by db lookups used for authentication

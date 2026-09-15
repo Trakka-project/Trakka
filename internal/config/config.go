@@ -71,21 +71,27 @@ type Config struct {
 	VAPIDPrivateKey string
 	VAPIDSubject    string
 
-	// NotifRecurringLeadTime is how long before a recurring item's due date
-	// the background scan (internal/handlers.RunRecurringDueScan) sends a
-	// reminder push, unless a specific item overrides it via its own
-	// recurrence_lead_minutes. Accepts a plain Go duration ("2h", "30m") or a
-	// whole number of days with a "d" suffix ("1d", "3d") — see
-	// parseDurationWithDays, since time.ParseDuration alone has no day unit
-	// and this setting's own examples include one.
-	NotifRecurringLeadTime time.Duration
+	// NotifDueScanInterval is how often the due-date reminder background
+	// scan (internal/handlers.RunDueReminderScan) re-checks every item with
+	// an active reminder — independent of, and normally much finer-grained
+	// than, any individual reminder's own offset/time, so a reminder due at
+	// e.g. 09:00 is actually caught reasonably close to on time rather than
+	// only once a day. A value <= 0 disables the periodic scan entirely.
+	NotifDueScanInterval time.Duration
 
-	// NotifRecurringScanInterval is how often that same scan re-checks every
-	// eligible item — independent of, and normally much finer-grained than,
-	// NotifRecurringLeadTime itself, so a lead time of e.g. 2h is actually
-	// caught reasonably close to on time rather than only once a day. A
-	// value <= 0 disables the periodic scan entirely.
-	NotifRecurringScanInterval time.Duration
+	// AppTimeZone names the IANA time zone (e.g. "Europe/Paris", "UTC")
+	// reminder times of day (see models.User.ReminderDefaultTime,
+	// models.Item.ReminderTime) are interpreted in — there is otherwise no
+	// per-user or per-instance notion of a time zone anywhere in this
+	// codebase, and "remind me at 09:00" is meaningless without one. This is
+	// deliberately a single instance-wide setting rather than a per-user
+	// preference: Trakka targets one small, self-hosted household/group per
+	// instance (see CLAUDE.md), which in practice shares one time zone.
+	// Resolved once at startup (see internal/handlers.Application.Location);
+	// an unrecognized value falls back to UTC with a startup warning rather
+	// than failing to start, the same graceful-degrade posture already used
+	// for a broken OIDC discovery.
+	AppTimeZone string
 
 	// DefaultAppLanguage is the UI language (see static/locales/{fr,en}.json)
 	// shown to any account that has never set its own preference — a brand
@@ -127,8 +133,9 @@ func Load() Config {
 		VAPIDPrivateKey: envOr("VAPID_PRIVATE_KEY", ""),
 		VAPIDSubject:    envOr("VAPID_SUBJECT", ""),
 
-		NotifRecurringLeadTime:     envDuration("NOTIF_RECURRING_TASK_LEAD_TIME", 24*time.Hour),
-		NotifRecurringScanInterval: time.Duration(envInt("NOTIF_RECURRING_SCAN_INTERVAL_MINUTES", 30)) * time.Minute,
+		NotifDueScanInterval: time.Duration(envInt("NOTIF_DUE_SCAN_INTERVAL_MINUTES", 30)) * time.Minute,
+
+		AppTimeZone: envOr("APP_TIMEZONE", "Europe/Paris"),
 
 		DefaultAppLanguage: envLanguage("DEFAULT_APP_LANGUAGE", "en"),
 	}
@@ -232,9 +239,9 @@ func envDuration(key string, fallback time.Duration) time.Duration {
 
 // parseDurationWithDays extends time.ParseDuration with a whole-number "Nd"
 // day suffix (e.g. "1d", "3d") — Go's own parser has no day unit, and
-// NOTIF_RECURRING_TASK_LEAD_TIME is meant to be set in days as often as in
-// hours (see its own doc comment above), so a bare "1d" needs to work
-// without operators having to spell out "24h" themselves.
+// SCRAPE_INTERVAL is meant to be set in days as often as in hours (see its
+// own doc comment above), so a bare "1d" needs to work without operators
+// having to spell out "24h" themselves.
 func parseDurationWithDays(s string) (time.Duration, error) {
 	if days, ok := strings.CutSuffix(s, "d"); ok {
 		n, err := strconv.Atoi(days)
