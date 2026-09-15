@@ -1871,6 +1871,12 @@ els.createListForm.addEventListener('submit', async (event) => {
 // Service worker registration
 // ---------------------------------------------------------------------------
 
+// The active registration, kept around so checkForServiceWorkerUpdate (below)
+// and anything else that needs to react to an update has something to call
+// .update() on without re-registering. Only ever set once registration
+// actually resolves — every reader guards against it still being null.
+let swRegistration = null;
+
 // Registers sw.js (app-shell caching + offline write queue) and wires the
 // two ways a flush can be triggered on browsers without Background Sync
 // (i.e. all of iOS/iPadOS Safari): the page's own 'online' event, and a
@@ -1879,10 +1885,21 @@ function registerServiceWorker() {
   if (!('serviceWorker' in navigator)) return;
 
   navigator.serviceWorker.register('/sw.js')
-    .then((registration) => watchForServiceWorkerUpdate(registration))
+    .then((registration) => {
+      swRegistration = registration;
+      watchForServiceWorkerUpdate(registration);
+    })
     .catch((err) => {
       console.error('Échec de l’enregistrement du service worker :', err);
     });
+
+  // Regular backstop alongside the visibilitychange/focus-triggered checks
+  // below — a long-lived tab that's never backgrounded (or a browser that
+  // just doesn't re-check sw.js on its own the way this app needs) would
+  // otherwise never find out about a deployed update at all. 15 minutes is
+  // frequent enough to catch a deploy within a normal session without
+  // re-fetching sw.js so often it's wasteful.
+  setInterval(checkForServiceWorkerUpdate, SW_UPDATE_POLL_MS);
 
   navigator.serviceWorker.addEventListener('message', (event) => {
     if (event.data && event.data.type === 'trakka-sync-complete') {
@@ -1945,6 +1962,32 @@ els.updateReloadButton?.addEventListener('click', () => {
   window.location.reload();
 });
 
+// A browser only checks sw.js for changes on its own schedule (typically a
+// real navigation/reload) — a long-lived installed PWA session that's never
+// fully reloaded can go a very long time without that ever happening on its
+// own, which is why the update banner could go missing for days on a phone
+// left open on its home-screen icon even after a new version had shipped.
+// registration.update() forces that check on demand; watchForServiceWorkerUpdate
+// (above) is what actually shows the banner once it finds something, via the
+// same 'updatefound' → 'installed' path a browser-initiated check would also
+// take. Errors are swallowed — a failed check (offline, a transient fetch
+// error) just means try again next time one of this function's callers fires.
+// Deliberately does NOT reload the page itself, even once the new worker's
+// self.clients.claim() (sw.js) hands it control — see watchForServiceWorkerUpdate's
+// own doc comment above for why an automatic reload here would be wrong: it
+// would fire on every single update regardless of whether the user ever
+// looked at the banner, since clients.claim() takes control moments after
+// install/activate on its own, not only once the reload button is clicked.
+function checkForServiceWorkerUpdate() {
+  if (!swRegistration) return;
+  swRegistration.update().catch(() => {
+    /* offline, or the browser declined to check right now — fine, retried
+       on the next visibility/focus/interval trigger below. */
+  });
+}
+
+const SW_UPDATE_POLL_MS = 15 * 60000;
+
 // Forces an immediate retry of anything still sitting in the offline sync
 // queue (a create/edit made while offline that never reached the server) at
 // app boot, rather than waiting on an incidental fetch (sw.js's own
@@ -1979,11 +2022,36 @@ window.addEventListener('offline', updateNetworkStatus);
 document.addEventListener('visibilitychange', () => {
   if (!document.hidden) {
     updateNetworkStatus();
+    checkForServiceWorkerUpdate();
     // Picks up whatever the periodic backend price-drop scan found while
     // this tab was in the background, without requiring a full reload.
     refreshNotifications();
   }
 });
+// 'focus' is a deliberate addition alongside 'visibilitychange' above, not a
+// duplicate of it: visibilitychange is what fires when a mobile browser/PWA
+// actually gets backgrounded and resumed, but on desktop (alt-tabbing
+// between windows, or a picture-in-picture/multi-window setup) a tab can
+// regain focus without ever having been hidden, and vice versa — covering
+// both is what actually closes the "stuck on Hors-ligne until a full
+// restart" gap, since neither event alone fires in every real scenario a
+// phone or desktop browser can put this app through.
+window.addEventListener('focus', () => {
+  updateNetworkStatus();
+  checkForServiceWorkerUpdate();
+});
+
+// Backstop for both network-status and service-worker-update detection: a
+// tab can sit in the foreground, visible and focused the whole time the
+// backend happens to come back up (nothing above fires in that case, since
+// none of online/visibilitychange/focus actually changed), or a long-lived
+// installed PWA session can simply never trigger any of the event-driven
+// checks above on its own. Polling on a plain interval is what used to be
+// missing here — previously the only way out of "Hors-ligne" once stuck was
+// restarting the app outright, which the periodic re-check below now closes
+// regardless of which specific trigger a real device happens to fire.
+const NETWORK_STATUS_POLL_MS = 30000;
+setInterval(updateNetworkStatus, NETWORK_STATUS_POLL_MS);
 
 // Paints the dashboard from whatever's already in IndexedDB before any
 // network request is made — an empty mirror (brand new browser profile)

@@ -13,12 +13,26 @@ const listEls = {
   listSyncIndicator: document.getElementById('list-sync-indicator'),
   itemsRemainingCount: document.getElementById('items-remaining-count'),
   backButton: document.getElementById('back-button'),
+  listOptionsButton: document.getElementById('list-options-button'),
+  listOptionsSheet: document.getElementById('list-options-sheet'),
+  closeListOptionsSheetButton: document.getElementById('close-list-options-sheet-button'),
   editListButton: document.getElementById('edit-list-button'),
   shareListButton: document.getElementById('share-list-button'),
   sortItemsButton: document.getElementById('sort-items-button'),
   sortItemsSheet: document.getElementById('sort-items-sheet'),
   closeSortItemsSheetButton: document.getElementById('close-sort-items-sheet-button'),
+  filterItemsButton: document.getElementById('filter-items-button'),
+  filterActiveBadge: document.getElementById('filter-active-badge'),
+  filterItemsSheet: document.getElementById('filter-items-sheet'),
+  closeFilterItemsSheetButton: document.getElementById('close-filter-items-sheet-button'),
+  filterLabelsSection: document.getElementById('filter-labels-section'),
+  filterLabelsChips: document.getElementById('filter-labels-chips'),
+  filterPriceMin: document.getElementById('filter-price-min'),
+  filterPriceMax: document.getElementById('filter-price-max'),
+  filterResetButton: document.getElementById('filter-reset-button'),
   viewModeToggleButton: document.getElementById('view-mode-toggle-button'),
+  viewModeToggleIcon: document.getElementById('view-mode-toggle-icon'),
+  viewModeToggleLabel: document.getElementById('view-mode-toggle-label'),
   financeSummary: document.getElementById('finance-summary'),
   financeTotal: document.getElementById('finance-total'),
   financeTotalCompact: document.getElementById('finance-total-compact'),
@@ -483,18 +497,17 @@ function setViewMode(listType, mode) {
 function updateViewModeToggleButton(type, visibility) {
   const compact = getViewMode(type) === 'compact';
   listEls.viewModeToggleButton.hidden = !hasAdvancedFields(visibility);
-  listEls.viewModeToggleButton.innerHTML = compact ? VIEW_MODE_COMPACT_ICON_SVG : VIEW_MODE_DETAILED_ICON_SVG;
+  listEls.viewModeToggleIcon.innerHTML = compact ? VIEW_MODE_COMPACT_ICON_SVG : VIEW_MODE_DETAILED_ICON_SVG;
   const label = t(compact ? 'items.viewModeToggleAriaLabelToDetailed' : 'items.viewModeToggleAriaLabelToCompact');
   listEls.viewModeToggleButton.title = label;
   listEls.viewModeToggleButton.setAttribute('aria-label', label);
+  listEls.viewModeToggleLabel.textContent = label;
 }
 
-listEls.viewModeToggleButton.addEventListener('click', () => {
-  if (!state.currentList) return;
-  const type = state.currentList.type;
-  setViewMode(type, getViewMode(type) === 'compact' ? 'detailed' : 'compact');
-  renderItems();
-});
+// The click listener for this button lives further below, alongside the
+// rest of #list-options-sheet's wiring (it now lives inside that sheet, and
+// closes it before applying the toggle) — see openListOptionsSheet/
+// closeListOptionsSheet.
 
 // ---------------------------------------------------------------------------
 // Dynamic item sort — a per-list display preference (persisted per list
@@ -557,6 +570,8 @@ function labelSortKey(item) {
 // the top the moment "décroissant" is picked.
 function applySortMode(items, mode) {
   switch (mode) {
+    case 'urgent':
+      return items.sort((a, b) => (b.is_urgent ? 1 : 0) - (a.is_urgent ? 1 : 0) || a.title.localeCompare(b.title));
     case 'name-asc':
       return items.sort((a, b) => a.title.localeCompare(b.title));
     case 'name-desc':
@@ -636,6 +651,256 @@ for (const button of sortOptionButtons) {
     renderItems();
   });
 }
+
+// ---------------------------------------------------------------------------
+// List options bottom sheet (#list-options-sheet) — opened by the header's
+// single "⋮" button, consolidating what used to be a row of separate icon
+// buttons squeezing the list title (Partager/Vue compacte-détaillée/
+// Réordonner/Modifier la liste). The rows themselves are the very same
+// elements (#share-list-button/#view-mode-toggle-button/#reorder-list-button/
+// #edit-list-button) the old header used — only their markup/location moved
+// in index.html — so every click handler below still just closes this sheet
+// first, then performs the action, the same sequential close/open pattern
+// #item-actions-sheet's own rows already established.
+// ---------------------------------------------------------------------------
+
+function openListOptionsSheet() {
+  if (!state.currentList) return;
+  listEls.listOptionsSheet.hidden = false;
+  document.body.classList.add('overflow-hidden');
+}
+
+function closeListOptionsSheet() {
+  listEls.listOptionsSheet.hidden = true;
+  document.body.classList.remove('overflow-hidden');
+}
+
+listEls.listOptionsButton.addEventListener('click', openListOptionsSheet);
+listEls.closeListOptionsSheetButton.addEventListener('click', closeListOptionsSheet);
+listEls.listOptionsSheet.addEventListener('click', (event) => {
+  if (event.target === listEls.listOptionsSheet) closeListOptionsSheet();
+});
+document.addEventListener('keydown', (event) => {
+  if (event.key === 'Escape' && !listEls.listOptionsSheet.hidden) closeListOptionsSheet();
+});
+
+listEls.viewModeToggleButton.addEventListener('click', () => {
+  if (!state.currentList) return;
+  closeListOptionsSheet();
+  const type = state.currentList.type;
+  setViewMode(type, getViewMode(type) === 'compact' ? 'detailed' : 'compact');
+  renderItems();
+});
+
+// ---------------------------------------------------------------------------
+// Item filters (#filter-items-sheet) — a per-list, client-side-only layer on
+// top of applySortMode above: status (Tout/Restant/Acheté), a multi-select
+// of labels, and a price range. Like sort mode, this never touches the
+// server or the offline sync queue — it only changes what renderItems shows
+// — and is persisted per list *id* in localStorage (two lists of the same
+// type may well want different filters), so reopening a list keeps whatever
+// was last chosen for it.
+// ---------------------------------------------------------------------------
+
+const FILTER_STATE_STORAGE_PREFIX = 'trakka:filters:';
+
+function defaultFilterState() {
+  return { status: 'all', labels: [], priceMin: null, priceMax: null };
+}
+
+function getFilterState(listId) {
+  try {
+    const raw = localStorage.getItem(FILTER_STATE_STORAGE_PREFIX + listId);
+    if (!raw) return defaultFilterState();
+    const parsed = JSON.parse(raw);
+    return {
+      status: ['all', 'active', 'done'].includes(parsed.status) ? parsed.status : 'all',
+      labels: Array.isArray(parsed.labels) ? parsed.labels.filter((l) => typeof l === 'string') : [],
+      priceMin: typeof parsed.priceMin === 'number' ? parsed.priceMin : null,
+      priceMax: typeof parsed.priceMax === 'number' ? parsed.priceMax : null,
+    };
+  } catch {
+    return defaultFilterState(); // localStorage unavailable, or corrupt JSON — fall back to no filters.
+  }
+}
+
+function setFilterState(listId, filterState) {
+  try {
+    localStorage.setItem(FILTER_STATE_STORAGE_PREFIX + listId, JSON.stringify(filterState));
+  } catch {
+    // Same as sort mode above: the choice just won't persist across reloads, not fatal.
+  }
+}
+
+function isFilterStateActive(filterState) {
+  return (
+    filterState.status !== 'all' ||
+    filterState.labels.length > 0 ||
+    filterState.priceMin !== null ||
+    filterState.priceMax !== null
+  );
+}
+
+// Applies the label + price-range parts of `filterState` to `items` (a fresh
+// array — same convention as applySortMode). Status is deliberately handled
+// separately, directly in renderItems, since it decides which of the
+// active/done *sections* an item belongs to rather than whether it's shown
+// at all.
+function applyItemFilters(items, filterState) {
+  let result = items;
+  if (filterState.labels.length > 0) {
+    const wanted = filterState.labels.map((l) => l.toLowerCase());
+    result = result.filter((item) => {
+      const itemLabels = (item.labels || []).map((l) => l.toLowerCase());
+      return wanted.some((l) => itemLabels.includes(l));
+    });
+  }
+  if (filterState.priceMin !== null) {
+    result = result.filter((item) => typeof item.price === 'number' && item.price >= filterState.priceMin);
+  }
+  if (filterState.priceMax !== null) {
+    result = result.filter((item) => typeof item.price === 'number' && item.price <= filterState.priceMax);
+  }
+  return result;
+}
+
+// Same "highlighted while active" treatment updateSortButtonHighlight gives
+// #sort-items-button, plus the small #filter-active-badge dot — called from
+// renderItems on every render.
+function updateFilterButtonHighlight(listId) {
+  const active = isFilterStateActive(getFilterState(listId));
+  listEls.filterItemsButton.classList.toggle('bg-sky-500/10', active);
+  listEls.filterItemsButton.classList.toggle('text-sky-600', active);
+  listEls.filterItemsButton.classList.toggle('dark:text-sky-400', active);
+  listEls.filterActiveBadge.hidden = !active;
+}
+
+const filterStatusButtons = document.querySelectorAll('#filter-items-sheet [data-filter-status]');
+
+function updateFilterStatusButtons(filterState) {
+  for (const button of filterStatusButtons) {
+    const active = button.dataset.filterStatus === filterState.status;
+    button.classList.toggle('bg-sky-500', active);
+    button.classList.toggle('text-white', active);
+    button.classList.toggle('bg-slate-200/70', !active);
+    button.classList.toggle('dark:bg-slate-700/50', !active);
+    button.classList.toggle('text-slate-600', !active);
+    button.classList.toggle('dark:text-slate-300', !active);
+  }
+}
+
+// Toggles one label on/off in the current list's filter and re-renders — the
+// chip's own visual state (buildFilterLabelChip below) is refreshed from the
+// same call rather than waiting for the next full sheet open.
+function toggleFilterLabel(label) {
+  if (!state.currentList) return;
+  const filterState = getFilterState(state.currentList.id);
+  const key = label.toLowerCase();
+  const has = filterState.labels.some((l) => l.toLowerCase() === key);
+  filterState.labels = has ? filterState.labels.filter((l) => l.toLowerCase() !== key) : [...filterState.labels, label];
+  setFilterState(state.currentList.id, filterState);
+  renderFilterLabelChips(filterState);
+  updateFilterButtonHighlight(state.currentList.id);
+  renderItems();
+}
+
+// buildLabelToggleChip (above, used by the label-management sheet) always
+// shows every label as selected in its own item's context — this filter chip
+// needs the same toggle look but driven by isSelected/onToggle instead of a
+// specific item's own labels, so it's a small dedicated builder rather than
+// a reuse of that one.
+function buildFilterLabelChip(label, isSelected) {
+  const chip = document.createElement('button');
+  chip.type = 'button';
+  chip.className = isSelected
+    ? `flex items-center gap-1 rounded-full px-3 py-1.5 text-sm font-semibold ring-2 ring-offset-1 ring-offset-slate-100 dark:ring-offset-slate-800 ${labelChipClasses(label)}`
+    : 'flex items-center gap-1 rounded-full bg-slate-200/70 dark:bg-slate-700/50 px-3 py-1.5 text-sm font-medium text-slate-600 dark:text-slate-300 hover:bg-slate-300 dark:hover:bg-slate-600';
+  chip.textContent = isSelected ? `✓ ${label}` : label;
+  chip.setAttribute('aria-pressed', String(isSelected));
+  chip.addEventListener('click', () => toggleFilterLabel(label));
+  return chip;
+}
+
+// collectListLabelSuggestions is defined further below in this file (label
+// management) — a plain function declaration, hoisted, so it's already
+// callable here regardless of source order.
+function renderFilterLabelChips(filterState) {
+  const suggestions = collectListLabelSuggestions();
+  listEls.filterLabelsSection.hidden = suggestions.length === 0;
+  listEls.filterLabelsChips.replaceChildren();
+  const selected = new Set(filterState.labels.map((l) => l.toLowerCase()));
+  for (const label of suggestions) {
+    listEls.filterLabelsChips.appendChild(buildFilterLabelChip(label, selected.has(label.toLowerCase())));
+  }
+}
+
+function openFilterItemsSheet() {
+  if (!state.currentList) return;
+  const filterState = getFilterState(state.currentList.id);
+  updateFilterStatusButtons(filterState);
+  renderFilterLabelChips(filterState);
+  listEls.filterPriceMin.value = filterState.priceMin === null ? '' : filterState.priceMin;
+  listEls.filterPriceMax.value = filterState.priceMax === null ? '' : filterState.priceMax;
+  listEls.filterItemsSheet.hidden = false;
+  document.body.classList.add('overflow-hidden');
+}
+
+function closeFilterItemsSheet() {
+  listEls.filterItemsSheet.hidden = true;
+  document.body.classList.remove('overflow-hidden');
+}
+
+listEls.filterItemsButton.addEventListener('click', openFilterItemsSheet);
+listEls.closeFilterItemsSheetButton.addEventListener('click', closeFilterItemsSheet);
+listEls.filterItemsSheet.addEventListener('click', (event) => {
+  if (event.target === listEls.filterItemsSheet) closeFilterItemsSheet();
+});
+document.addEventListener('keydown', (event) => {
+  if (event.key === 'Escape' && !listEls.filterItemsSheet.hidden) closeFilterItemsSheet();
+});
+
+for (const button of filterStatusButtons) {
+  button.addEventListener('click', () => {
+    if (!state.currentList) return;
+    const filterState = getFilterState(state.currentList.id);
+    filterState.status = button.dataset.filterStatus;
+    setFilterState(state.currentList.id, filterState);
+    updateFilterStatusButtons(filterState);
+    updateFilterButtonHighlight(state.currentList.id);
+    renderItems();
+  });
+}
+
+// Applied on 'change' (blur, or Enter) rather than on every keystroke — a
+// half-typed number is not yet a value worth filtering on.
+function commitFilterPriceRange() {
+  if (!state.currentList) return;
+  const filterState = getFilterState(state.currentList.id);
+  const minRaw = listEls.filterPriceMin.value.trim();
+  const maxRaw = listEls.filterPriceMax.value.trim();
+  const min = minRaw === '' ? null : Number(minRaw);
+  const max = maxRaw === '' ? null : Number(maxRaw);
+  filterState.priceMin = Number.isFinite(min) ? min : null;
+  filterState.priceMax = Number.isFinite(max) ? max : null;
+  setFilterState(state.currentList.id, filterState);
+  updateFilterButtonHighlight(state.currentList.id);
+  renderItems();
+}
+
+listEls.filterPriceMin.addEventListener('change', commitFilterPriceRange);
+listEls.filterPriceMax.addEventListener('change', commitFilterPriceRange);
+
+listEls.filterResetButton.addEventListener('click', () => {
+  if (!state.currentList) return;
+  const filterState = defaultFilterState();
+  setFilterState(state.currentList.id, filterState);
+  updateFilterStatusButtons(filterState);
+  renderFilterLabelChips(filterState);
+  listEls.filterPriceMin.value = '';
+  listEls.filterPriceMax.value = '';
+  updateFilterButtonHighlight(state.currentList.id);
+  renderItems();
+});
 
 // Expands/collapses the quick-add bar's advanced panel (URL/quantity/price/
 // target month/recurrence/urgent) — collapsed is the default "épuré" state;
@@ -1643,6 +1908,7 @@ function renderItems() {
   listEls.itemsHeading.textContent = `${listIcon(list)} ${list.name} (${typeLabel(list.type)})`;
   applyListTypeVisibility(list.type);
   updateSortButtonHighlight(list.id);
+  updateFilterButtonHighlight(list.id);
 
   // hasPendingListChanges is defined in app.js — see the "Network status +
   // offline sync indicators" section there. Re-checked on every render
@@ -1664,6 +1930,13 @@ function renderItems() {
   // kept in sync here since every mutation (toggleDone, add, delete, the
   // swipe gestures in gestures.js) re-runs this whole function.
   listEls.itemsRemainingCount.textContent = remainingItemsLabel(items);
+  // getFilterState/applyItemFilters are defined above — the label + price-
+  // range parts of the current filter, applied before the active/done split
+  // below. Status (Tout/Restant/Acheté) is handled separately just below,
+  // since it decides which section an item belongs to rather than whether
+  // it's shown at all.
+  const filterState = getFilterState(list.id);
+  const filteredItems = applyItemFilters(items, filterState);
   // getSortMode/applySortMode are defined above. 'manual' (the default)
   // keeps this list's original behavior: Array.prototype.sort is stable, so
   // this only ever moves unfinished urgent items ahead of everything else —
@@ -1673,8 +1946,13 @@ function renderItems() {
   // sections so items keep moving between the two on toggle exactly as
   // before — only the order *within* each section changes.
   const sortMode = getSortMode(list.id);
-  const active = items.filter((item) => !item.done);
-  const done = items.filter((item) => item.done);
+  // A status filter of 'active'/'done' forces the *other* section empty
+  // regardless of what it would otherwise contain, rather than filtering
+  // items out of `filteredItems` itself — that keeps filteredItems.length
+  // meaningful below as "did the label/price filters match anything at all",
+  // independent of which section(s) the status filter chose to show.
+  const active = filteredItems.filter((item) => !item.done && filterState.status !== 'done');
+  const done = filteredItems.filter((item) => item.done && filterState.status !== 'active');
   if (sortMode === DEFAULT_SORT_MODE) {
     active.sort((a, b) => (b.is_urgent ? 1 : 0) - (a.is_urgent ? 1 : 0));
   } else {
@@ -1692,6 +1970,17 @@ function renderItems() {
   listEls.itemsActive.replaceChildren();
   if (items.length === 0) {
     listEls.itemsActive.appendChild(emptyItemsRow(t('items.emptyList')));
+  } else if (filteredItems.length === 0) {
+    // The label/price filters matched nothing at all — distinct from
+    // "allDone" below, which is about the ordinary active/done split rather
+    // than a filter eliminating every item.
+    listEls.itemsActive.appendChild(emptyItemsRow(t('items.noFilterMatches')));
+  } else if (filterState.status === 'done') {
+    // Status filtered to "Acheté" only: the active section is always empty
+    // in this mode (see the `active` derivation above) — say so explicitly
+    // rather than showing "Tout est terminé", which would be misleading
+    // when most of the list is in fact still unchecked.
+    listEls.itemsActive.appendChild(emptyItemsRow(t('items.filterShowingDoneOnly')));
   } else if (active.length === 0) {
     listEls.itemsActive.appendChild(emptyItemsRow(t('items.allDone')));
   } else {
@@ -1729,6 +2018,11 @@ function renderItems() {
   }
   listEls.doneSummaryLabel.textContent = t('items.doneCount', { count: done.length });
   listEls.doneSection.hidden = done.length === 0;
+  // Filtered specifically to "Acheté" (see the empty-message branch above,
+  // and the `active`/`done` derivation further up): open the section
+  // automatically so the very thing the filter was set to show isn't left
+  // behind a collapsed <details> the user has to know to expand.
+  if (filterState.status === 'done' && done.length > 0) listEls.doneSection.open = true;
 
   // updateReorderButtonVisibility is defined in reorder.js — re-evaluated on
   // every normal render so the "⇅ Réordonner" button reflects the current
@@ -1806,6 +2100,47 @@ function renderItemsSkeleton() {
   listEls.itemsDone.replaceChildren();
 }
 
+// <main> (index.html) has no overflow-y of its own, so `window`/`document`
+// is the actual scrolling element for the whole app — nothing else in this
+// codebase resets scroll position on a view switch. Without this, opening a
+// list from a dashboard scrolled partway down (routine on a phone, where
+// the grid is often taller than one screen) swaps in the list detail view
+// while the page stays scrolled exactly where it was: the header's "⋮"
+// Options button (and Trier/Filtres row) visually *should* be at the top of
+// the new view, but the stale scroll position puts something else there
+// instead, so a tap where the user expects that button lands on nothing.
+// This turned out not to be the only cause of reports that these buttons
+// "don't react" on mobile — see setListActionButtonsEnabled below for the
+// other, confirmed one — but it's a real gap in its own right and stays
+// fixed regardless. Called on every dashboard<->list transition below, and
+// by setActiveTab (planning.js) on every tab switch for the same reason.
+function resetScrollPosition() {
+  window.scrollTo(0, 0);
+}
+
+// openListOptionsSheet/openSortItemsSheet/openFilterItemsSheet (further
+// below) all bail out via `if (!state.currentList) return;` — correctly,
+// since none of them has anything to act on without a loaded list. The bug
+// this guards against: selectList (below) makes #items-section, and every
+// one of these three header buttons, visible immediately — before
+// state.currentList is actually set, whenever nothing's cached yet for the
+// list being opened (a first-ever open on this device, renderItemsSkeleton's
+// loading window). During that window the buttons sit fully tappable but
+// inert: a tap lands, the button's own CSS `:active` state shows (so it
+// visually "reacts"), and then the guard silently no-ops — indistinguishable
+// from a dead click handler from the user's point of view. A slow mobile
+// network/CPU widens this window enough to actually tap into in practice; a
+// fast desktop connection usually resolves it before a second tap is even
+// possible, which is why this reads as mobile-only despite being the same
+// code path at every viewport width. Disabling the buttons for the duration
+// (called by selectList) removes the silent no-op instead of just narrowing
+// the window further.
+function setListActionButtonsEnabled(enabled) {
+  listEls.listOptionsButton.disabled = !enabled;
+  listEls.sortItemsButton.disabled = !enabled;
+  listEls.filterItemsButton.disabled = !enabled;
+}
+
 async function selectList(id, opts = {}) {
   const { silent = false } = opts;
   hideError();
@@ -1822,11 +2157,19 @@ async function selectList(id, opts = {}) {
   const cachedForPaint = await cachedListDetail(id);
   els.listsSection.hidden = true;
   listEls.itemsSection.hidden = false;
+  resetScrollPosition();
   if (cachedForPaint) {
     state.currentListId = id;
     state.currentList = cachedForPaint;
+    setListActionButtonsEnabled(true);
     renderItems();
   } else {
+    // Nothing cached yet for this list: state.currentList stays unset for
+    // the duration of the fetch below, so the header's Options/Trier/
+    // Filtres buttons — already visible — must stay disabled rather than
+    // sitting tappable-but-inert. See setListActionButtonsEnabled's own
+    // doc comment above.
+    setListActionButtonsEnabled(false);
     renderItemsSkeleton();
   }
 
@@ -1849,6 +2192,7 @@ async function selectList(id, opts = {}) {
   }
   state.currentListId = id;
   state.currentList = list;
+  setListActionButtonsEnabled(true);
   renderItems();
   // saveLastView is defined in app.js — see the "keep last page on launch"
   // preference there.
@@ -1865,6 +2209,7 @@ function showDashboard() {
   state.currentList = null;
   listEls.itemsSection.hidden = true;
   els.listsSection.hidden = false;
+  resetScrollPosition();
   // activeTab is defined in planning.js; saveLastView in app.js — see the
   // "keep last page on launch" preference there.
   saveLastView({ type: 'tab', tab: activeTab });
@@ -2321,15 +2666,23 @@ listEls.backButton.addEventListener('click', () => {
   showDashboard();
 });
 
+// Both buttons now live inside #list-options-sheet — close it first, then
+// open the target modal, the same sequential close/open pattern
+// #item-actions-sheet's own rows already use.
+
 // openListModal is defined in app.js, resolved lazily the same way every
 // other cross-file call in this file already is.
 listEls.editListButton.addEventListener('click', () => {
-  if (state.currentList) openListModal(state.currentList);
+  const list = state.currentList;
+  closeListOptionsSheet();
+  if (list) openListModal(list);
 });
 
 // openShareModal is defined in shares.js, resolved lazily the same way.
 listEls.shareListButton.addEventListener('click', () => {
-  if (state.currentList) openShareModal({ kind: 'list', id: state.currentList.id, name: state.currentList.name });
+  const list = state.currentList;
+  closeListOptionsSheet();
+  if (list) openShareModal({ kind: 'list', id: list.id, name: list.name });
 });
 
 // ---------------------------------------------------------------------------

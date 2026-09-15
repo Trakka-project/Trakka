@@ -115,6 +115,12 @@ function setTabButtonState(button, active) {
 
 function setActiveTab(tab) {
   activeTab = tab;
+  // resetScrollPosition is defined in list_view.js (loaded before this
+  // file) — see its own doc comment there for the confirmed bug this
+  // avoids: without it, switching tabs while scrolled down left every
+  // newly-shown tab's own header controls unreachable at their expected
+  // on-screen position until the user manually scrolled back up first.
+  resetScrollPosition();
   planningEls.dashboardView.hidden = tab !== 'dashboard';
   planningEls.planningView.hidden = tab !== 'planning';
   planningEls.urgentView.hidden = tab !== 'urgent';

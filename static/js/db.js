@@ -221,8 +221,30 @@
   // the service worker can synthesize an API-shaped response for GET
   // requests made while offline.
 
+  // Sorted to match internal/db.ListListsForUser's own `ORDER BY
+  // lists.created_at DESC` (newest first) — IndexedDB's getAll() otherwise
+  // returns records in ascending primary-key order with no way to request
+  // anything else, which silently diverged from the server's order (oldest
+  // first vs newest first) and made a dashboard card grid visibly reorder
+  // itself between the offline (cache) and online (network) renders of the
+  // exact same house. Every caller of getLists()/getListsByHouse() renders
+  // lists in whatever order this resolves to, so sorting once here — rather
+  // than in each of app.js's/sw.js's own callers — is what keeps the two
+  // paths from drifting apart again in the future.
+  function compareListsNewestFirst(a, b) {
+    const at = typeof a.created_at === 'string' ? a.created_at : '';
+    const bt = typeof b.created_at === 'string' ? b.created_at : '';
+    if (at !== bt) return at < bt ? 1 : -1;
+    // Tie-break deterministically (two lists created within the same
+    // millisecond) rather than leaving the order unspecified.
+    const aId = Number(a.id);
+    const bId = Number(b.id);
+    if (Number.isFinite(aId) && Number.isFinite(bId)) return bId - aId;
+    return 0;
+  }
+
   function getLists() {
-    return getAll(STORE_LISTS);
+    return getAll(STORE_LISTS).then((lists) => lists.sort(compareListsNewestFirst));
   }
 
   function putLists(lists) {
@@ -331,6 +353,35 @@
 
   function putItems(items) {
     return putMany(STORE_ITEMS, items);
+  }
+
+  // True for a client-generated placeholder id (e.g. "temp-item-<uuid>") for
+  // an item created offline and not yet synced — see sw.js's
+  // generateTempId/extractTempId. Such an item can never appear in a server
+  // response (the server has no idea it exists yet), so it must never be
+  // treated as "stale" just because it's locally-only.
+  function isTempId(id) {
+    return typeof id === 'string' && id.startsWith('temp-');
+  }
+
+  // Prunes every item this device has mirrored under `listId` that isn't in
+  // `currentIds` — the id list from a just-received, authoritative
+  // `GET /api/v1/lists/{id}` (or `/api/v1/items?list_id=`) response — so an
+  // item deleted server-side (from a different session/device, while this
+  // one was offline) eventually gets removed from the local mirror too,
+  // instead of lingering there forever and inflating this device's own
+  // "N restant(s)" counts relative to what the server (and every other
+  // device) reports. putItem(s) alone only ever upserts; nothing else ever
+  // notices a locally-mirrored row that should no longer exist. A still-
+  // queued offline-created item (isTempId) is deliberately kept rather than
+  // pruned, since it can never legitimately appear in `currentIds` yet.
+  async function pruneRemovedListItems(listId, currentIds) {
+    const existing = await getAllByIndex(STORE_ITEMS, 'list_id', listId);
+    const keep = new Set(currentIds.map(String));
+    const staleIds = existing.filter((item) => !keep.has(String(item.id)) && !isTempId(item.id)).map((item) => item.id);
+    if (!staleIds.length) return;
+    const s = await store(STORE_ITEMS, 'readwrite');
+    await Promise.all(staleIds.map((id) => requestToPromise(s.delete(id))));
   }
 
   function putItem(item) {
@@ -549,6 +600,7 @@
     getItemsByList,
     putItems,
     putItem,
+    pruneRemovedListItems,
     freshItems,
     freshLists,
     deleteItem,

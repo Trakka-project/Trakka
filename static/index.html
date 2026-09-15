@@ -281,7 +281,13 @@
     </section>
 
     <section id="items-section" hidden>
-      <div class="mb-4 flex items-center gap-3">
+      <!-- Row 1: back + full list name + a single "Options" button — kept
+           deliberately spare (no row of individual action icons squeezing
+           the title) per the mobile-header redesign. Share/Edit/Réordonner/
+           Vue compacte-détaillée all moved into #list-options-sheet, opened
+           by the one button on the right; Trier/Filtres get their own row
+           below since they're used far more often than the rest. -->
+      <div class="mb-3 flex items-center gap-3">
         <button type="button" id="back-button" data-i18n-aria-label="items.back" aria-label="Retour au tableau de bord"
                 class="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-100 dark:bg-slate-800/60 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-800">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="h-5 w-5" aria-hidden="true"><path d="M15 18l-6-6 6-6"/></svg>
@@ -297,37 +303,31 @@
           </div>
           <p id="items-remaining-count" class="truncate text-sm text-slate-500 dark:text-slate-400"></p>
         </div>
-        <button type="button" id="share-list-button" data-i18n-aria-label="items.shareList" aria-label="Partager la liste"
-                class="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-100 dark:bg-slate-800/60 text-slate-500 hover:bg-violet-500/10 hover:text-violet-600 dark:hover:text-violet-400">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="h-5 w-5" aria-hidden="true"><path d="M16 11a4 4 0 1 0-4-4"/><path d="M8 21v-2a4 4 0 0 1 4-4h1"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/></svg>
+        <button type="button" id="list-options-button" data-i18n-aria-label="items.listOptionsAriaLabel" aria-label="Options de la liste"
+                class="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-100 dark:bg-slate-800/60 text-slate-500 hover:bg-slate-200 dark:hover:bg-slate-800 hover:text-slate-900 dark:hover:text-slate-200 disabled:cursor-not-allowed disabled:opacity-40">
+          <svg viewBox="0 0 24 24" fill="currentColor" class="h-5 w-5" aria-hidden="true"><circle cx="12" cy="5" r="1.75"/><circle cx="12" cy="12" r="1.75"/><circle cx="12" cy="19" r="1.75"/></svg>
         </button>
-        <!-- Sort menu: opens #sort-items-sheet, offering Nom (A→Z/Z→A)/Prix
-             (croissant/décroissant, hidden on a list type with no price via
-             the same data-item-field="price" gating every other price-only
-             control here already uses)/Label/Ordre par défaut. See
-             applySortMode/getSortMode/setSortMode in list_view.js.
-             updateSortButtonHighlight toggles this button's own highlighted
-             state whenever a non-default sort is active for the open list. -->
+      </div>
+
+      <!-- Row 2: the two actions actually used while browsing a list — Trier
+           opens #sort-items-sheet, Filtres opens #filter-items-sheet. Both
+           are pill buttons (icon + visible label) rather than bare icons, so
+           they read clearly even before the user has learned this app's
+           iconography. updateSortButtonHighlight/updateFilterButtonHighlight
+           (list_view.js) tint whichever one is non-default, and
+           #filter-active-badge additionally flags an active filter with a
+           small dot — both re-evaluated on every render. -->
+      <div class="mb-4 flex flex-wrap items-center gap-2">
         <button type="button" id="sort-items-button" data-i18n-aria-label="items.sortItemsAriaLabel" aria-label="Trier les articles"
-                class="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-100 dark:bg-slate-800/60 text-slate-500 hover:bg-slate-200 dark:hover:bg-slate-800 hover:text-slate-900 dark:hover:text-slate-200">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="h-5 w-5" aria-hidden="true"><path d="M3 6h13"/><path d="M3 12h9"/><path d="M3 18h5"/><path d="M17 18V6"/><path d="M14 9l3-3 3 3"/></svg>
+                class="inline-flex items-center gap-1.5 rounded-full border border-slate-200 dark:border-slate-700 bg-slate-100 dark:bg-slate-800/60 px-3.5 py-2 text-sm font-medium text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-40">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="h-4 w-4" aria-hidden="true"><path d="M3 6h13"/><path d="M3 12h9"/><path d="M3 18h5"/><path d="M17 18V6"/><path d="M14 9l3-3 3 3"/></svg>
+          <span data-i18n="items.sortButtonLabel">Trier</span>
         </button>
-        <!-- Compact/Detailed display toggle (updateViewModeToggleButton in
-             list_view.js swaps its icon/title/aria-label based on the
-             current per-list-type localStorage preference). Hidden the same
-             way #quick-add-toggle already is, for a list type with nothing
-             for either mode to show/hide (see hasAdvancedFields). -->
-        <button type="button" id="view-mode-toggle-button" data-i18n-aria-label="items.viewModeToggleAriaLabelToCompact" aria-label="Passer en affichage compact"
-                class="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-100 dark:bg-slate-800/60 text-slate-500 hover:bg-slate-200 dark:hover:bg-slate-800 hover:text-slate-900 dark:hover:text-slate-200">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="h-5 w-5" aria-hidden="true"><path d="M4 6h16"/><path d="M4 12h16"/><path d="M4 18h16"/></svg>
-        </button>
-        <button type="button" id="reorder-list-button" hidden data-i18n-aria-label="items.reorderList" aria-label="Réordonner les articles"
-                class="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-100 dark:bg-slate-800/60 text-slate-500 hover:bg-slate-200 dark:hover:bg-slate-800 hover:text-slate-900 dark:hover:text-slate-200">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="h-5 w-5" aria-hidden="true"><path d="M7 15l5 5 5-5"/><path d="M7 9l5-5 5 5"/></svg>
-        </button>
-        <button type="button" id="edit-list-button" data-i18n-aria-label="items.editList" aria-label="Modifier la liste"
-                class="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-100 dark:bg-slate-800/60 text-slate-500 hover:bg-slate-200 dark:hover:bg-slate-800 hover:text-slate-900 dark:hover:text-slate-200">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="h-5 w-5" aria-hidden="true"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4Z"/></svg>
+        <button type="button" id="filter-items-button" data-i18n-aria-label="items.filterItemsAriaLabel" aria-label="Filtrer les articles"
+                class="relative inline-flex items-center gap-1.5 rounded-full border border-slate-200 dark:border-slate-700 bg-slate-100 dark:bg-slate-800/60 px-3.5 py-2 text-sm font-medium text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-40">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="h-4 w-4" aria-hidden="true"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/></svg>
+          <span data-i18n="items.filterButtonLabel">Filtres</span>
+          <span id="filter-active-badge" hidden aria-hidden="true" class="absolute -right-0.5 -top-0.5 h-2.5 w-2.5 rounded-full bg-sky-500 ring-2 ring-slate-50 dark:ring-slate-900"></span>
         </button>
       </div>
 
@@ -1120,6 +1120,12 @@
           <span data-i18n="modals.sortItems.manual">Ordre par défaut</span>
           <span class="sort-option-check ml-auto text-lg text-sky-500 dark:text-sky-400" hidden aria-hidden="true">✓</span>
         </button>
+        <button type="button" id="sort-option-urgent" data-sort-mode="urgent"
+                class="flex items-center gap-3 rounded-xl px-3 py-3 text-left text-base font-medium text-slate-900 dark:text-slate-100 hover:bg-slate-200 dark:hover:bg-slate-700">
+          <span aria-hidden="true">🚨</span>
+          <span data-i18n="modals.sortItems.urgent">Urgence</span>
+          <span class="sort-option-check ml-auto text-lg text-sky-500 dark:text-sky-400" hidden aria-hidden="true">✓</span>
+        </button>
         <button type="button" id="sort-option-name-asc" data-sort-mode="name-asc"
                 class="flex items-center gap-3 rounded-xl px-3 py-3 text-left text-base font-medium text-slate-900 dark:text-slate-100 hover:bg-slate-200 dark:hover:bg-slate-700">
           <span aria-hidden="true">🔤</span>
@@ -1151,6 +1157,121 @@
           <span class="sort-option-check ml-auto text-lg text-sky-500 dark:text-sky-400" hidden aria-hidden="true">✓</span>
         </button>
       </div>
+    </div>
+  </div>
+
+  <!-- List options bottom sheet: opened by the header's single "⋮" button
+       (#list-options-button) — everything that used to be a row of separate
+       icon buttons squeezing the list title (Partager/Vue compacte-détaillée/
+       Réordonner/Modifier la liste) lives here instead. Each row is the same
+       element the old header button was (#share-list-button/
+       #view-mode-toggle-button/#reorder-list-button/#edit-list-button), just
+       relocated and restyled as a full-width row — every existing id/click
+       listener in list_view.js/reorder.js keeps working unchanged. Tapping
+       any one of them closes this sheet first, then performs its action
+       (opens the share modal, toggles view mode, enters reorder mode, opens
+       the edit-list modal) — the same sequential close/open pattern
+       #item-actions-sheet's own rows already use. -->
+  <div id="list-options-sheet" hidden class="fixed inset-0 z-40 flex items-end justify-center bg-slate-950/30 dark:bg-slate-950/70 p-0 sm:items-center sm:p-4">
+    <div role="dialog" aria-modal="true" aria-labelledby="list-options-sheet-title" class="w-full rounded-t-2xl bg-slate-100 dark:bg-slate-800 p-5 shadow-xl sm:max-w-md sm:rounded-2xl">
+      <div class="mb-3 flex items-center justify-between gap-3">
+        <h2 id="list-options-sheet-title" data-i18n="modals.listOptions.title" class="min-w-0 flex-1 truncate text-lg font-semibold">Options de la liste</h2>
+        <button type="button" id="close-list-options-sheet-button" data-i18n-aria-label="modals.close" aria-label="Fermer"
+                class="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-slate-500 dark:text-slate-400 hover:bg-slate-300 dark:hover:bg-slate-700 hover:text-slate-900 dark:hover:text-slate-200">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" class="h-5 w-5" aria-hidden="true"><path d="M18 6L6 18M6 6l12 12"/></svg>
+        </button>
+      </div>
+      <div class="flex flex-col gap-1">
+        <button type="button" id="share-list-button" data-i18n-aria-label="items.shareList" aria-label="Partager la liste"
+                class="flex items-center gap-3 rounded-xl px-3 py-3 text-left text-base font-medium text-slate-900 dark:text-slate-100 hover:bg-slate-200 dark:hover:bg-slate-700">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="h-5 w-5" aria-hidden="true"><path d="M16 11a4 4 0 1 0-4-4"/><path d="M8 21v-2a4 4 0 0 1 4-4h1"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/></svg>
+          <span data-i18n="items.shareList">Partager la liste</span>
+        </button>
+        <!-- Icon + label both swapped by updateViewModeToggleButton
+             (list_view.js) based on the current per-list-type Compact/
+             Detailed preference — see #view-mode-toggle-icon/-label below. -->
+        <button type="button" id="view-mode-toggle-button" data-i18n-aria-label="items.viewModeToggleAriaLabelToCompact" aria-label="Passer en affichage compact"
+                class="flex items-center gap-3 rounded-xl px-3 py-3 text-left text-base font-medium text-slate-900 dark:text-slate-100 hover:bg-slate-200 dark:hover:bg-slate-700">
+          <span id="view-mode-toggle-icon" aria-hidden="true" class="inline-flex h-5 w-5 shrink-0 items-center justify-center">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="h-5 w-5" aria-hidden="true"><path d="M4 6h16"/><path d="M4 12h16"/><path d="M4 18h16"/></svg>
+          </span>
+          <span id="view-mode-toggle-label">Passer en affichage compact</span>
+        </button>
+        <button type="button" id="reorder-list-button" hidden data-i18n-aria-label="items.reorderList" aria-label="Réordonner les articles"
+                class="flex items-center gap-3 rounded-xl px-3 py-3 text-left text-base font-medium text-slate-900 dark:text-slate-100 hover:bg-slate-200 dark:hover:bg-slate-700">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="h-5 w-5" aria-hidden="true"><path d="M7 15l5 5 5-5"/><path d="M7 9l5-5 5 5"/></svg>
+          <span data-i18n="items.reorderList">Réordonner les articles</span>
+        </button>
+        <button type="button" id="edit-list-button" data-i18n-aria-label="items.editList" aria-label="Modifier la liste"
+                class="flex items-center gap-3 rounded-xl px-3 py-3 text-left text-base font-medium text-slate-900 dark:text-slate-100 hover:bg-slate-200 dark:hover:bg-slate-700">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="h-5 w-5" aria-hidden="true"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4Z"/></svg>
+          <span data-i18n="items.editList">Modifier la liste</span>
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Filter items bottom sheet: opened by the header's "Filtres" button
+       (#filter-items-button, row 2 next to "Trier"). Entirely client-side,
+       same as sort mode above (see applyItemFilters/getFilterState/
+       setFilterState in list_view.js) — status (Tout/Restant/Acheté) and
+       label filters apply immediately on tap, the price range on blur/change
+       of either input, mirroring the sort sheet's/label-manage-sheet's own
+       "no separate save step" convention. #filter-labels-section hides
+       itself outright when the list has no labels at all to filter by
+       (renderFilterLabelChips); the price range shares the same
+       data-item-field="price" gating every other price-only control already
+       uses, so it disappears on a todo/custom list. -->
+  <div id="filter-items-sheet" hidden class="fixed inset-0 z-40 flex items-end justify-center bg-slate-950/30 dark:bg-slate-950/70 p-0 sm:items-center sm:p-4">
+    <div role="dialog" aria-modal="true" aria-labelledby="filter-items-sheet-title" class="flex max-h-[85vh] w-full flex-col overflow-hidden rounded-t-2xl bg-slate-100 dark:bg-slate-800 p-5 shadow-xl sm:max-w-md sm:rounded-2xl">
+      <div class="mb-3 flex shrink-0 items-center justify-between gap-3">
+        <h2 id="filter-items-sheet-title" data-i18n="modals.filterItems.title" class="min-w-0 flex-1 truncate text-lg font-semibold">Filtres</h2>
+        <button type="button" id="close-filter-items-sheet-button" data-i18n-aria-label="modals.close" aria-label="Fermer"
+                class="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-slate-500 dark:text-slate-400 hover:bg-slate-300 dark:hover:bg-slate-700 hover:text-slate-900 dark:hover:text-slate-200">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" class="h-5 w-5" aria-hidden="true"><path d="M18 6L6 18M6 6l12 12"/></svg>
+        </button>
+      </div>
+      <div class="min-h-0 flex-1 overflow-y-auto">
+        <div class="mb-4">
+          <h3 class="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400" data-i18n="modals.filterItems.statusHeading">Statut</h3>
+          <div class="flex flex-wrap gap-2">
+            <button type="button" id="filter-status-all" data-filter-status="all"
+                    class="rounded-full px-3.5 py-1.5 text-sm font-semibold">
+              <span data-i18n="modals.filterItems.statusAll">Tout</span>
+            </button>
+            <button type="button" id="filter-status-active" data-filter-status="active"
+                    class="rounded-full px-3.5 py-1.5 text-sm font-semibold">
+              <span data-i18n="modals.filterItems.statusActive">Restant</span>
+            </button>
+            <button type="button" id="filter-status-done" data-filter-status="done"
+                    class="rounded-full px-3.5 py-1.5 text-sm font-semibold">
+              <span data-i18n="modals.filterItems.statusDone">Acheté</span>
+            </button>
+          </div>
+        </div>
+        <div id="filter-labels-section" hidden class="mb-4">
+          <h3 class="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400" data-i18n="modals.filterItems.labelsHeading">Labels</h3>
+          <div id="filter-labels-chips" class="flex flex-wrap gap-2"></div>
+        </div>
+        <div data-item-field="price" hidden>
+          <h3 class="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400" data-i18n="modals.filterItems.priceHeading">Prix</h3>
+          <div class="flex items-center gap-2">
+            <input type="number" id="filter-price-min" min="0" step="0.01" inputmode="decimal"
+                   data-i18n-placeholder="modals.filterItems.priceMinPlaceholder" placeholder="Min (€)"
+                   data-i18n-aria-label="modals.filterItems.priceMinAriaLabel" aria-label="Prix minimum"
+                   class="w-full min-w-0 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-4 py-3 text-base text-slate-900 dark:text-slate-100 placeholder:text-slate-500 focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500/30">
+            <span class="shrink-0 text-slate-400" aria-hidden="true">–</span>
+            <input type="number" id="filter-price-max" min="0" step="0.01" inputmode="decimal"
+                   data-i18n-placeholder="modals.filterItems.priceMaxPlaceholder" placeholder="Max (€)"
+                   data-i18n-aria-label="modals.filterItems.priceMaxAriaLabel" aria-label="Prix maximum"
+                   class="w-full min-w-0 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-4 py-3 text-base text-slate-900 dark:text-slate-100 placeholder:text-slate-500 focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500/30">
+          </div>
+        </div>
+      </div>
+      <button type="button" id="filter-reset-button" data-i18n="modals.filterItems.reset"
+              class="mt-4 w-full shrink-0 rounded-xl border border-slate-200 dark:border-slate-700 px-4 py-3 text-center text-sm font-semibold text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700">
+        Réinitialiser les filtres
+      </button>
     </div>
   </div>
 

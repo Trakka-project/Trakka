@@ -120,6 +120,8 @@
     "typeLabelNotes": "notes",
     "emptyList": "Aucun élément pour le moment.",
     "allDone": "Tout est terminé pour le moment.",
+    "noFilterMatches": "Aucun article ne correspond aux filtres.",
+    "filterShowingDoneOnly": "Filtré : achats terminés uniquement.",
     "enlargeImageAriaLabel": "Agrandir l'image de {title}",
     "autoPriceAriaLabel": "Prix détecté automatiquement pour {title}, cliquer pour modifier",
     "priceSyncPending": "Prix en attente de synchro",
@@ -133,7 +135,11 @@
     "viewModeToggleAriaLabelToDetailed": "Passer en affichage détaillé",
     "viewModeToggleAriaLabelToCompact": "Passer en affichage compact",
     "labelsBadgeAriaLabel": "Labels : {labels}",
-    "sortItemsAriaLabel": "Trier les articles"
+    "sortItemsAriaLabel": "Trier les articles",
+    "sortButtonLabel": "Trier",
+    "filterItemsAriaLabel": "Filtrer les articles",
+    "filterButtonLabel": "Filtres",
+    "listOptionsAriaLabel": "Options de la liste"
   },
   "planning": {
     "tabTitle": "Budget & Prévisions",
@@ -275,11 +281,29 @@
     "sortItems": {
       "title": "Trier les articles",
       "manual": "Ordre par défaut",
+      "urgent": "Urgence",
       "nameAsc": "Nom (A → Z)",
       "nameDesc": "Nom (Z → A)",
       "priceAsc": "Prix (croissant)",
       "priceDesc": "Prix (décroissant)",
       "label": "Label"
+    },
+    "listOptions": {
+      "title": "Options de la liste"
+    },
+    "filterItems": {
+      "title": "Filtres",
+      "statusHeading": "Statut",
+      "statusAll": "Tout",
+      "statusActive": "Restant",
+      "statusDone": "Acheté",
+      "labelsHeading": "Labels",
+      "priceHeading": "Prix",
+      "priceMinPlaceholder": "Min (€)",
+      "priceMaxPlaceholder": "Max (€)",
+      "priceMinAriaLabel": "Prix minimum",
+      "priceMaxAriaLabel": "Prix maximum",
+      "reset": "Réinitialiser les filtres"
     },
     "editItem": {
       "title": "Modifier l'article",
