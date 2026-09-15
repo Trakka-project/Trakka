@@ -122,6 +122,7 @@
     "allDone": "Everything is done for now.",
     "noFilterMatches": "No items match the filters.",
     "filterShowingDoneOnly": "Filtered: purchased items only.",
+    "filterResultsCount": "{shown} of {total} items",
     "enlargeImageAriaLabel": "Enlarge {title}'s image",
     "autoPriceAriaLabel": "Automatically detected price for {title}, click to edit",
     "priceSyncPending": "Price pending sync",
@@ -298,11 +299,15 @@
       "statusActive": "Remaining",
       "statusDone": "Purchased",
       "labelsHeading": "Labels",
+      "urgentHeading": "Urgency",
+      "urgentOnly": "Urgent items only",
+      "urgentOnlyAriaLabel": "Show only urgent items",
       "priceHeading": "Price",
       "priceMinPlaceholder": "Min (€)",
       "priceMaxPlaceholder": "Max (€)",
       "priceMinAriaLabel": "Minimum price",
       "priceMaxAriaLabel": "Maximum price",
+      "storesHeading": "Store",
       "reset": "Reset filters"
     },
     "editItem": {

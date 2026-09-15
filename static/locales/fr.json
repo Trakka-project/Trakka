@@ -122,6 +122,7 @@
     "allDone": "Tout est terminé pour le moment.",
     "noFilterMatches": "Aucun article ne correspond aux filtres.",
     "filterShowingDoneOnly": "Filtré : achats terminés uniquement.",
+    "filterResultsCount": "{shown} sur {total} articles",
     "enlargeImageAriaLabel": "Agrandir l'image de {title}",
     "autoPriceAriaLabel": "Prix détecté automatiquement pour {title}, cliquer pour modifier",
     "priceSyncPending": "Prix en attente de synchro",
@@ -298,11 +299,15 @@
       "statusActive": "Restant",
       "statusDone": "Acheté",
       "labelsHeading": "Labels",
+      "urgentHeading": "Urgence",
+      "urgentOnly": "Articles urgents uniquement",
+      "urgentOnlyAriaLabel": "Afficher uniquement les articles urgents",
       "priceHeading": "Prix",
       "priceMinPlaceholder": "Min (€)",
       "priceMaxPlaceholder": "Max (€)",
       "priceMinAriaLabel": "Prix minimum",
       "priceMaxAriaLabel": "Prix maximum",
+      "storesHeading": "Magasin / Enseigne",
       "reset": "Réinitialiser les filtres"
     },
     "editItem": {

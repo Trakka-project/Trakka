@@ -30,6 +30,11 @@
 
 const reorderEls = {
   toggleButton: document.getElementById('reorder-list-button'),
+  // Same action shown directly in the header on wide screens instead of
+  // inside #list-options-sheet — see #list-desktop-actions' comment in
+  // index.html — kept in sync with toggleButton everywhere its
+  // hidden/disabled state changes below.
+  toggleButtonDesktop: document.getElementById('reorder-list-button-desktop'),
   actionsBar: document.getElementById('reorder-actions-bar'),
   confirmButton: document.getElementById('reorder-confirm-button'),
   cancelButton: document.getElementById('reorder-cancel-button'),
@@ -71,7 +76,9 @@ function reorderAvailable() {
 // state — including a temp-item-* id turning into a real one once the
 // offline queue flushes and refreshCurrentList() re-renders.
 function updateReorderButtonVisibility() {
-  reorderEls.toggleButton.hidden = reorderMode || !reorderAvailable();
+  const hidden = reorderMode || !reorderAvailable();
+  reorderEls.toggleButton.hidden = hidden;
+  reorderEls.toggleButtonDesktop.hidden = hidden;
 }
 
 function enterReorderMode() {
@@ -129,6 +136,7 @@ async function commitReorder() {
 }
 
 reorderEls.toggleButton.addEventListener('click', enterReorderMode);
+reorderEls.toggleButtonDesktop.addEventListener('click', enterReorderMode);
 reorderEls.cancelButton.addEventListener('click', () => exitReorderMode());
 reorderEls.confirmButton.addEventListener('click', commitReorder);
 
@@ -176,6 +184,7 @@ function renderReorderList() {
   listEls.createItemFormAnchor.hidden = true;
   listEls.doneSection.hidden = true;
   reorderEls.toggleButton.hidden = true;
+  reorderEls.toggleButtonDesktop.hidden = true;
 
   listEls.itemsActive.replaceChildren();
   for (const item of reorderDraftOrder) {
