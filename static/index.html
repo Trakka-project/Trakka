@@ -460,10 +460,13 @@
               <option value="custom" data-i18n="items.reminderCustom">Rappel : personnalisé</option>
               <option value="off" data-i18n="items.reminderOff">Rappel : désactivé</option>
             </select>
-            <div id="item-reminder-custom-fields" hidden class="flex items-center gap-2">
-              <input type="number" min="0" id="item-reminder-offset" data-i18n-aria-label="items.reminderOffsetAriaLabel" aria-label="Jours avant l'échéance"
-                     class="w-20 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-3 text-base text-slate-900 dark:text-slate-100 focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500/30">
-              <input type="time" id="item-reminder-time" data-i18n-aria-label="items.reminderTimeAriaLabel" aria-label="Heure du rappel"
+            <div id="item-reminder-custom-fields" hidden
+                 class="flex items-center gap-2 md:basis-full md:flex-wrap md:rounded-2xl md:border md:border-slate-200 md:dark:border-slate-800 md:bg-white md:dark:bg-slate-900 md:p-3 md:shadow-sm">
+              <span class="hidden shrink-0 md:inline" aria-hidden="true">🕒</span>
+              <input type="number" min="0" id="item-reminder-offset" placeholder="0" data-i18n-aria-label="items.reminderOffsetAriaLabel" aria-label="Jours avant l'échéance"
+                     class="w-20 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-3 text-base text-slate-900 dark:text-slate-100 placeholder:text-slate-500 focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500/30">
+              <span class="hidden whitespace-nowrap text-xs text-slate-500 dark:text-slate-400 md:inline" data-i18n="items.reminderOffsetSuffix">jour(s) avant à</span>
+              <input type="time" id="item-reminder-time" placeholder="--:--" data-i18n-aria-label="items.reminderTimeAriaLabel" aria-label="Heure du rappel"
                      class="rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-3 text-base text-slate-900 dark:text-slate-100 focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500/30">
             </div>
             <label data-item-field="urgent" class="flex min-h-[44px] cursor-pointer items-center gap-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 text-sm font-medium text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-800">
@@ -1081,9 +1084,9 @@
             <option value="off" data-i18n="items.reminderOff">Rappel : désactivé</option>
           </select>
           <div id="edit-item-reminder-custom-fields" hidden class="mt-2 flex items-center gap-2">
-            <input type="number" min="0" id="edit-item-reminder-offset" data-i18n-aria-label="items.reminderOffsetAriaLabel" aria-label="Jours avant l'échéance"
-                   class="w-20 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-3 text-base text-slate-900 dark:text-slate-100 focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500/30">
-            <input type="time" id="edit-item-reminder-time" data-i18n-aria-label="items.reminderTimeAriaLabel" aria-label="Heure du rappel"
+            <input type="number" min="0" id="edit-item-reminder-offset" placeholder="0" data-i18n-aria-label="items.reminderOffsetAriaLabel" aria-label="Jours avant l'échéance"
+                   class="w-20 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-3 text-base text-slate-900 dark:text-slate-100 placeholder:text-slate-500 focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500/30">
+            <input type="time" id="edit-item-reminder-time" placeholder="--:--" data-i18n-aria-label="items.reminderTimeAriaLabel" aria-label="Heure du rappel"
                    class="flex-1 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-3 text-base text-slate-900 dark:text-slate-100 focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500/30">
           </div>
         </div>

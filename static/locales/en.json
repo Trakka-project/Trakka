@@ -112,6 +112,7 @@
     "reminderCustom": "Reminder: custom",
     "reminderOff": "Reminder: off",
     "reminderOffsetAriaLabel": "Days before the due date",
+    "reminderOffsetSuffix": "day(s) before at",
     "reminderTimeAriaLabel": "Reminder time",
     "urgentLabel": "Mark as urgent",
     "urgentHint": "E.g. Out of toilet paper",

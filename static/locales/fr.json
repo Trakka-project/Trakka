@@ -112,6 +112,7 @@
     "reminderCustom": "Rappel : personnalisé",
     "reminderOff": "Rappel : désactivé",
     "reminderOffsetAriaLabel": "Jours avant l'échéance",
+    "reminderOffsetSuffix": "jour(s) avant à",
     "reminderTimeAriaLabel": "Heure du rappel",
     "urgentLabel": "Marquer comme urgent",
     "urgentHint": "Ex : Papier toilette épuisé",
