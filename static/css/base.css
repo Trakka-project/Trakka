@@ -83,6 +83,30 @@ html, body {
   display: none !important;
 }
 
+/* Reliable tap handling on touch devices for every button in the app (every
+   icon/kebab/pill/sheet-opening control here is a plain `<button>` — see the
+   "no third-party UI framework" convention in CLAUDE.md, so one rule at the
+   type-selector level covers all of them, including ones added later).
+   Without `touch-action: manipulation`, the browser still has to wait to see
+   whether a tap is the first half of a double-tap-to-zoom or pinch gesture
+   before committing to a `click` — on some Android WebViews and older iOS
+   Safari versions this can occasionally swallow a fast tap entirely rather
+   than just delaying it, especially on a button sized right at the 44px
+   minimum touch target next to another interactive element (e.g. the
+   `#list-options-button` "⋮" button beside the back button in the list
+   detail header). This tells the browser up front that the target only
+   responds to a plain tap/pan, so it commits to `click` immediately.
+   `.reorder-handle`'s own `touch-action: none` (further below) still wins
+   for that one element regardless of rule order, since a class selector is
+   always more specific than this bare type selector.
+   `-webkit-tap-highlight-color: transparent` removes iOS Safari's default
+   gray flash overlay on tap, replaced by this app's own `:hover`/`:active`
+   Tailwind classes so a tap still gives visible feedback. */
+button {
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}
+
 /* Smooth, app-wide crossfade when the theme is switched manually (Light /
    Dark / Auto, see static/js/theme.js). Scoped to the properties that
    actually change between themes rather than `all`, so layout-affecting
@@ -678,6 +702,23 @@ body {
 .reorder-row.dragging {
   opacity: 0.4;
   cursor: grabbing;
+}
+
+/* Restores the vertical-only `pan-y` behavior gestures.js's
+   attachItemSwipeGestures sets on a `.swipe-item` row's foreground (see its
+   own comment in gestures.js) for any `<button>` nested inside it — the
+   checkbox, quantity stepper, price/edit/delete/kebab controls a card's own
+   buildItemRow already builds. Without this, the global `button {
+   touch-action: manipulation }` rule above would win on those specific
+   elements (a touch literally starting on top of one, not just anywhere on
+   the card) since `manipulation` permits horizontal panning as well as
+   vertical, letting the browser's own native gesture handling compete with
+   the item-swipe JS for exactly the touches that gesture most needs to
+   track. A class selector always beats a bare type selector regardless of
+   which rule appears first in the file, so this holds regardless of
+   ordering. */
+.swipe-item button {
+  touch-action: pan-y;
 }
 
 /* iOS/iPadOS Safari (and some Android WebViews) force-zoom the whole page

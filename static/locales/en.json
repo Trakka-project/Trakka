@@ -120,6 +120,8 @@
     "typeLabelNotes": "notes",
     "emptyList": "No items yet.",
     "allDone": "Everything is done for now.",
+    "noFilterMatches": "No items match the filters.",
+    "filterShowingDoneOnly": "Filtered: purchased items only.",
     "enlargeImageAriaLabel": "Enlarge {title}'s image",
     "autoPriceAriaLabel": "Automatically detected price for {title}, click to edit",
     "priceSyncPending": "Price pending sync",
@@ -133,7 +135,11 @@
     "viewModeToggleAriaLabelToDetailed": "Switch to detailed view",
     "viewModeToggleAriaLabelToCompact": "Switch to compact view",
     "labelsBadgeAriaLabel": "Labels: {labels}",
-    "sortItemsAriaLabel": "Sort items"
+    "sortItemsAriaLabel": "Sort items",
+    "sortButtonLabel": "Sort",
+    "filterItemsAriaLabel": "Filter items",
+    "filterButtonLabel": "Filters",
+    "listOptionsAriaLabel": "List options"
   },
   "planning": {
     "tabTitle": "Budget & Forecast",
@@ -275,11 +281,29 @@
     "sortItems": {
       "title": "Sort items",
       "manual": "Default order",
+      "urgent": "Urgency",
       "nameAsc": "Name (A → Z)",
       "nameDesc": "Name (Z → A)",
       "priceAsc": "Price (ascending)",
       "priceDesc": "Price (descending)",
       "label": "Label"
+    },
+    "listOptions": {
+      "title": "List options"
+    },
+    "filterItems": {
+      "title": "Filters",
+      "statusHeading": "Status",
+      "statusAll": "All",
+      "statusActive": "Remaining",
+      "statusDone": "Purchased",
+      "labelsHeading": "Labels",
+      "priceHeading": "Price",
+      "priceMinPlaceholder": "Min (€)",
+      "priceMaxPlaceholder": "Max (€)",
+      "priceMinAriaLabel": "Minimum price",
+      "priceMaxAriaLabel": "Maximum price",
+      "reset": "Reset filters"
     },
     "editItem": {
       "title": "Edit item",

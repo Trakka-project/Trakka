@@ -76,6 +76,10 @@ function updateReorderButtonVisibility() {
 
 function enterReorderMode() {
   if (!reorderAvailable()) return;
+  // closeListOptionsSheet is defined in list_view.js — this button now lives
+  // inside #list-options-sheet (see the mobile-header redesign), so entering
+  // reorder mode has to close it first, the same as every other row there.
+  closeListOptionsSheet();
   hideError();
   reorderMode = true;
   const items = (state.currentList.items || []).filter((item) => !item.pendingDelete);
