@@ -1884,10 +1884,29 @@ let swRegistration = null;
 function registerServiceWorker() {
   if (!('serviceWorker' in navigator)) return;
 
-  navigator.serviceWorker.register('/sw.js')
+  // updateViaCache: 'none' makes every registration.update() check bypass
+  // the HTTP cache not just for sw.js itself (internal/handlers/app.go
+  // already sets an explicit Cache-Control: no-cache on that specific
+  // route, belt-and-suspenders against browsers/proxies that don't fully
+  // honor the main-script exemption) but also for db.js, which sw.js loads
+  // via importScripts — otherwise a stale cached copy of an imported script
+  // could keep running under a service worker the browser still considers
+  // "up to date" (the byte comparison that actually detects an update only
+  // ever looks at sw.js's own bytes, never its imports).
+  navigator.serviceWorker.register('/sw.js', { updateViaCache: 'none' })
     .then((registration) => {
       swRegistration = registration;
       watchForServiceWorkerUpdate(registration);
+      // sw.js's own self.skipWaiting() (called unconditionally on install —
+      // see its doc comment) means a new worker essentially never sits in
+      // the 'waiting' state for long, but this handles the narrow case of a
+      // worker that already reached 'installed'/'waiting' before this
+      // page's own 'updatefound' listener (just attached above) existed to
+      // catch it — e.g. one installed in the background while this exact
+      // tab was the only open client and so couldn't yet be activated.
+      if (registration.waiting && navigator.serviceWorker.controller) {
+        showUpdateBanner();
+      }
     })
     .catch((err) => {
       console.error('Échec de l’enregistrement du service worker :', err);
@@ -1984,6 +2003,64 @@ function checkForServiceWorkerUpdate() {
     /* offline, or the browser declined to check right now — fine, retried
        on the next visibility/focus/interval trigger below. */
   });
+}
+
+// Reads the version suffix (e.g. "v93") straight out of the actual Cache
+// Storage API entry the active service worker created for it, rather than
+// duplicating sw.js's SHELL_CACHE constant in a second file — Cache Storage
+// is shared between window and service-worker contexts on the same origin,
+// so this reflects exactly what the currently controlling worker put there.
+// Deliberately not sourced from a shared module/constant: keeping
+// SHELL_CACHE/RUNTIME_CACHE inlined literally in sw.js's own source (see
+// that file's own doc comment) is what guarantees registration.update()'s
+// byte comparison actually notices a version bump — a constant imported
+// from elsewhere wouldn't change sw.js's own bytes and would silently
+// defeat that mechanism. Returns null if unsupported or nothing cached yet.
+async function getAppVersion() {
+  if (!('caches' in window)) return null;
+  try {
+    const keys = await caches.keys();
+    const shellKey = keys.find((key) => key.startsWith('trakka-shell-'));
+    return shellKey ? shellKey.slice('trakka-shell-'.length) : null;
+  } catch {
+    return null;
+  }
+}
+
+// Called from settings.js's "Vérifier les mises à jour" button — a check the
+// user explicitly asked for, unlike checkForServiceWorkerUpdate above (whose
+// failures are deliberately swallowed since some other trigger will just
+// retry later): this one has to report an outcome. registration.update()'s
+// own promise resolves once the check itself is done but its resolution
+// value never says whether anything new was found; 'updatefound' firing on
+// the registration is the only reliable signal, and it fires synchronously
+// as part of update()'s own algorithm — before update() even resolves, in
+// every engine this was verified against — so a short grace window after
+// resolution is what actually tells "found nothing" apart from "found
+// something, and the new worker just hasn't reached 'installed' yet".
+// Returns 'unsupported' (no service worker registered — used as a proxy for
+// "not registered yet" too, e.g. a very first page load), 'error' (the
+// update check itself failed, typically offline), 'updated' (a new version
+// was found — watchForServiceWorkerUpdate's own pre-existing 'updatefound'
+// listener takes it from there and shows #update-banner once it installs),
+// or 'up-to-date'.
+async function manualCheckForUpdate() {
+  if (!swRegistration) return 'unsupported';
+
+  let updateFound = false;
+  const onUpdateFound = () => { updateFound = true; };
+  swRegistration.addEventListener('updatefound', onUpdateFound);
+
+  try {
+    await swRegistration.update();
+  } catch {
+    swRegistration.removeEventListener('updatefound', onUpdateFound);
+    return 'error';
+  }
+
+  await new Promise((resolve) => setTimeout(resolve, 1000));
+  swRegistration.removeEventListener('updatefound', onUpdateFound);
+  return updateFound ? 'updated' : 'up-to-date';
 }
 
 const SW_UPDATE_POLL_MS = 15 * 60000;

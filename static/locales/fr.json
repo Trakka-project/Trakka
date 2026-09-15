@@ -122,6 +122,7 @@
     "allDone": "Tout est terminé pour le moment.",
     "noFilterMatches": "Aucun article ne correspond aux filtres.",
     "filterShowingDoneOnly": "Filtré : achats terminés uniquement.",
+    "filterResultsCount": "{shown} sur {total} articles",
     "enlargeImageAriaLabel": "Agrandir l'image de {title}",
     "autoPriceAriaLabel": "Prix détecté automatiquement pour {title}, cliquer pour modifier",
     "priceSyncPending": "Prix en attente de synchro",
@@ -298,11 +299,15 @@
       "statusActive": "Restant",
       "statusDone": "Acheté",
       "labelsHeading": "Labels",
+      "urgentHeading": "Urgence",
+      "urgentOnly": "Articles urgents uniquement",
+      "urgentOnlyAriaLabel": "Afficher uniquement les articles urgents",
       "priceHeading": "Prix",
       "priceMinPlaceholder": "Min (€)",
       "priceMaxPlaceholder": "Max (€)",
       "priceMinAriaLabel": "Prix minimum",
       "priceMaxAriaLabel": "Prix maximum",
+      "storesHeading": "Magasin / Enseigne",
       "reset": "Réinitialiser les filtres"
     },
     "editItem": {
@@ -389,7 +394,14 @@
       "pushNotConfigured": "Les notifications push ne sont pas configurées sur cette instance.",
       "pushPermissionDenied": "Autorisation refusée. Modifiez les autorisations de ce site dans les paramètres de votre navigateur pour réactiver.",
       "installHelpButton": "Comment installer l'application sur mon téléphone ?",
-      "adminConsoleButton": "Console d'Administration"
+      "adminConsoleButton": "Console d'Administration",
+      "updateSectionTitle": "Mises à jour",
+      "updateVersionKnown": "Version {version}",
+      "updateVersionUnknown": "Version inconnue",
+      "updateCheckButton": "Vérifier les mises à jour",
+      "updateCheckUpToDate": "Trakka est déjà à jour.",
+      "updateCheckUnsupported": "La vérification des mises à jour n'est pas prise en charge par ce navigateur.",
+      "updateCheckError": "Impossible de vérifier les mises à jour pour le moment."
     },
     "installHelp": {
       "title": "Installer Trakka sur votre téléphone",

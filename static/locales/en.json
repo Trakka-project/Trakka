@@ -122,6 +122,7 @@
     "allDone": "Everything is done for now.",
     "noFilterMatches": "No items match the filters.",
     "filterShowingDoneOnly": "Filtered: purchased items only.",
+    "filterResultsCount": "{shown} of {total} items",
     "enlargeImageAriaLabel": "Enlarge {title}'s image",
     "autoPriceAriaLabel": "Automatically detected price for {title}, click to edit",
     "priceSyncPending": "Price pending sync",
@@ -298,11 +299,15 @@
       "statusActive": "Remaining",
       "statusDone": "Purchased",
       "labelsHeading": "Labels",
+      "urgentHeading": "Urgency",
+      "urgentOnly": "Urgent items only",
+      "urgentOnlyAriaLabel": "Show only urgent items",
       "priceHeading": "Price",
       "priceMinPlaceholder": "Min (€)",
       "priceMaxPlaceholder": "Max (€)",
       "priceMinAriaLabel": "Minimum price",
       "priceMaxAriaLabel": "Maximum price",
+      "storesHeading": "Store",
       "reset": "Reset filters"
     },
     "editItem": {
@@ -389,7 +394,14 @@
       "pushNotConfigured": "Push notifications aren't configured on this instance.",
       "pushPermissionDenied": "Permission denied. Change this site's permissions in your browser settings to re-enable.",
       "installHelpButton": "How do I install the app on my phone?",
-      "adminConsoleButton": "Admin Console"
+      "adminConsoleButton": "Admin Console",
+      "updateSectionTitle": "Updates",
+      "updateVersionKnown": "Version {version}",
+      "updateVersionUnknown": "Unknown version",
+      "updateCheckButton": "Check for updates",
+      "updateCheckUpToDate": "Trakka is already up to date.",
+      "updateCheckUnsupported": "Checking for updates isn't supported by this browser.",
+      "updateCheckError": "Couldn't check for updates right now."
     },
     "installHelp": {
       "title": "Install Trakka on your phone",
