@@ -22,6 +22,13 @@
 // Like the notifications bell and the admin panel, this is a header-level
 // control rather than a dashboard tab, so it has its own open/close wiring
 // here instead of going through refreshVisibleView.
+//
+// This modal also surfaces the app's own update/version status: a
+// "Mises à jour" block shows the currently active service worker's cache
+// version (getAppVersion, in app.js) and a manual "Vérifier les mises à
+// jour" button (manualCheckForUpdate, also in app.js) that forces a
+// registration.update() on demand rather than waiting for the
+// visibility/focus/interval-driven checks already wired up there.
 
 const userSettingsEls = {
   button: document.getElementById('user-settings-button'),
@@ -32,6 +39,8 @@ const userSettingsEls = {
   form: document.getElementById('user-settings-form'),
   keepLastPage: document.getElementById('user-settings-keep-last-page'),
   status: document.getElementById('user-settings-status'),
+  updateVersion: document.getElementById('user-settings-update-version'),
+  updateCheckButton: document.getElementById('user-settings-update-check-button'),
 };
 
 function openUserSettingsModal() {
@@ -58,8 +67,21 @@ function openUserSettingsModal() {
   // own doc comment on why that's safe: this call only ever runs later, on
   // click, by which point every deferred script has already run).
   refreshAdminConsoleButtonVisibility();
+  // refreshUpdateStatusUI is defined below — re-read every time the modal
+  // opens for the same "don't trust a cached value" reason as the push
+  // toggle above, though in practice the version only ever changes once a
+  // deployed update actually takes over (see getAppVersion's own comment).
+  refreshUpdateStatusUI();
   userSettingsEls.modal.hidden = false;
   document.body.classList.add('overflow-hidden');
+}
+
+// getAppVersion is defined in app.js.
+async function refreshUpdateStatusUI() {
+  const version = await getAppVersion();
+  userSettingsEls.updateVersion.textContent = version
+    ? t('modals.userSettings.updateVersionKnown', { version })
+    : t('modals.userSettings.updateVersionUnknown');
 }
 
 function closeUserSettingsModal() {
@@ -136,5 +158,33 @@ userSettingsEls.languageSelect.addEventListener('change', async () => {
     }
   } catch (err) {
     if (!isNetworkError(err)) showError(err.message);
+  }
+});
+
+// manualCheckForUpdate is defined in app.js. Unlike the theme/language
+// selects above, this doesn't touch /api/v1/me at all — it's purely a
+// service-worker/cache concern, so there's no isNetworkError-guarded
+// showError path here, just a toast either way (TrakkaUndo.js's
+// TrakkaToast, shared with the rest of the app).
+userSettingsEls.updateCheckButton.addEventListener('click', async () => {
+  userSettingsEls.updateCheckButton.disabled = true;
+  try {
+    const outcome = await manualCheckForUpdate();
+    if (outcome === 'updated') {
+      // Close the settings modal so #update-banner — which
+      // watchForServiceWorkerUpdate's own listener will show once the new
+      // worker reaches 'installed' — is actually visible right away instead
+      // of sitting behind this modal's overlay.
+      closeUserSettingsModal();
+      return;
+    }
+    const toastKey = {
+      'up-to-date': 'modals.userSettings.updateCheckUpToDate',
+      unsupported: 'modals.userSettings.updateCheckUnsupported',
+      error: 'modals.userSettings.updateCheckError',
+    }[outcome];
+    if (toastKey) TrakkaToast.success(t(toastKey));
+  } finally {
+    userSettingsEls.updateCheckButton.disabled = false;
   }
 });

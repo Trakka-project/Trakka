@@ -389,7 +389,14 @@
       "pushNotConfigured": "Push notifications aren't configured on this instance.",
       "pushPermissionDenied": "Permission denied. Change this site's permissions in your browser settings to re-enable.",
       "installHelpButton": "How do I install the app on my phone?",
-      "adminConsoleButton": "Admin Console"
+      "adminConsoleButton": "Admin Console",
+      "updateSectionTitle": "Updates",
+      "updateVersionKnown": "Version {version}",
+      "updateVersionUnknown": "Unknown version",
+      "updateCheckButton": "Check for updates",
+      "updateCheckUpToDate": "Trakka is already up to date.",
+      "updateCheckUnsupported": "Checking for updates isn't supported by this browser.",
+      "updateCheckError": "Couldn't check for updates right now."
     },
     "installHelp": {
       "title": "Install Trakka on your phone",
