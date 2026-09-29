@@ -69,6 +69,9 @@
     "financeTotal": "Estimated total",
     "financeSpent": "Already spent",
     "financeRemaining": "Remaining to spend",
+    "financeFilteredBadge": "Filtered",
+    "financeFilteredNoteOne": "Based only on {count} filtered item out of {total}",
+    "financeFilteredNoteOther": "Based only on the {count} filtered items out of {total}",
     "advancedToggleAriaLabel": "Advanced options",
     "openLinkAriaLabel": "Open {title}'s link",
     "linkCopied": "Link copied!",
@@ -344,7 +347,9 @@
       "searchPlaceholder": "Search or create a label…",
       "searchAriaLabel": "Search or create a label",
       "empty": "No labels yet. Type to create one.",
-      "createOption": "+ Create \"{label}\""
+      "createOption": "+ Create \"{label}\"",
+      "bulkTitle": "Labels for {count} items",
+      "partialAriaLabel": "\"{label}\": {count} of {total} items"
     },
     "imagePreview": {
       "ariaLabel": "Item image preview",
@@ -554,6 +559,36 @@
         "step4": "Confirm the installation."
       }
     }
+  },
+  "bulk": {
+    "selectItems": "Select items",
+    "barAriaLabel": "Selection actions",
+    "exitAriaLabel": "Exit selection",
+    "selectItemAriaLabel": "Select \"{title}\"",
+    "noneSelected": "Nothing selected",
+    "selectedOne": "{count} selected",
+    "selectedOther": "{count} selected",
+    "total": "Total: {amount}",
+    "selectAll": "Select all",
+    "deselectAll": "Deselect all",
+    "markDone": "Check",
+    "markUndone": "Uncheck",
+    "labels": "Labels",
+    "targetMonth": "Month",
+    "delete": "Delete",
+    "markedDoneOne": "{count} item marked as done",
+    "markedDoneOther": "{count} items marked as done",
+    "markedUndoneOne": "{count} item marked as to do",
+    "markedUndoneOther": "{count} items marked as to do",
+    "deletedOne": "{count} item deleted",
+    "deletedOther": "{count} items deleted",
+    "targetMonthSheetTitle": "Planned purchase month",
+    "targetMonthSubtitleOne": "For {count} selected item",
+    "targetMonthSubtitleOther": "For {count} selected items",
+    "targetMonthAppliedOne": "{month} applied to {count} item",
+    "targetMonthAppliedOther": "{month} applied to {count} items",
+    "targetMonthClearedOne": "Month removed from {count} item",
+    "targetMonthClearedOther": "Month removed from {count} items"
   },
   "undo": {
     "cancel": "Undo",
