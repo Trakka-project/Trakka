@@ -17,7 +17,8 @@ internal/validate/     small reusable input validators (currently: URL scheme)
 internal/scraper/      best-effort background price lookup for an item's URL (OpenGraph/JSON-LD/microdata)
 internal/webpush/      hand-rolled Web Push: VAPID (RFC 8292) JWT signing, aes128gcm (RFC 8291) payload encryption, delivery
 internal/backup/       encrypted WebDAV backups: key file, chunked AES-256-GCM stream format, minimal WebDAV client (SSRF-guarded), scheduler, restore
-static/                PWA assets served at "/" (index.html, js/, locales/ (FR/EN dictionaries), sw.js, manifest.json, icons/)
+static/                PWA assets served at "/" (index.html, js/, locales/ (FR/EN dictionaries), emoji/ (emoji picker data, generated), sw.js, manifest.json, icons/)
+tools/genemoji/        build-ignored maintenance tool (`go run tools/genemoji/main.go`) regenerating static/emoji/{fr,en}.json from a pinned emojibase-data release
 templates/             login.html, rendered via html/template
 ```
 

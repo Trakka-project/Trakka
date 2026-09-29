@@ -712,11 +712,12 @@ html {
    exception for a link inline with text. */
 
 /* Long-press targets (an item card on a touch device, and its inline 🔗 link
-   icon — see attachLongPress/buildItemRow in list_view.js) must not also
-   trigger the browser/OS's own long-press UI, since the whole point of the
-   gesture here is Trakka's own action instead: entering multi-select mode
-   for the card, opening #item-actions-sheet focused on its link group for
-   the icon. The `contextmenu` listener attachLongPress installs on these same
+   icon — see attachLongPress/buildItemRow in list_view.js — plus a dashboard
+   list card, see buildListCard in app.js) must not also trigger the
+   browser/OS's own long-press UI, since the whole point of the gesture here
+   is Trakka's own action instead: entering multi-select mode for an item
+   card, opening #item-actions-sheet focused on its link group for the icon,
+   opening #list-card-actions-sheet for a list card. The `contextmenu` listener attachLongPress installs on these same
    elements covers Android Chrome's long-press menu; -webkit-touch-callout/
    user-select cover iOS Safari, which shows its own link callout (Open/Add
    to Reading List/Copy/Share) on a plain long press without ever firing a
@@ -725,6 +726,18 @@ html {
   -webkit-touch-callout: none;
   -webkit-user-select: none;
   user-select: none;
+}
+
+/* user-select is inherited, and iOS Safari refuses focus/typing in a field
+   whose computed -webkit-user-select is `none` — any text field ever placed
+   inside a long-press target (an item card, a dashboard list card) must stay
+   editable. */
+.long-press-target input,
+.long-press-target textarea,
+.long-press-target [contenteditable='true'] {
+  -webkit-touch-callout: default;
+  -webkit-user-select: text;
+  user-select: text;
 }
 
 /* The quick-add bar (#create-item-form-anchor) is pinned to the bottom of
@@ -857,4 +870,95 @@ html {
   textarea {
     font-size: 16px !important;
   }
+}
+
+/* Emoji picker (#emoji-picker-sheet, static/js/emoji-picker.js). The panel
+   is a bottom sheet on phones and a centered dialog from `sm` up; its height
+   is capped against the dynamic viewport (vh fallback for engines without
+   dvh) so it never reaches under a mobile browser's toolbars, and only
+   #emoji-picker-scroller scrolls inside it. The ~1,900 grid buttons use the
+   plain classes below instead of a string of Tailwind utilities each: less
+   work for the Play CDN runtime, which scans every added node's classes.
+   The font stack must match EMOJI_FONT in emoji-picker.js, whose canvas
+   probe decides which emojis this device can actually draw. */
+#emoji-picker-panel {
+  height: min(34rem, 85vh);
+  height: min(34rem, 85dvh);
+}
+
+#emoji-picker-scroller {
+  padding-bottom: max(0.5rem, env(safe-area-inset-bottom, 0px));
+}
+
+.emoji-picker-glyph,
+.emoji-picker-cell {
+  font-family: "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji", "Twemoji Mozilla", "Android Emoji", sans-serif;
+}
+
+.emoji-picker-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(2.75rem, 1fr));
+}
+
+.emoji-picker-cell {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 0;
+  height: 2.75rem;
+  padding: 0;
+  border: 0;
+  border-radius: 0.5rem;
+  background: transparent;
+  font-size: 1.625rem;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.emoji-picker-cell:hover,
+.emoji-picker-tone:hover,
+.emoji-picker-tab:hover {
+  background: var(--tk-surface-hover);
+}
+
+.emoji-picker-cell:focus-visible,
+.emoji-picker-tone:focus-visible,
+.emoji-picker-tab:focus-visible {
+  outline: 2px solid #0ea5e9;
+  outline-offset: -2px;
+}
+
+/* Category tabs share the row equally (flex: 1) so all ten fit at 320px;
+   the active one gets `border-sky-500` and loses `opacity-50` from JS. */
+.emoji-picker-tab {
+  display: flex;
+  flex: 1 1 0;
+  align-items: center;
+  justify-content: center;
+  min-width: 0;
+  height: 2.5rem;
+  border-bottom-width: 2px;
+  border-radius: 0.5rem 0.5rem 0 0;
+  font-size: 1.125rem;
+  line-height: 1;
+}
+
+.emoji-picker-tab:hover {
+  opacity: 1;
+}
+
+.emoji-picker-tone {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.5rem;
+  height: 2.5rem;
+  border-radius: 0.75rem;
+  border: 2px solid transparent;
+  font-size: 1.25rem;
+  line-height: 1;
+}
+
+.emoji-picker-tone[aria-pressed="true"] {
+  border-color: #0ea5e9;
 }

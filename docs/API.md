@@ -283,7 +283,7 @@ curl -X POST http://localhost:8080/api/v1/lists \
 | `type` | string | no | `shopping` (default), `todo`, `groceries`, `recurring_shopping` or `custom`; `400` if anything else |
 | `house_id` | integer | yes | must reference an existing house, else `400` |
 | `custom_category_id` | integer | no | must reference a [custom category](#custom-categories) owned by the caller, else `400`; omitted/`null` leaves the list unattached |
-| `icon` | string | no | trimmed; freeform (typically an emoji); omitted/empty leaves it unset |
+| `icon` | string | no | trimmed, control characters stripped; freeform (typically an emoji); omitted/empty leaves it unset; `400` if over 32 characters (code points). Any emoji sequence is stored unchanged — skin-tone modifiers, ZWJ sequences (👨‍👩‍👧‍👦), flags and tag sequences all fit well within the limit |
 
 `201` with the created list (no `items` field).
 

@@ -243,7 +243,8 @@ const els = {
   createListForm: document.getElementById('create-list-form'),
   listNameInput: document.getElementById('list-name'),
   listIconInput: document.getElementById('list-icon'),
-  listIconPresetButtons: document.querySelectorAll('#create-list-form [data-list-icon-preset]'),
+  listIconPickerButton: document.getElementById('list-icon-picker-button'),
+  listIconClearButton: document.getElementById('list-icon-clear-button'),
   typeOptions: document.querySelectorAll('#create-list-form [data-type-option]'),
   listCategorySelect: document.getElementById('list-category'),
   listSubmitButton: document.getElementById('list-submit-button'),
@@ -1355,6 +1356,20 @@ function buildListCard(list, badgesFragment) {
 
   row.append(openBtn, actions);
   li.appendChild(row);
+
+  // A long press (~500ms touch hold) anywhere on the card opens
+  // #list-card-actions-sheet — the touch equivalent of a context menu,
+  // offering the same actions as the card's own buttons. attachLongPress is
+  // defined in list_view.js and IS_TOUCH_DEVICE in gestures.js, both loaded
+  // after this file but only read here at render time (see KEBAB_ICON_SVG
+  // above). attachLongPress suppresses the click that would otherwise follow
+  // the hold, so the list doesn't also open; `long-press-target` (base.css)
+  // stops the OS from selecting the card's text/showing its own callout.
+  // Touch-only, like the item card's long press: a desktop mouse keeps
+  // ordinary text selection and right-click.
+  attachLongPress(li, () => openListCardActionsSheet(list));
+  if (IS_TOUCH_DEVICE) li.classList.add('long-press-target');
+
   return li;
 }
 
@@ -1702,6 +1717,9 @@ const listCardActionsEls = {
   sheet: document.getElementById('list-card-actions-sheet'),
   title: document.getElementById('list-card-actions-sheet-title'),
   closeButton: document.getElementById('close-list-card-actions-sheet-button'),
+  editButton: document.getElementById('list-card-actions-edit-button'),
+  shareButton: document.getElementById('list-card-actions-share-button'),
+  deleteButton: document.getElementById('list-card-actions-delete-button'),
   pinButton: document.getElementById('list-card-actions-pin-button'),
   pinIcon: document.getElementById('list-card-actions-pin-icon'),
   pinLabel: document.getElementById('list-card-actions-pin-label'),
@@ -1716,6 +1734,13 @@ let listCardActionsSheetList = null;
 function openListCardActionsSheet(list) {
   listCardActionsSheetList = list;
   listCardActionsEls.title.textContent = list.name;
+  // Same split as buildListCard's own buttons: edit/share/delete only for a
+  // list of the caller's own House, pin/unpin only for a shared one.
+  const shared = !!list.access_source;
+  listCardActionsEls.editButton.hidden = shared;
+  listCardActionsEls.shareButton.hidden = shared;
+  listCardActionsEls.deleteButton.hidden = shared;
+  listCardActionsEls.pinButton.hidden = !shared;
   const pinned = !!list.is_pinned_to_dashboard;
   listCardActionsEls.pinIcon.textContent = pinned ? '📍' : '📌';
   listCardActionsEls.pinLabel.textContent = t(pinned ? 'modals.listActions.unpin' : 'modals.listActions.pin');
@@ -1735,6 +1760,26 @@ listCardActionsEls.sheet.addEventListener('click', (event) => {
 });
 document.addEventListener('keydown', (event) => {
   if (event.key === 'Escape' && !listCardActionsEls.sheet.hidden) closeListCardActionsSheet();
+});
+
+// Each entry closes the sheet first, then opens its own modal/confirmation
+// — the same handlers buildListCard's inline buttons call directly.
+listCardActionsEls.editButton.addEventListener('click', () => {
+  const list = listCardActionsSheetList;
+  closeListCardActionsSheet();
+  if (list) openListModal(list);
+});
+
+listCardActionsEls.shareButton.addEventListener('click', () => {
+  const list = listCardActionsSheetList;
+  closeListCardActionsSheet();
+  if (list) openShareModal({ kind: 'list', id: list.id, name: list.name });
+});
+
+listCardActionsEls.deleteButton.addEventListener('click', () => {
+  const list = listCardActionsSheetList;
+  closeListCardActionsSheet();
+  if (list) removeList(list);
 });
 
 listCardActionsEls.pinButton.addEventListener('click', () => {
@@ -1769,6 +1814,14 @@ function setListTypeSelection(value) {
     label.classList.toggle('text-slate-600', !active);
     label.classList.toggle('dark:text-slate-300', !active);
   }
+  // An empty icon field means "use the type's default" (listIcon above), so
+  // the placeholder previews exactly that.
+  els.listIconInput.placeholder = LIST_TYPE_BADGE_META[value]?.icon || '📋';
+}
+
+// The clear button only shows while there's an icon to clear.
+function syncListIconClearButton() {
+  els.listIconClearButton.hidden = els.listIconInput.value.trim() === '';
 }
 
 // Opens the modal in create mode (list === null) or edit mode (prefilled
@@ -1780,6 +1833,7 @@ function openListModal(list) {
   els.createListForm.reset();
   els.listNameInput.value = list?.name || '';
   els.listIconInput.value = list?.icon || '';
+  syncListIconClearButton();
   setListTypeSelection(list?.type || 'shopping');
   els.newListModalTitle.textContent = t(editingList ? 'modals.newList.titleEdit' : 'modals.newList.titleCreate');
   els.listSubmitButton.textContent = t(editingList ? 'modals.newList.submitEdit' : 'modals.newList.submitCreate');
@@ -1817,11 +1871,24 @@ document.addEventListener('keydown', (event) => {
   if (event.key === 'Escape' && !els.newListModal.hidden && spacesEls.categoryModal.hidden) closeNewListModal();
 });
 
-for (const button of els.listIconPresetButtons) {
-  button.addEventListener('click', () => {
-    els.listIconInput.value = button.dataset.listIconPreset;
+// The picker (static/js/emoji-picker.js) opens over this modal; the field
+// itself stays editable for pasting any emoji the picker doesn't list.
+els.listIconPickerButton.addEventListener('click', () => {
+  window.TrakkaEmojiPicker.open({
+    returnFocus: els.listIconPickerButton,
+    onSelect: (emoji) => {
+      els.listIconInput.value = emoji;
+      syncListIconClearButton();
+    },
   });
-}
+});
+els.listIconInput.addEventListener('input', syncListIconClearButton);
+els.listIconClearButton.addEventListener('click', () => {
+  els.listIconInput.value = '';
+  syncListIconClearButton();
+  // The clear button just hid itself; keep focus inside the form.
+  els.listIconPickerButton.focus();
+});
 
 // CREATE_CATEGORY_OPTION_VALUE is defined in spaces.js (the module that owns
 // custom categories) — selecting it here is a shortcut into the "new space"

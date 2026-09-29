@@ -228,7 +228,6 @@
       "nameLabel": "Nom",
       "namePlaceholder": "Ex. Courses de la semaine",
       "iconLabel": "Icône (emoji, optionnel)",
-      "iconPlaceholder": "🛒",
       "typeLabel": "Type",
       "typeGroceries": "Courses",
       "typeShopping": "Achats Ponctuels",
@@ -287,6 +286,9 @@
       "delete": "Supprimer l'article"
     },
     "listActions": {
+      "edit": "Modifier la liste",
+      "share": "Partager la liste",
+      "delete": "Supprimer la liste",
       "pin": "Épingler sur le tableau de bord",
       "unpin": "Retirer du tableau de bord",
       "pinSpace": "Épingler l'espace sur mon tableau de bord",
@@ -597,5 +599,38 @@
     "itemMarkedDone": "« {title} » marqué comme terminé",
     "itemMarkedUndone": "« {title} » marqué comme à faire",
     "categoryDeleted": "Espace « {name} » supprimé"
+  },
+  "emojiPicker": {
+    "title": "Choisir un émoji",
+    "open": "Choisir un émoji",
+    "clear": "Retirer l'icône",
+    "searchLabel": "Rechercher un émoji",
+    "searchPlaceholder": "Rechercher un émoji…",
+    "skinTone": "Teint de peau",
+    "tones": {
+      "default": "Par défaut",
+      "light": "Peau claire",
+      "mediumLight": "Peau moyennement claire",
+      "medium": "Peau légèrement mate",
+      "mediumDark": "Peau mate",
+      "dark": "Peau foncée"
+    },
+    "categoriesLabel": "Catégories d'émojis",
+    "categories": {
+      "recent": "Récents",
+      "smileys": "Smileys et émotions",
+      "people": "Personnes et corps",
+      "nature": "Animaux et nature",
+      "food": "Nourriture et boissons",
+      "travel": "Voyages et lieux",
+      "activities": "Activités",
+      "objects": "Objets",
+      "symbols": "Symboles",
+      "flags": "Drapeaux"
+    },
+    "results": "Résultats",
+    "loading": "Chargement des émojis…",
+    "loadError": "Impossible de charger les émojis. Vous pouvez toujours coller un émoji directement dans le champ Icône.",
+    "noResults": "Aucun émoji ne correspond à « {query} »."
   }
 }

@@ -7,8 +7,8 @@ importScripts('/js/db.js');
 
 // Bump both on any change to APP_SHELL's contents so activate()
 // evicts the old cache instead of serving stale assets forever.
-const SHELL_CACHE = 'trakka-shell-v102';
-const RUNTIME_CACHE = 'trakka-runtime-v102';
+const SHELL_CACHE = 'trakka-shell-v105';
+const RUNTIME_CACHE = 'trakka-runtime-v105';
 const KNOWN_CACHES = [SHELL_CACHE, RUNTIME_CACHE];
 
 const APP_SHELL = [
@@ -22,6 +22,7 @@ const APP_SHELL = [
   '/js/app.js',
   '/js/db.js',
   '/js/undo.js',
+  '/js/emoji-picker.js',
   '/js/list_view.js',
   '/js/gestures.js',
   '/js/reorder.js',
@@ -39,6 +40,11 @@ const APP_SHELL = [
   '/css/tokens.css',
   '/locales/fr.json',
   '/locales/en.json',
+  // The emoji picker's data (~110-130 KB each, see tools/genemoji):
+  // precached in both languages so the picker works offline whichever one
+  // the user switches to.
+  '/emoji/fr.json',
+  '/emoji/en.json',
   '/manifest.json',
   '/icons/favicon.ico',
   '/icons/trakka-favicon.svg',

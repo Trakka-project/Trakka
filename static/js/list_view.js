@@ -253,13 +253,57 @@ async function shareLink(item) {
 
 const LONG_PRESS_MS = 500;
 const LONG_PRESS_MOVE_TOLERANCE_PX = 10;
+// How long after the finger lifts a stray `click` is still swallowed — see
+// armLongPressClickGuard.
+const LONG_PRESS_CLICK_GUARD_MS = 400;
+
+// Lifting the finger after a long press can still produce a `click` (Android
+// Chrome emits one once the native `contextmenu` was prevented, which
+// preventing `touchend` doesn't stop), and that click is hit-tested at the
+// finger's position *at release*: by then it's the backdrop of the sheet the
+// long press just opened under the finger (whose "click the backdrop to
+// close" handler shut it straight away), or the freshly re-rendered
+// selection-mode row (which toggled the pressed item back off). The guard
+// swallows that one click in the capture phase on `window`, before any
+// target sees it. Armed the moment the long press fires; disarmed by the
+// click it's there for, by the next touch (whose own click is genuine), or
+// LONG_PRESS_CLICK_GUARD_MS after the lift. Module-level named listeners, so
+// re-arming is a no-op rather than a second copy.
+let longPressClickGuardTimer = null;
+
+function swallowLongPressClick(event) {
+  event.preventDefault();
+  event.stopPropagation();
+  disarmLongPressClickGuard();
+}
+
+function armLongPressClickGuard() {
+  clearTimeout(longPressClickGuardTimer);
+  longPressClickGuardTimer = null;
+  window.addEventListener('click', swallowLongPressClick, true);
+  window.addEventListener('touchstart', disarmLongPressClickGuard, true);
+}
+
+function disarmLongPressClickGuard() {
+  clearTimeout(longPressClickGuardTimer);
+  longPressClickGuardTimer = null;
+  window.removeEventListener('click', swallowLongPressClick, true);
+  window.removeEventListener('touchstart', disarmLongPressClickGuard, true);
+}
+
+function disarmLongPressClickGuardSoon() {
+  clearTimeout(longPressClickGuardTimer);
+  longPressClickGuardTimer = setTimeout(disarmLongPressClickGuard, LONG_PRESS_CLICK_GUARD_MS);
+}
 
 // Attaches the gesture to `el`, calling `onLongPress(event)` once the touch
 // has been held in place for LONG_PRESS_MS. A move past the tolerance (the
-// user is scrolling, not pressing) or an early lift cancels it. `touchend`'s
-// own default is prevented when a long press actually fired, so the
-// synthetic `click` a touch normally triggers afterward can't also run the
-// element's ordinary tap handler on top of the long-press action.
+// user is scrolling, not pressing) or an early lift cancels it, and the
+// ordinary tap then goes through untouched. Once a long press has fired,
+// `touchend`'s default is prevented and armLongPressClickGuard swallows the
+// `click` the lift may still produce, so it can neither run the element's
+// own tap handler nor land on whatever the long press just put under the
+// finger.
 // `ignoreSelector` skips a touch that starts inside a matching descendant —
 // used by buildItemRow's whole-card gesture so a press on the inline 🔗 icon
 // is left to that icon's own long press instead of firing both.
@@ -290,6 +334,7 @@ function attachLongPress(el, onLongPress, { ignoreSelector = null } = {}) {
       timer = setTimeout(() => {
         firedLongPress = true;
         timer = null;
+        armLongPressClickGuard();
         if (navigator.vibrate) {
           try {
             navigator.vibrate(50);
@@ -322,13 +367,17 @@ function attachLongPress(el, onLongPress, { ignoreSelector = null } = {}) {
     'touchend',
     (event) => {
       clearTimer();
-      if (firedLongPress) event.preventDefault();
+      if (firedLongPress) {
+        event.preventDefault();
+        disarmLongPressClickGuardSoon();
+      }
     },
     { passive: false },
   );
 
   el.addEventListener('touchcancel', () => {
     clearTimer();
+    if (firedLongPress) disarmLongPressClickGuardSoon();
     firedLongPress = false;
   });
 
@@ -2113,6 +2162,16 @@ function buildItemRow(item, { showCheckbox = true, index, showQuantity = true, s
     li.appendChild(rowBottom);
   }
 
+  // `long-press-target` (base.css) keeps iOS/Android from turning a touch
+  // hold on the card into a native text selection/callout. Applied to every
+  // row on touch devices (IS_TOUCH_DEVICE, gestures.js) — including the
+  // selection-mode ones returned just below: a long press enters selection
+  // mode by re-rendering the list while the finger is still down, so the
+  // OS's own long-press selection then lands on the freshly built row, not
+  // the one the gesture started on. A desktop mouse can still select a
+  // title's text.
+  if (IS_TOUCH_DEVICE) li.classList.add('long-press-target');
+
   if (selecting) {
     // decorateSelectableRow is defined in selection.js — wires the tap-to-
     // select behavior and the selected styling. Swipe gestures stay off in
@@ -2125,13 +2184,9 @@ function buildItemRow(item, { showCheckbox = true, index, showQuantity = true, s
   // A long press anywhere on the card (except the 🔗 icon, which keeps its
   // own long press above) enters multi-select mode with this item already
   // selected — enterSelectionMode/isSelectableItem are defined in
-  // selection.js. `long-press-target` (base.css) keeps iOS from turning the
-  // same hold into a text selection/callout; applied on touch devices only
-  // (IS_TOUCH_DEVICE, gestures.js), so a desktop mouse can still select a
-  // title's text.
+  // selection.js. The row's `long-press-target` class is added above.
   if (isSelectableItem(item)) {
     attachLongPress(li, () => enterSelectionMode(item), { ignoreSelector: 'a[href]' });
-    if (IS_TOUCH_DEVICE) li.classList.add('long-press-target');
   }
 
   // attachItemSwipeGestures is defined in gestures.js — swipe right to
