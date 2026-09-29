@@ -63,6 +63,7 @@ func TestMigrateFreshDatabase(t *testing.T) {
 	for _, table := range []string{
 		"houses", "lists", "items", "users", "sessions", "house_members",
 		"price_alerts", "custom_categories", "system_settings", "space_shares", "list_shares",
+		"backup_runs",
 	} {
 		var name string
 		err := d.conn.QueryRow(`SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?`, table).Scan(&name)

@@ -26,6 +26,7 @@ Trakka ships as a single static Go binary in a minimal Alpine image, with a [com
 | `APP_TIMEZONE` | `Europe/Paris` | IANA time zone (e.g. `UTC`, `America/New_York`) task due-date reminders (see [docs/API.md](API.md#reminders)) are interpreted in — a reminder's `HH:MM` time of day is otherwise meaningless, since there is no other per-user or per-instance notion of a time zone anywhere in this app. A single instance-wide setting rather than per-user, matching Trakka's one-household-per-instance design. An unrecognized value falls back to `UTC` with a startup warning rather than failing to start. |
 | `NOTIF_DUE_SCAN_INTERVAL_MINUTES` | `30` | How often the due-date reminder scan itself runs — independent of, and normally much finer-grained than, any individual reminder's own offset/time, so a reminder due at e.g. `09:00` is actually caught close to on time. `0` (or negative) disables the periodic scan; only takes effect when Web Push is configured at all. |
 | `DEFAULT_APP_LANGUAGE` | `en` | UI language (`fr` or `en`) shown to any account that has never set its own preference from the "Langue" section of the "Paramètres" modal — see [docs/API.md](API.md#get-apiv1me). Applies retroactively to every such account (new and pre-existing) since it's resolved at read time, not baked in at account creation. An unrecognized value falls back to `en`. |
+| `BACKUP_WEBDAV_ALLOW_PRIVATE` | `false` | Lets [encrypted WebDAV backups](#encrypted-webdav-backups) reach a WebDAV server on a private, loopback or CGNAT/Tailscale address (`192.168.x.x`, `10.x.x.x`, `100.64.0.0/10`, `127.0.0.1`, `fd00::/8`, …) — the usual self-hosted setup, e.g. a Nextcloud on the same LAN. Off by default: the WebDAV URL is entered at runtime from the admin console, so the backup client applies the same public-addresses-only SSRF guard as the price scraper and Web Push until you, who know this deployment's network, opt in. Link-local addresses (including the `169.254.169.254` cloud metadata endpoint), multicast and unspecified addresses stay blocked even when enabled. |
 
 There is no config file — every setting is an environment variable, set in [compose.yml](../compose.yml) or passed to `docker run` / `podman run`. OIDC is only enabled when `OIDC_ISSUER`, `OIDC_CLIENT_ID`, and `OIDC_CLIENT_SECRET` are **all** set; setting one or two of the three fails startup with a clear error rather than silently half-enabling it. See [docs/API.md](API.md#authentication) for the resulting `/auth/...` endpoints. Web Push is the same all-or-nothing shape: `VAPID_PUBLIC_KEY`/`VAPID_PRIVATE_KEY`/`VAPID_SUBJECT` must all be set together, or all left empty.
 
@@ -105,6 +106,56 @@ The compile step itself uses a BuildKit cache mount for Go's build cache, so reb
 
 Distroless ships no `tzdata`, unlike the old Alpine runtime image (which had it installed via `apk add`). This is harmless here: the app never calls `time.LoadLocation`, and every timestamp it stores or logs is UTC by convention (see [CLAUDE.md](../CLAUDE.md)) — with no zoneinfo database and no `TZ` set, Go's `time.Local` simply behaves as UTC. `compose.yml` no longer sets `TZ`, since distroless would silently ignore it anyway.
 
+## Encrypted WebDAV backups
+
+Trakka can back its whole database up, encrypted, to any WebDAV folder — Nextcloud/ownCloud, Synology, a NAS, `rclone serve webdav`, Apache `mod_dav`… — on demand or on a schedule, and restore from those backups. Everything is configured from the admin console's **Sauvegardes** tab; the only deploy-time setting is `BACKUP_WEBDAV_ALLOW_PRIVATE` above. Endpoint reference: [docs/API.md](API.md#admin-backups).
+
+### Setting it up
+
+1. **Create a dedicated folder** on the WebDAV server, one per Trakka instance (old backups are pruned by file name, so two instances sharing a folder would delete each other's). For Nextcloud, also create an **app password** (Settings → Security → "Create new app password") rather than using your account password; the folder URL looks like `https://cloud.example.com/remote.php/dav/files/<user>/trakka-backups/`.
+2. If the WebDAV server is on your LAN or tailnet, set `BACKUP_WEBDAV_ALLOW_PRIVATE=true` on the `trakka` service and restart it.
+3. In the admin console → **Sauvegardes**: enter the folder URL, username and password, click **Tester la connexion WebDAV** (it checks the credentials, that the URL is a folder, and that a file can actually be written there), then pick a schedule — every 12 hours, every night at a given time, or weekly on a given day and time, all in `APP_TIMEZONE` — and how many backups to keep, and **Enregistrer**.
+4. **Download the encryption key** (**Télécharger la clé**) and store it off the server — a password manager, an offline copy. The console keeps a warning up until you do. **Without this key, no backup can be restored**; there is no recovery mechanism, by design.
+5. Click **Sauvegarder maintenant** once to confirm everything works end to end.
+
+A backup is a consistent hot snapshot of the live database (SQLite `VACUUM INTO`, on its own read-only connection, so the app keeps serving and writing meanwhile), encrypted on the server with AES-256-GCM before it leaves, and streamed to `trakka-backup-<UTC timestamp>.tkb` in the folder; then everything beyond the retention count is deleted. Neither backup nor restore ever holds more than a 64 KiB chunk of the database in memory, whatever its size. A failed scheduled backup is retried twice (30 minutes apart); a slot missed while Trakka was down runs right after it starts again.
+
+**Alerts.** If an automatic backup fails, or no backup has succeeded for too long (3 days, or 9 for a weekly schedule), or the key has never been downloaded, admins see a small amber dot on the header's settings button and a ⚠️ on the admin console button, with the explanation at the top of the Sauvegardes tab. It never blocks anything; every attempt is also logged (visible in the console's Logs tab).
+
+### What lives where
+
+| File (in the `/data` volume) | What it is |
+|---|---|
+| `backup.key` | The instance's backup encryption key (`0600`). Deliberately **not** inside the database, so it never travels inside the backups it protects. Losing the volume loses this copy too — hence step 4 above. |
+| `trakka.db` → `system_settings` | The WebDAV URL, username, schedule, retention — and the WebDAV password, encrypted with a subkey of `backup.key` (never returned by the API). These are part of every backup, so a restore brings the whole backup setup back with it. |
+| `backups/trakka-pre-restore-<ts>.db` | A plaintext safety copy of the database, taken right before each restore (next to the existing automatic pre-migration copies). Not pruned automatically: delete old ones yourself. |
+| `backups/staging/` | Temporary files during a backup/restore (a snapshot is as large as the database — this is on the data volume rather than the small in-memory `/tmp`). Emptied after each operation and at startup. |
+
+### Restoring (including after losing the server)
+
+**From the admin console** — to roll back on a running instance, or on a **brand new instance** after a disaster:
+
+1. On a new instance, deploy Trakka as usual with an empty volume and create the first account (the first account on an instance is automatically an admin — keep `REGISTRATION_OPEN` at its default `true` for this).
+2. Admin console → **Sauvegardes** → **Import / Restauration**: either upload the `.tkb` file, or — if the WebDAV server is still there — save its connection settings first and pick the backup from **Sauvegardes disponibles sur le serveur WebDAV**. Provide the key (paste it, or upload the `.key` file) and confirm.
+3. Trakka decrypts and verifies the backup, checks it, migrates it to the running version if it is older, keeps a safety copy of the current database, then swaps the content in place — no restart. Anything wrong (wrong key, modified or truncated file, not a Trakka backup, made by a *newer* Trakka) is refused before the live data is touched.
+4. Accounts, sessions and settings are now the backup's: sign in again with the restored accounts. If the key you supplied differs from the instance's own, it becomes the instance key (the previous one is kept as `backup.key.pre-restore-<ts>`), so the restored backup settings keep working.
+
+If you go through a reverse proxy, allow request bodies as large as your backups (nginx's `client_max_body_size` defaults to 1 MB) and a long enough timeout for the upload; Trakka itself accepts up to 1 GiB and waits up to 15 minutes for this one request.
+
+**Offline, from the command line** — when the web UI isn't an option (no admin account can sign in, the IdP of an OIDC-only instance is gone, …): `trakka -decrypt-backup` turns a `.tkb` back into a plain SQLite file and installs the key next to it, with no server running. With Compose, before starting the new instance (the output must not exist yet — it refuses to overwrite a database):
+
+```bash
+mkdir restore && cp trakka-backup-20260929T010000Z.tkb trakka-backup-key-3f2a-91c0.key restore/
+chmod -R a+rX restore
+docker compose run --rm --no-deps -v "$PWD/restore:/restore:ro" trakka \
+  -decrypt-backup /restore/trakka-backup-20260929T010000Z.tkb \
+  -backup-key /restore/trakka-backup-key-3f2a-91c0.key \
+  -decrypt-output /data/trakka.db
+docker compose up -d
+```
+
+The container runs as UID `10001`, so both files must be readable by it — browsers often save downloads as owner-only, hence the `chmod` — and delete the `restore/` folder once done. `-backup-key` also accepts the key text itself instead of a file. The same works with `podman-compose run`, or `go run ./cmd/server -decrypt-backup …` outside a container. Trakka then starts on the restored database, migrating it if it came from an older release.
+
 ## Healthcheck
 
 The image's `HEALTHCHECK` runs `trakka -healthcheck`, which performs an in-process HTTP GET against its own `/healthz` and exits `0`/`1` accordingly — no `curl` or `wget` is installed in the runtime image. `compose.yml` declares the same check under `services.trakka.healthcheck` so `docker compose ps` / `podman-compose ps` reflect container health.
@@ -129,7 +180,7 @@ Both services sit on a single explicit bridge network, `trakka_net`, defined in 
 
 | Volume | Mounted at | Contains |
 |---|---|---|
-| `trakka_data` | `/data` (in `trakka`) | `trakka.db` (+ WAL/SHM sidecar files) |
+| `trakka_data` | `/data` (in `trakka`) | `trakka.db` (+ WAL/SHM sidecar files), `backup.key` and `backups/` (see [Encrypted WebDAV backups](#what-lives-where)) |
 | `radicale_data` | `/data` (in `radicale`) | CalDAV collections |
 | `radicale_config` | `/config` (in `radicale`) | Radicale configuration |
 
@@ -145,6 +196,7 @@ All three are named Docker/Podman volumes (not bind mounts), which sidesteps hos
 - No host networking.
 - Every HTTP response (API and static) carries `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, a strict `Content-Security-Policy` (`default-src 'self'`, no `unsafe-inline`), and `Referrer-Policy: no-referrer` — see [docs/API.md](API.md) and `internal/handlers/middleware.go`.
 - All SQL is parameterized (no string-built queries); any user-supplied URL is validated to be an absolute `http://`/`https://` URL before it's ever stored or rendered.
+- Off-site backups are encrypted on the server before upload (AES-256-GCM, authenticated per 64 KiB chunk, see [Encrypted WebDAV backups](#encrypted-webdav-backups)); the WebDAV credentials are stored encrypted and never returned by the API; the WebDAV client never follows redirects (which would resend the credentials) and goes through the same SSRF dial guard as the scraper and Web Push.
 
 `radicale` (the optional CalDAV companion, gated behind the `calendar` profile) is a third-party image and is intentionally left out of the `read_only`/`cap_drop` hardening above — it wasn't built with a read-only root filesystem in mind, and hardening it is out of scope for Trakka itself.
 

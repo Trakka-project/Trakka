@@ -401,6 +401,10 @@ async function apiRequest(path, options = {}) {
   if (!response.ok) {
     const message = body && typeof body.error === 'string' ? body.error : `Erreur ${response.status}`;
     const err = new Error(message);
+    // A few endpoints (the admin console's backup routes) also return a
+    // machine-readable `code` next to `error`, which the caller translates
+    // into an actionable, localized message instead of the raw text.
+    if (body && typeof body.code === 'string') err.code = body.code;
     // sw.js's offlineReadFallback answers a GET it has no explicit
     // IndexedDB mirror for (/me, /admin/settings, /price-alerts,
     // /push/vapid-public-key, a house's /members, a list's/category's
@@ -2242,6 +2246,10 @@ async function init() {
   // lazily the same way every other cross-file call in this function
   // already is.
   refreshAdminConsoleButtonVisibility();
+  // Also admin.js: lights the discreet backup-alert dot on the settings
+  // button for admins when backups need attention. Not awaited — it's a
+  // side indicator and must never delay the dashboard.
+  refreshBackupAlertIndicators();
 
   // Stale-while-revalidate: now refresh from the network. Both calls fall
   // back to the cache again on their own if this fails, so it's safe to

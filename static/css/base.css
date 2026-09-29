@@ -446,6 +446,82 @@ header {
    the scrollable strip from ever exceeding 100% of the viewport. */
 body {
   overflow-x: hidden;
+  overflow-x: clip;
+}
+
+/* Last-line guard: nothing may widen the mobile layout viewport. The
+   `body { overflow-x: hidden }` above alone does NOT prevent it —
+   measured under Chromium mobile emulation, a dashboard row that was 34px
+   too wide (#house-toolbar, since fixed in index.html) grew a 393px
+   phone's layout viewport to 427px, and every position:fixed overlay
+   (the admin console, toasts, ...) then spanned that wider viewport, so
+   the whole screen could be panned sideways. Clipping on the root element
+   is what stops it. Deliberately `clip`, on both html and body, never
+   `hidden` on html: `hidden` there stops body's own value from
+   propagating to the viewport, turning <body> into a (non-scrolling)
+   scroll container and silently breaking the sticky <header> — verified,
+   it scrolled away with the page. `clip` creates no scroll container;
+   browsers without `clip` support simply ignore this rule and keep the
+   `hidden` fallback on body above. This only hides overflow; a row that
+   doesn't fit still needs its own fix (typically `min-w-0` on a flex item
+   that should shrink). */
+html {
+  overflow-x: clip;
+}
+
+/* Admin console → "Sauvegardes" tab: no control or text block may push the
+   panel wider than the modal on a narrow screen. Wrapped in :where() so
+   these defaults carry zero specificity and never override a Tailwind
+   utility set on the element itself (e.g. the retention field's
+   sm:max-w-[10rem]). `overflow-wrap: anywhere` (unlike `break-word`) also
+   lowers an element's min-content width, so an unbroken token — a WebDAV
+   URL or path in an error message, a file name, a key — wraps instead of
+   forcing the column wider. Form fields already carry w-full in
+   index.html; buttons keep their natural width but can never exceed the
+   panel. */
+:where(#admin-panel-backups) :where(input, select, textarea, button, section, form, ul, li, p, dd, dl, code) {
+  box-sizing: border-box;
+  max-width: 100%;
+  min-width: 0;
+}
+
+:where(#admin-panel-backups) :where(p, dd, li, code, span) {
+  overflow-wrap: anywhere;
+}
+
+/* Field wrappers in the backups form (.tk-field, which also carries
+   Tailwind's overflow-hidden): clip anything a native control might still
+   push out, but 4px outside the box rather than at its edge, so the 2px
+   focus ring (a box-shadow drawn outside the field) isn't cut off.
+   Browsers without `overflow: clip` keep the plain overflow-hidden. */
+#admin-panel-backups .tk-field {
+  overflow: clip;
+  overflow-clip-margin: 4px;
+}
+
+/* The time field: WebKit (iOS Safari) sizes a natively-styled time input
+   to an intrinsic minimum width and centers its value, which let it spill
+   past the modal's right edge and misalign with the other fields.
+   appearance:none (also set via the class) removes that; the value is then
+   left-aligned like every other field, and a fixed 50px height (the
+   other fields' natural py-3 + text-base + border height) stops WebKit
+   collapsing it without native styling and Chromium's inner date editor
+   growing it by 2px. The
+   browser's own picker (tapping the field on iOS/Android, the clock icon
+   on desktop Chrome) still works. */
+#admin-backups-time {
+  -webkit-appearance: none;
+  appearance: none;
+  height: 50px;
+}
+
+#admin-backups-time::-webkit-date-and-time-value {
+  text-align: left;
+  margin: 0;
+}
+
+#admin-backups-time::-webkit-datetime-edit {
+  padding: 0;
 }
 
 @media (max-width: 768px) {

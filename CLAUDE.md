@@ -31,7 +31,7 @@ podman-compose up -d                      # same compose.yml works unchanged
 | Working on... | Read |
 |---|---|
 | Package layout/import boundaries, `internal/config`, DB driver/connection pool/migration engine, Go & dependency version pinning, `cmd/server` (healthcheck/shutdown/logging), Dockerfile/`compose.yml` | [.claude/architecture.md](.claude/architecture.md) |
-| `internal/handlers`, `internal/db`, `internal/auth`, `internal/scraper`, `internal/webpush` — API/RBAC/sharing/pinning/recurring-items/price-lookup/push-notification design — and the **full** non-negotiable security rules | [.claude/backend.md](.claude/backend.md) |
+| `internal/handlers`, `internal/db`, `internal/auth`, `internal/scraper`, `internal/webpush`, `internal/backup` — API/RBAC/sharing/pinning/recurring-items/price-lookup/push-notification/encrypted-WebDAV-backup design — and the **full** non-negotiable security rules | [.claude/backend.md](.claude/backend.md) |
 | `static/js/*.js`, `static/sw.js`, `static/css/*.css`, `templates/login.html` — PWA/offline mechanism, i18n, theming, mobile layout rules | [.claude/frontend-pwa.md](.claude/frontend-pwa.md) |
 | `.github/workflows/ci.yml`, `.golangci.yml`, gosec/gitleaks/Trivy findings & exemptions, `.github/` templates | [.claude/ci-security.md](.claude/ci-security.md) |
 | "What's built, what's verified, what's left", session handoff, the copy-paste prompt for a new session | [.claude/status.md](.claude/status.md) |
@@ -51,7 +51,7 @@ Standing constraints for this codebase — full text, rationale, and code pointe
 - **URLs**: any user-supplied URL must pass `internal/validate.URL` (absolute `http://`/`https://`, non-empty host) — blocks `javascript:`/`data:` schemes.
 - **Passwords & sessions**: `bcrypt` only, never logged in plaintext. Session tokens are `crypto/rand`, stored **hashed** (SHA-256); cookie is `HttpOnly`, `SameSite=Lax`.
 - **CSRF**: every `/api/v1/...` write checks `Origin`/`Sec-Fetch-Site`; `/auth/login` and `/auth/register` additionally require a double-submit `csrf_token`.
-- **SSRF**: any outbound request to a user-supplied URL (the scraper, Web Push) must go through the `safeDialContext` guard (resolve host → verify public IP → dial that literal IP). Never call `http.Get`/`http.Client.Do` directly on untrusted input.
+- **SSRF**: any outbound request to a user-supplied URL (the scraper, Web Push, the WebDAV backup client) must go through a dial guard (`safeDialContext`/`dialGuard`: resolve host → verify public IP → dial that literal IP). Never call `http.Get`/`http.Client.Do` directly on untrusted input.
 - **CSP / frontend**: strict `Content-Security-Policy` (two narrow, documented exceptions for the Tailwind Play CDN); never `innerHTML` with interpolated data; don't add a new inline `<script>`/`<style>` without revisiting the CSP.
 - **Responses**: JSON encoder keeps `SetEscapeHTML(true)`; every `/api/v1/...` JSON response carries `Cache-Control: no-store`.
 - **OIDC**: verify the RS256 signature before ever trusting claims; hard-reject any other `alg` first (alg-confusion defense).

@@ -205,6 +205,22 @@ Each table above was built up over several migrations rather than in one `CREATE
 
 Deleting a row from `houses` cascades to delete all its `lists` (which in turn cascades to delete all their `items` and `list_shares`) and all its `house_members` rows — requiring `foreign_keys=ON` (already set on every connection), and working transitively without any extra code. Deleting a `custom_categories` row cascades to delete its `space_shares` and `space_house_pins` rows (but only detaches, via `ON DELETE SET NULL`, the `lists.custom_category_id` of any list that referenced it — see the `custom_categories` section above). Deleting a `user` cascades to their `sessions`, `house_members`, and their own `custom_categories` (which, per above, further cascades to that category's `space_shares`/`space_house_pins` and detaches any list's `custom_category_id` that referenced it), as well as any `space_shares`/`list_shares`/`space_house_pins` row where they are the recipient (`shared_with_user_id`/`user_id`); houses they owned are **not** deleted (a house survives its owner's account being removed, though it may then be left without an owner — that's an acknowledged edge case, not actively guarded against, since account deletion isn't exposed via the API today).
 
+### `backup_runs`
+
+One row per **finished** encrypted-backup attempt (see [docs/API.md](API.md#admin-backups)), backing the admin console's backup history and its failure/staleness alerts. Added by migration 20. The backup configuration itself (WebDAV URL/credentials, schedule, retention, key-export acknowledgment) lives in `system_settings` under `backup_*` keys, like every other admin-editable setting — the WebDAV password there is encrypted with a subkey of the instance's backup key (`backup.key`, a file next to the database, deliberately never stored in it).
+
+| Column | Type | Notes |
+|---|---|---|
+| `id` | `INTEGER PRIMARY KEY AUTOINCREMENT` | |
+| `source` | `TEXT NOT NULL` | `CHECK (source IN ('manual', 'scheduled'))` |
+| `status` | `TEXT NOT NULL` | `CHECK (status IN ('success', 'failed'))` |
+| `started_at` / `finished_at` | `TEXT NOT NULL` | ISO-8601 UTC with milliseconds, written by `internal/backup` in the same format as every `strftime` default here; `started_at` is indexed (the scheduler asks "any run for this slot yet?") |
+| `file_name` | `TEXT NOT NULL DEFAULT ''` | the uploaded `trakka-backup-<UTC timestamp>.tkb`, empty on failure |
+| `size_bytes` | `INTEGER NOT NULL DEFAULT 0` | encrypted size uploaded |
+| `error` | `TEXT NOT NULL DEFAULT ''` | the failure; on a *successful* run, a retention-cleanup warning |
+
+A run is inserted only once it has finished — never while it is in progress (that state is in memory, `internal/backup.Service`): the snapshot a run uploads is taken from this very database, so an "in progress" row would be captured inside the backup and resurface, stuck "running", after that backup is restored. For the same reason a backup never contains its own row; a restore carries the pre-restore history over into the restored database instead. Pruned to the newest 100 rows on every insert.
+
 ## Evolving the schema
 
 Trakka has a real versioned migration engine (`internal/db/migrate.go`), not the single idempotent `schema.sql` this project used before. Every startup:
@@ -227,6 +243,8 @@ Trakka has a real versioned migration engine (`internal/db/migrate.go`), not the
 The whole database is the single file at `DB_PATH` (plus its `-wal`/`-shm` sidecar files while the process is running, due to WAL mode).
 
 **Automatic, pre-migration backups.** Whenever a startup is about to apply a migration to an already-versioned database (i.e. not a brand new empty file, and not the one-time "adopt an existing database" case above — see "Evolving the schema"), `internal/db/migrate.go`'s `backupBeforeMigration` snapshots the live database first, via `VACUUM INTO` — a single ordinary SQL statement (SQLite 3.27+) that produces a consistent, compacted copy of the live database, safe to run against an open, WAL-mode connection, needing nothing beyond `database/sql` (no CGO backup API). The snapshot lands at `<directory containing DB_PATH>/backups/trakka-v<from>-to-v<to>-<UTC timestamp>.db` — for the default `DB_PATH=/data/trakka.db` this is `/data/backups/`, already writable under `compose.yml`'s `read_only: true` root filesystem since it's a subdirectory of the `/data` named volume. Nothing currently prunes old backups automatically — clean out `/data/backups/` periodically if disk space matters for your deployment.
+
+**Encrypted off-site backups (WebDAV).** Configured from the admin console, these upload an encrypted snapshot of the database to a WebDAV folder on demand or on a schedule, prune old ones, and can restore from them with no restart — see [docs/DEPLOYMENT.md](DEPLOYMENT.md#encrypted-webdav-backups) (setup and disaster recovery) and [docs/API.md](API.md#admin-backups). The snapshot uses the same `VACUUM INTO` as below, but on its own read-only connection so writers aren't held up; a restore copies the vetted, already-migrated backup into the live database through SQLite's online backup API (`internal/db.RestoreFrom`) after saving a plaintext safety copy as `<directory of DB_PATH>/backups/trakka-pre-restore-<timestamp>.db`.
 
 **Manual backups.** To back up safely while Trakka is running, either:
 - use SQLite's own backup mechanism (e.g. `sqlite3 /data/trakka.db ".backup /path/to/copy.db"`, or the same `VACUUM INTO` the automatic mechanism above uses), or

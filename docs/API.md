@@ -6,7 +6,7 @@ All responses are `application/json; charset=utf-8`. Every `/api/v1/...` endpoin
 
 ## Conventions
 
-- **Errors** are always `{"error": "<message>"}` with a non-2xx status code.
+- **Errors** are always `{"error": "<message>"}` with a non-2xx status code. A few endpoints (the [admin backup](#admin-backups) routes) add a machine-readable `"code"` next to it.
 - **Timestamps** (`created_at`, `updated_at`) are UTC, ISO-8601 with milliseconds, e.g. `2026-08-26T07:46:03.959Z`.
 - **Request bodies** are JSON. Unknown fields in a request body are rejected (400). Body size is capped at 1 MiB.
 - IDs are positive integers (SQLite `AUTOINCREMENT`).
@@ -758,6 +758,151 @@ curl -b cookies.txt "http://localhost:8080/api/v1/admin/logs?limit=50"
 ```
 
 Every mutating admin-management endpoint above (`PATCH`/`DELETE` on `users` and `spaces` — `logs` is read-only, so it has no mutation to gate) returns `503` immediately rather than queuing while offline, the same reasoning as `PATCH /api/v1/admin/settings` above.
+
+## Admin backups
+
+Encrypted, off-site backups of the whole database to a WebDAV folder (Nextcloud, ownCloud, Synology, Apache `mod_dav`, `rclone serve webdav`, …) — on demand, on an automatic schedule, with a retention count — and restore from one of those backups. Every endpoint below is gated by `authorizeAdmin` (`403 {"error": "admin access required"}` for anyone else), checked before the request body is even read: a backup is a copy of every account's data, and a restore replaces it. The frontend is the "Sauvegardes" tab of the admin console (`static/js/admin.js`). Operator-side setup and the disaster-recovery procedure are in [docs/DEPLOYMENT.md](DEPLOYMENT.md#encrypted-webdav-backups); the design is in [.claude/backend.md](../.claude/backend.md#encrypted-webdav-backups).
+
+**How a backup works.** The server takes a consistent hot snapshot of the live SQLite database (`VACUUM INTO`, on a separate read-only connection, so ordinary requests keep writing meanwhile), encrypts it **server-side** with the instance's backup key, and streams it to `<webdav folder>/trakka-backup-<UTC timestamp>.tkb` with a single `PUT`; then it lists the folder (`PROPFIND`) and `DELETE`s the oldest `trakka-backup-*.tkb` files beyond the retention count. Files in the folder that don't match that exact name pattern are never touched — but two Trakka instances must not share one folder, or each would prune the other's backups.
+
+**Encryption.** AES-256-GCM in 64 KiB chunks under a per-file subkey (HKDF-SHA256 of the instance key and a random per-file salt), with each chunk's nonce binding its position and whether it is the last one — so any modification, reordering or truncation of a backup is detected on restore, and neither direction ever holds more than one chunk in memory. The instance key (32 random bytes) is generated the first time a WebDAV URL is saved (or the key is first exported), stored in `backup.key` next to the database with `0600` permissions — never inside the database, so it never travels inside the backups it protects — and shown in its printable form, `TRAKKA-BK1-XXXXX-…` (base32 + a 2-byte checksum that catches typos). **Without this key, a backup cannot be restored**: export it and keep it off the server. The WebDAV password is also stored encrypted (with a subkey of the same key) in `system_settings`, and never returned by any endpoint.
+
+Error responses from these endpoints may carry a machine-readable `code` next to `error` (`{"error": "…", "code": "wrong_key"}`); the admin console translates it into an actionable message. WebDAV-side codes: `auth_failed`, `forbidden`, `not_found`, `not_a_folder`, `not_webdav`, `redirect` (redirects are reported, never followed — following one would resend the credentials), `storage_full`, `blocked_address` (see `BACKUP_WEBDAV_ALLOW_PRIVATE` in [docs/DEPLOYMENT.md](DEPLOYMENT.md#configuration-environment-variables)), `unreachable`, `tls`, `timeout`, `http_error`, `password_unreadable` (the stored password can't be decrypted with the current key file — re-enter it).
+
+None of the write endpoints below goes through the service worker's offline queue: `static/sw.js` lets every non-`GET` `/api/v1/admin/backups/...` request through to the network untouched, so offline they fail immediately instead of being replayed later.
+
+### `GET /api/v1/admin/backups`
+
+Configuration, key status, the operation in progress, recent history and alerts. Local only — it never contacts the WebDAV server, so it's cheap enough for the frontend to call at startup (for admins) to decide whether to light the discreet alert dot on the header's settings button.
+
+```bash
+curl -b cookies.txt http://localhost:8080/api/v1/admin/backups
+```
+
+```json
+{
+  "config": {
+    "webdav_url": "https://cloud.example.com/remote.php/dav/files/me/trakka/",
+    "webdav_username": "me",
+    "webdav_password_set": true,
+    "auto_enabled": true,
+    "frequency": "daily",
+    "time": "03:00",
+    "weekday": 0,
+    "retention": 7
+  },
+  "key": { "exists": true, "fingerprint": "3f2a-91c0-7b4e-d215", "saved": true },
+  "running": null,
+  "last_run": { "id": 12, "source": "scheduled", "status": "failed", "started_at": "2026-09-28T01:00:00.412Z", "finished_at": "2026-09-28T01:00:30.415Z", "file_name": "", "size_bytes": 0, "error": "webdav PUT /remote.php/dav/files/me/trakka/trakka-backup-20260928T010000Z.tkb: HTTP 507 Insufficient Storage" },
+  "last_success_at": "2026-09-27T01:00:00.388Z",
+  "next_run_at": "2026-09-29T01:00:00.000Z",
+  "runs": [ … ],
+  "alerts": [ { "code": "last_backup_failed", "at": "2026-09-28T01:00:00.412Z", "error": "webdav PUT …: HTTP 507 Insufficient Storage" } ],
+  "allow_private_networks": false,
+  "time_zone": "Europe/Paris"
+}
+```
+
+- `runs` holds the 10 most recent attempts, newest first, in the same shape as `last_run`. On a successful run, a non-empty `error` means the backup itself was uploaded but pruning old ones (retention) failed.
+- `running` is `null` when idle, otherwise `{"kind": "backup"|"restore", "source": "manual"|"scheduled"|"", "since": "…"}` — held in memory only, never in the database (a snapshot must not contain its own "in progress" row).
+- `key.saved` is whether this exact key (by fingerprint) has been exported at least once via `POST /api/v1/admin/backups/key/export`.
+- `alerts` (non-blocking — the UI shows them inline in the tab, plus a small dot/⚠️, never a popup):
+  - `last_backup_failed` — automatic backups are on, and a scheduled run failed with no successful run (of either kind) since. `at`/`error` describe that failed run.
+  - `no_recent_success` — automatic backups are on, and there has been no successful backup for longer than the schedule allows: 3 days for `every_12h`/`daily`, 9 days for `weekly`, counted from the last success or from when the schedule was (re)armed, whichever is later. `days` is how long; `at` is the last success (absent if there never was one).
+  - `key_not_saved` — backups are configured but the current key has never been exported.
+- `time_zone` is the instance's `APP_TIMEZONE`, which the schedule's `time`/`weekday` are interpreted in.
+
+### `PUT /api/v1/admin/backups/config`
+
+Full replacement of the configuration; responds `200` with the same body as `GET /api/v1/admin/backups`.
+
+```bash
+curl -X PUT -b cookies.txt http://localhost:8080/api/v1/admin/backups/config \
+  -H 'Content-Type: application/json' \
+  -d '{"webdav_url": "https://cloud.example.com/remote.php/dav/files/me/trakka/", "webdav_username": "me",
+       "webdav_password": "app-password", "auto_enabled": true, "frequency": "weekly", "time": "03:00",
+       "weekday": 0, "retention": 7}'
+```
+
+- `webdav_url` — an absolute `http(s)://` **folder** URL (the folder must already exist); a trailing `/` is added if missing. Refused (`400`): other schemes, embedded credentials (`https://user:pw@…`), a query string or a fragment. May be empty only with `auto_enabled: false` — that switches backups off, and also drops the stored password.
+- `webdav_username`, `webdav_password` — HTTP Basic credentials (for Nextcloud, use an app password). `webdav_password` is write-only: omitted or empty keeps the stored one.
+- `auto_enabled` (bool); `frequency` — `every_12h` (at `time` and 12 hours later), `daily`, or `weekly` (on `weekday`, `0` = Sunday … `6` = Saturday); `time` — `HH:MM`, 24h, in `APP_TIMEZONE`; `retention` — how many backup files to keep in the folder, `1`–`365`.
+
+Switching automatic backups on, or changing the schedule, (re)arms it from now: a slot that already went by today is not treated as missed. The scheduler (checked once a minute) runs each slot once; a failed scheduled run is retried up to twice more for the same slot, 30 minutes apart. A slot missed while the server was down is caught up right after startup.
+
+### `POST /api/v1/admin/backups/test`
+
+Tests an **unsaved** configuration: `PROPFIND` on the folder (credentials accepted, URL is a WebDAV folder), then writes and deletes a small `trakka-write-test-<random>.tmp` file (a read-only share would otherwise only fail at the first real backup). An empty `webdav_password` tests with the stored one.
+
+```bash
+curl -X POST -b cookies.txt http://localhost:8080/api/v1/admin/backups/test \
+  -H 'Content-Type: application/json' \
+  -d '{"webdav_url": "https://cloud.example.com/remote.php/dav/files/me/trakka/", "webdav_username": "me", "webdav_password": ""}'
+```
+
+```json
+{ "ok": true, "writable": true, "backup_count": 7 }
+```
+
+A failed test is still `200` — `{"ok": false, "code": "auth_failed", "error": "webdav PROPFIND /remote.php/…: HTTP 401 Unauthorized"}` — since the test itself ran fine (and a `502`-style status would be mistaken by the frontend for Trakka itself being unreachable). `400` only for an invalid URL. Bounded to 30 s.
+
+### `POST /api/v1/admin/backups/run`
+
+Starts a backup immediately, in the background, and answers `202` with the status (now showing `running`); poll `GET /api/v1/admin/backups` until `running` is `null` again — the outcome is the newest entry in `runs`. `400 {"code": "not_configured"}` if no WebDAV URL is saved; `409 {"code": "busy"}` if a backup or restore is already running.
+
+### `GET /api/v1/admin/backups/remote`
+
+Lists the backup files in the WebDAV folder, newest first (by the UTC timestamp in the file name, not the server's modification date).
+
+```json
+{ "files": [ { "name": "trakka-backup-20260929T010000Z.tkb", "size": 188600, "modified": "2026-09-29T01:00:02.000Z" } ] }
+```
+
+A WebDAV failure is `200` with `{"files": [], "code": "…", "error": "…"}`; `400 {"code": "not_configured"}` without a saved URL.
+
+### `POST /api/v1/admin/backups/key/export`
+
+Returns the instance's backup key (generating it first if none exists yet) and records that it has been saved, clearing the `key_not_saved` alert. A `POST` rather than a `GET` because it changes that state — no `GET` route in this app may (see the CSRF rule in [.claude/backend.md](../.claude/backend.md#security-rules)). Logged (admin id + fingerprint, never the key).
+
+```json
+{
+  "key": "TRAKKA-BK1-7QK2M-…",
+  "fingerprint": "3f2a-91c0-7b4e-d215",
+  "file_name": "trakka-backup-key-3f2a-91c0.key",
+  "file_content": "# Trakka backup encryption key\n# Fingerprint: 3f2a-91c0-7b4e-d215\n…\nTRAKKA-BK1-7QK2M-…\n"
+}
+```
+
+The admin console saves `file_content` as a `.key` file (built client-side from a `Blob`, so the key never appears in a URL, the browser history or an access log) or copies `key` to the clipboard.
+
+### `POST /api/v1/admin/backups/restore`
+
+Replaces **the entire database** with a backup. `multipart/form-data`, fields in any order:
+
+- `file` — an uploaded `.tkb` backup (streamed to a staging file on the data volume, never held in memory; capped at 1 GiB), **or** `remote_name` — the name of a backup in the configured WebDAV folder (must match `trakka-backup-<timestamp>.tkb`), downloaded with a `GET`. Exactly one of the two.
+- `key` — the backup key as text (the printable form, or the whole `.key` file content pasted as-is — comment lines, case, dashes and whitespace are all tolerated), and/or `key_file` — the `.key` file uploaded. Both omitted: the instance's current key.
+
+```bash
+curl -X POST -b cookies.txt http://localhost:8080/api/v1/admin/backups/restore \
+  -F "file=@trakka-backup-20260929T010000Z.tkb" -F "key_file=@trakka-backup-key-3f2a-91c0.key"
+
+curl -X POST -b cookies.txt http://localhost:8080/api/v1/admin/backups/restore \
+  -F "remote_name=trakka-backup-20260929T010000Z.tkb"
+```
+
+Steps, each of which must succeed before the next one runs: decrypt into a staging file (the key's fingerprint is checked against the backup's header first, then every chunk is authenticated) → `PRAGMA integrity_check`, check it is a Trakka database and not from a newer Trakka release, and apply any pending migrations **to the staged copy** → save a plaintext safety copy of the current database to `<DB_PATH dir>/backups/trakka-pre-restore-<timestamp>.db` → copy the staged file into the live database with SQLite's online backup API over the application's single shared connection (every other query simply waits the few milliseconds this takes; no restart). Any failure before that last step leaves the live database untouched.
+
+```json
+{ "from_schema_version": 19, "safety_copy": "trakka-pre-restore-20260929T101530Z.db", "key_adopted": true }
+```
+
+After a successful restore:
+
+- `key_adopted: true` means the supplied key differed from the instance's own: it becomes the instance key (the previous `backup.key` is kept as `backup.key.pre-restore-<timestamp>`), so the restored database's own backup settings — including its encrypted WebDAV password — keep working, and future backups use the key you already hold.
+- Sessions, users and settings are all whatever the backup held: the admin is typically signed out. The live OIDC client is rebuilt from the restored settings.
+- The backup history from before the restore is carried over, and the "no recent success" clock restarts from now.
+
+`400` with a `code` for anything refused: `wrong_key` (the error names both fingerprints), `invalid_key` (malformed or typo'd key), `key_required`, `not_a_backup`, `unsupported_version`, `corrupt` (modified or truncated file, or a damaged database inside), `not_trakka`, `too_new`, `invalid_name`, `not_configured`, or a WebDAV code when fetching `remote_name`; `409 {"code": "busy"}`. The request's read/write deadlines are extended to 15 minutes (the server's defaults are 15 seconds).
 
 ## Static assets
 

@@ -72,11 +72,16 @@
         </div>
         <button type="button" id="user-settings-button" aria-haspopup="dialog"
                 data-i18n-aria-label="header.userSettings" aria-label="Paramètres"
-                class="flex h-11 w-11 items-center justify-center rounded-full border border-slate-200 dark:border-slate-700 bg-slate-100 dark:bg-slate-800/60 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-800">
+                class="relative flex h-11 w-11 items-center justify-center rounded-full border border-slate-200 dark:border-slate-700 bg-slate-100 dark:bg-slate-800/60 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-800">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="h-5 w-5" aria-hidden="true">
             <circle cx="12" cy="12" r="3"/>
             <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>
           </svg>
+          <!-- Admins only: a discreet dot while the backup system needs
+               attention (admin.js's applyBackupAlertIndicators). The actual
+               explanation lives in the admin console, never in a popup. -->
+          <span id="user-settings-alert-dot" hidden aria-hidden="true"
+                class="absolute -top-0.5 -right-0.5 h-3 w-3 rounded-full bg-amber-400 ring-2 ring-white dark:ring-slate-900"></span>
         </button>
         <form method="post" action="/auth/logout">
           <button type="submit" data-i18n-aria-label="header.logout" aria-label="Se déconnecter"
@@ -100,15 +105,21 @@
 
     <section id="lists-section">
       <div id="house-toolbar" class="mb-4 flex items-center gap-3">
-        <label for="house-select" data-i18n="dashboard.house" class="text-sm font-medium text-slate-500 dark:text-slate-400">Maison</label>
+        <!-- Visually hidden (still read out) under 380px, so the select
+             keeps room for the house name on the smallest phones. -->
+        <label for="house-select" data-i18n="dashboard.house" class="shrink-0 text-sm font-medium text-slate-500 dark:text-slate-400 max-[379px]:sr-only">Maison</label>
+        <!-- min-w-0: without it this flex item can't shrink below its widest
+             option ("+ Créer une Maison"), and on phones under ~430px the
+             whole row overflowed, widening the mobile layout viewport for
+             every page and modal (see base.css's html/body overflow-x guard). -->
         <select id="house-select"
-                class="min-h-[44px] flex-1 max-w-xs rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 text-sm text-slate-900 dark:text-slate-100 focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500/30 sm:flex-none"></select>
+                class="min-h-[44px] min-w-0 flex-1 max-w-xs rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 text-sm text-slate-900 dark:text-slate-100 focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500/30 sm:flex-none"></select>
         <button type="button" id="rename-house-inline-button" hidden data-i18n-aria-label="dashboard.renameHouseAriaLabel" aria-label="Renommer la maison"
                 class="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-100 dark:bg-slate-800/60 text-slate-500 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-800 hover:text-slate-900 dark:hover:text-slate-200">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="h-5 w-5" aria-hidden="true"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4Z"/></svg>
         </button>
         <button type="button" id="manage-members-button" hidden data-i18n="dashboard.members"
-                class="min-h-[44px] rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-100 dark:bg-slate-800/60 px-3 py-2 text-sm font-medium text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-800">
+                class="min-h-[44px] shrink-0 whitespace-nowrap rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-100 dark:bg-slate-800/60 px-3 py-2 text-sm font-medium text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-800">
           Membres
         </button>
       </div>
@@ -724,8 +735,8 @@
     </div>
   </div>
 
-  <div id="admin-console-modal" hidden class="fixed inset-0 z-50 flex items-end justify-center bg-slate-950/30 dark:bg-slate-950/70 p-0 sm:items-center sm:p-4">
-    <div role="dialog" aria-modal="true" aria-labelledby="admin-console-modal-title" class="flex max-h-[90vh] w-full max-w-2xl flex-col overflow-hidden rounded-t-2xl bg-slate-100 dark:bg-slate-800 py-5 px-6 shadow-xl sm:rounded-2xl">
+  <div id="admin-console-modal" hidden class="fixed inset-0 z-50 flex items-end justify-center overflow-x-hidden bg-slate-950/30 dark:bg-slate-950/70 p-0 sm:items-center sm:p-4">
+    <div role="dialog" aria-modal="true" aria-labelledby="admin-console-modal-title" class="flex max-h-[90vh] w-full min-w-0 max-w-full flex-col overflow-hidden rounded-t-2xl sm:max-w-2xl bg-slate-100 dark:bg-slate-800 py-5 px-6 shadow-xl sm:rounded-2xl">
       <div id="admin-console-header" class="mb-4 flex shrink-0 items-center justify-between">
         <h2 id="admin-console-modal-title" data-i18n="modals.adminConsole.title" class="text-lg font-semibold">Console d'Administration</h2>
         <button type="button" id="close-admin-console-modal-button" data-i18n-aria-label="modals.close" aria-label="Fermer"
@@ -734,7 +745,10 @@
         </button>
       </div>
 
-      <div id="admin-console-tabs" class="mb-4 flex shrink-0 gap-2 overflow-x-auto" role="tablist">
+      <!-- Wraps onto a second row on narrow screens rather than scrolling
+           sideways, so every tab — and the backups tab's alert dot — stays
+           visible without a horizontal swipe. -->
+      <div id="admin-console-tabs" class="mb-4 flex min-w-0 max-w-full shrink-0 flex-wrap gap-2" role="tablist">
         <button type="button" id="admin-tab-settings" role="tab" aria-selected="true" data-i18n="modals.adminConsole.settingsTab"
                 class="min-h-[40px] shrink-0 rounded-xl border px-3 py-2 text-sm font-medium">
           Paramètres
@@ -751,9 +765,14 @@
                 class="min-h-[40px] shrink-0 rounded-xl border px-3 py-2 text-sm font-medium">
           Logs
         </button>
+        <button type="button" id="admin-tab-backups" role="tab" aria-selected="false"
+                class="min-h-[40px] shrink-0 rounded-xl border px-3 py-2 text-sm font-medium">
+          <span data-i18n="modals.adminConsole.backupsTab">Sauvegardes</span>
+          <span id="admin-tab-backups-alert" hidden aria-hidden="true" class="ml-1 inline-block h-2 w-2 rounded-full bg-amber-400 align-middle"></span>
+        </button>
       </div>
 
-      <div id="admin-console-body" class="min-h-0 flex-1 overflow-y-auto">
+      <div id="admin-console-body" class="min-h-0 min-w-0 max-w-full flex-1 overflow-y-auto overflow-x-hidden">
         <div id="admin-panel-settings">
           <form id="admin-settings-form" class="space-y-4">
             <div>
@@ -836,6 +855,158 @@
           <p id="admin-logs-empty" hidden data-i18n="modals.adminConsole.logs.empty" class="text-sm text-slate-500 dark:text-slate-400">Aucun journal pour le moment.</p>
           <ul id="admin-logs-list" class="space-y-1.5 font-mono text-xs"></ul>
         </div>
+
+        <!-- "Sauvegardes": encrypted WebDAV backups (admin.js's backups
+             section, GET/PUT/POST /api/v1/admin/backups/...). Alerts render
+             inline at the top, never as a blocking popup or banner. -->
+        <div id="admin-panel-backups" hidden class="space-y-5">
+          <ul id="admin-backups-alerts" hidden class="space-y-2" aria-live="polite"></ul>
+
+          <section class="rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-4 py-3 space-y-3" aria-labelledby="admin-backups-status-title">
+            <div class="flex items-center justify-between gap-2">
+              <h3 id="admin-backups-status-title" data-i18n="modals.adminConsole.backups.statusTitle" class="text-sm font-semibold text-slate-800 dark:text-slate-200">État des sauvegardes</h3>
+              <span id="admin-backups-status-badge" class="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium"></span>
+            </div>
+            <dl class="grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-1 text-sm">
+              <dt data-i18n="modals.adminConsole.backups.lastRun" class="text-slate-500 dark:text-slate-400">Dernière sauvegarde</dt>
+              <dd id="admin-backups-last-run" class="min-w-0 break-words text-slate-800 dark:text-slate-200">—</dd>
+              <dt data-i18n="modals.adminConsole.backups.lastSuccess" class="text-slate-500 dark:text-slate-400">Dernière réussie</dt>
+              <dd id="admin-backups-last-success" class="min-w-0 text-slate-800 dark:text-slate-200">—</dd>
+              <dt data-i18n="modals.adminConsole.backups.nextRun" class="text-slate-500 dark:text-slate-400">Prochaine automatique</dt>
+              <dd id="admin-backups-next-run" class="min-w-0 text-slate-800 dark:text-slate-200">—</dd>
+            </dl>
+            <button type="button" id="admin-backups-run-button" data-i18n="modals.adminConsole.backups.runNow"
+                    class="w-full rounded-xl bg-sky-500 px-4 py-3 text-base font-semibold text-white transition hover:bg-sky-400 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50">Sauvegarder maintenant</button>
+            <p id="admin-backups-run-error" hidden role="alert" class="text-sm text-rose-600 dark:text-rose-400"></p>
+          </section>
+
+          <form id="admin-backups-form" class="space-y-4" novalidate>
+            <h3 data-i18n="modals.adminConsole.backups.webdavTitle" class="text-sm font-semibold text-slate-800 dark:text-slate-200">Serveur WebDAV</h3>
+            <div class="tk-field w-full max-w-full min-w-0 overflow-hidden">
+              <label for="admin-backups-url" data-i18n="modals.adminConsole.backups.urlLabel" class="mb-1 block text-sm font-medium text-slate-600 dark:text-slate-300">URL du dossier WebDAV</label>
+              <input type="url" id="admin-backups-url" inputmode="url" autocomplete="off" spellcheck="false"
+                     placeholder="https://nextcloud.example.com/remote.php/dav/files/utilisateur/sauvegardes/"
+                     class="block w-full min-w-0 max-w-full box-border rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-4 py-3 text-base text-slate-900 dark:text-slate-100 placeholder:text-slate-500 focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500/30">
+            </div>
+            <div class="tk-field w-full max-w-full min-w-0 overflow-hidden">
+              <label for="admin-backups-username" data-i18n="modals.adminConsole.backups.usernameLabel" class="mb-1 block text-sm font-medium text-slate-600 dark:text-slate-300">Nom d'utilisateur</label>
+              <input type="text" id="admin-backups-username" autocomplete="off" autocapitalize="none" spellcheck="false" maxlength="1024"
+                     class="block w-full min-w-0 max-w-full box-border rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-4 py-3 text-base text-slate-900 dark:text-slate-100 placeholder:text-slate-500 focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500/30">
+            </div>
+            <div class="tk-field w-full max-w-full min-w-0 overflow-hidden">
+              <label for="admin-backups-password" data-i18n="modals.adminConsole.backups.passwordLabel" class="mb-1 block text-sm font-medium text-slate-600 dark:text-slate-300">Mot de passe / jeton d'application</label>
+              <input type="password" id="admin-backups-password" autocomplete="new-password" maxlength="1024"
+                     class="block w-full min-w-0 max-w-full box-border rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-4 py-3 text-base text-slate-900 dark:text-slate-100 placeholder:text-slate-500 focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500/30">
+              <p data-i18n="modals.adminConsole.backups.passwordHint" class="mt-1 text-xs text-slate-500 dark:text-slate-400">Avec Nextcloud, créez un mot de passe d'application dédié. Il est stocké chiffré sur le serveur.</p>
+            </div>
+            <p id="admin-backups-private-hint" hidden data-i18n="modals.adminConsole.backups.privateNetworkHint" class="text-xs text-slate-500 dark:text-slate-400">Un serveur WebDAV sur le réseau local (ex. 192.168.x.x, Tailscale) n'est joignable que si l'opérateur a défini BACKUP_WEBDAV_ALLOW_PRIVATE=true.</p>
+            <div class="flex flex-wrap items-center gap-3">
+              <button type="button" id="admin-backups-test-button" data-i18n="modals.adminConsole.backups.testButton" class="rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 text-sm font-semibold text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50">Tester la connexion WebDAV</button>
+              <p id="admin-backups-test-result" hidden role="status" class="min-w-0 flex-1 text-sm"></p>
+            </div>
+
+            <hr class="border-slate-200 dark:border-slate-700">
+
+            <h3 data-i18n="modals.adminConsole.backups.scheduleTitle" class="text-sm font-semibold text-slate-800 dark:text-slate-200">Planification automatique</h3>
+            <label class="flex cursor-pointer items-center gap-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-4 py-3 text-sm font-medium text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-800">
+              <input type="checkbox" id="admin-backups-auto"
+                     class="h-4 w-4 rounded border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 text-sky-500 focus:ring-sky-500/40">
+              <span data-i18n="modals.adminConsole.backups.autoLabel">Activer les sauvegardes automatiques</span>
+            </label>
+            <div class="grid w-full min-w-0 max-w-full grid-cols-1 gap-3 sm:grid-cols-3">
+              <div class="tk-field w-full max-w-full min-w-0 overflow-hidden">
+                <label for="admin-backups-frequency" data-i18n="modals.adminConsole.backups.frequencyLabel" class="mb-1 block text-sm font-medium text-slate-600 dark:text-slate-300">Fréquence</label>
+                <select id="admin-backups-frequency" class="block w-full min-w-0 max-w-full box-border rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-4 py-3 text-base text-slate-900 dark:text-slate-100 focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500/30">
+                  <option value="every_12h" data-i18n="modals.adminConsole.backups.frequencyEvery12h">Toutes les 12 heures</option>
+                  <option value="daily" data-i18n="modals.adminConsole.backups.frequencyDaily">Toutes les nuits</option>
+                  <option value="weekly" data-i18n="modals.adminConsole.backups.frequencyWeekly">Toutes les semaines</option>
+                </select>
+              </div>
+              <div id="admin-backups-weekday-field" hidden class="tk-field w-full max-w-full min-w-0 overflow-hidden">
+                <label for="admin-backups-weekday" data-i18n="modals.adminConsole.backups.weekdayLabel" class="mb-1 block text-sm font-medium text-slate-600 dark:text-slate-300">Jour</label>
+                <select id="admin-backups-weekday" class="block w-full min-w-0 max-w-full box-border rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-4 py-3 text-base text-slate-900 dark:text-slate-100 focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500/30"></select>
+              </div>
+              <div class="tk-field w-full max-w-full min-w-0 overflow-hidden">
+                <label for="admin-backups-time" data-i18n="modals.adminConsole.backups.timeLabel" class="mb-1 block text-sm font-medium text-slate-600 dark:text-slate-300">Heure</label>
+                <!-- appearance-none: with its native appearance, WebKit (iOS Safari)
+                     gives a time input an intrinsic minimum width and ignores
+                     width:100%, pushing it past the modal's right edge. -->
+                <input type="time" id="admin-backups-time" value="03:00" required class="block w-full min-w-0 max-w-full box-border rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-4 py-3 text-base text-slate-900 dark:text-slate-100 placeholder:text-slate-500 focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500/30 appearance-none">
+              </div>
+            </div>
+            <p id="admin-backups-schedule-hint" class="text-xs text-slate-500 dark:text-slate-400"></p>
+            <div class="tk-field w-full max-w-full min-w-0 overflow-hidden">
+              <label for="admin-backups-retention" data-i18n="modals.adminConsole.backups.retentionLabel" class="mb-1 block text-sm font-medium text-slate-600 dark:text-slate-300">Nombre de sauvegardes à conserver sur le serveur WebDAV</label>
+              <input type="number" id="admin-backups-retention" min="1" max="365" step="1" value="7" inputmode="numeric"
+                     class="block w-full min-w-0 max-w-full box-border rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-4 py-3 text-base text-slate-900 dark:text-slate-100 placeholder:text-slate-500 focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500/30">
+            </div>
+
+            <p id="admin-backups-form-error" hidden role="alert" class="text-sm text-rose-600 dark:text-rose-400"></p>
+            <p id="admin-backups-form-status" hidden role="status" class="text-sm text-emerald-600 dark:text-emerald-400"></p>
+            <button type="submit" data-i18n="modals.adminConsole.backups.save" class="w-full rounded-xl bg-sky-500 px-4 py-3 text-base font-semibold text-white transition hover:bg-sky-400 active:scale-[0.98]">Enregistrer</button>
+          </form>
+
+          <section class="space-y-2 rounded-xl border border-amber-300 dark:border-amber-700/70 bg-amber-50 dark:bg-amber-950/30 px-4 py-3" aria-labelledby="admin-backups-key-title">
+            <h3 id="admin-backups-key-title" data-i18n="modals.adminConsole.backups.keyTitle" class="text-sm font-semibold text-slate-800 dark:text-slate-200">Clé de chiffrement</h3>
+            <p data-i18n="modals.adminConsole.backups.keyExplanation" class="text-sm text-slate-700 dark:text-slate-300">Chaque sauvegarde est chiffrée (AES-256-GCM) sur ce serveur avant d'être envoyée. Sans cette clé, aucune sauvegarde ne pourra être restaurée en cas de sinistre : téléchargez-la et conservez-la hors du serveur (gestionnaire de mots de passe, copie hors ligne).</p>
+            <p class="text-sm text-slate-700 dark:text-slate-300">
+              <span data-i18n="modals.adminConsole.backups.keyFingerprint">Empreinte :</span>
+              <code id="admin-backups-key-fingerprint" class="break-all font-mono text-xs">—</code>
+            </p>
+            <div class="flex flex-wrap items-center gap-2">
+              <button type="button" id="admin-backups-key-download" data-i18n="modals.adminConsole.backups.keyDownload" class="rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 text-sm font-semibold text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50">Télécharger la clé (.key)</button>
+              <button type="button" id="admin-backups-key-copy" data-i18n="modals.adminConsole.backups.keyCopy" class="rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 text-sm font-semibold text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50">Copier la clé</button>
+            </div>
+            <p id="admin-backups-key-status" hidden role="status" class="text-sm text-emerald-700 dark:text-emerald-400"></p>
+          </section>
+
+          <section class="space-y-2" aria-labelledby="admin-backups-history-title">
+            <h3 id="admin-backups-history-title" data-i18n="modals.adminConsole.backups.historyTitle" class="text-sm font-semibold text-slate-800 dark:text-slate-200">Historique</h3>
+            <p id="admin-backups-runs-empty" hidden data-i18n="modals.adminConsole.backups.historyEmpty" class="text-sm text-slate-500 dark:text-slate-400">Aucune sauvegarde effectuée pour le moment.</p>
+            <ul id="admin-backups-runs" class="space-y-1.5"></ul>
+          </section>
+
+          <section class="space-y-2" aria-labelledby="admin-backups-remote-title">
+            <div class="flex items-center justify-between gap-2">
+              <h3 id="admin-backups-remote-title" data-i18n="modals.adminConsole.backups.remoteTitle" class="text-sm font-semibold text-slate-800 dark:text-slate-200">Sauvegardes disponibles sur le serveur WebDAV</h3>
+              <button type="button" id="admin-backups-remote-refresh" data-i18n="modals.adminConsole.logs.refresh" class="shrink-0 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-1.5 text-xs font-semibold text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-800">Rafraîchir</button>
+            </div>
+            <p id="admin-backups-remote-message" hidden class="text-sm text-slate-500 dark:text-slate-400"></p>
+            <ul id="admin-backups-remote-list" class="space-y-1.5"></ul>
+          </section>
+
+          <section id="admin-backups-restore-section" class="space-y-3 rounded-xl border border-rose-200 dark:border-rose-900/70 bg-rose-50/60 dark:bg-rose-950/20 px-4 py-3" aria-labelledby="admin-backups-restore-title">
+            <h3 id="admin-backups-restore-title" data-i18n="modals.adminConsole.backups.restoreTitle" class="text-sm font-semibold text-slate-800 dark:text-slate-200">Import / Restauration</h3>
+            <p data-i18n="modals.adminConsole.backups.restoreWarning" class="text-sm text-slate-700 dark:text-slate-300">La restauration remplace toutes les données de l'instance par celles de la sauvegarde. Une copie de sécurité de la base actuelle est conservée sur le serveur (dossier backups/). Une nouvelle connexion peut ensuite être nécessaire.</p>
+            <form id="admin-backups-restore-form" class="space-y-3">
+              <div id="admin-backups-restore-upload">
+                <label for="admin-backups-restore-file" data-i18n="modals.adminConsole.backups.restoreFileLabel" class="mb-1 block text-sm font-medium text-slate-600 dark:text-slate-300">Fichier de sauvegarde chiffré (.tkb)</label>
+                <input type="file" id="admin-backups-restore-file" accept=".tkb,application/octet-stream" class="block w-full text-sm text-slate-600 dark:text-slate-300 file:mr-3 file:rounded-lg file:border-0 file:bg-slate-200 dark:file:bg-slate-700 file:px-3 file:py-2 file:text-sm file:font-semibold file:text-slate-700 dark:file:text-slate-200">
+              </div>
+              <div id="admin-backups-restore-remote" hidden class="flex flex-wrap items-center justify-between gap-2 rounded-lg bg-white/70 dark:bg-slate-900/60 px-3 py-2 text-sm">
+                <span class="min-w-0 break-all">
+                  <span data-i18n="modals.adminConsole.backups.restoreRemoteLabel">Sauvegarde distante :</span>
+                  <code id="admin-backups-restore-remote-name" class="font-mono text-xs"></code>
+                </span>
+                <button type="button" id="admin-backups-restore-remote-clear" data-i18n="modals.adminConsole.backups.restoreUseFile" class="shrink-0 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-1.5 text-xs font-semibold text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-800">Utiliser un fichier à la place</button>
+              </div>
+              <div>
+                <label for="admin-backups-restore-key" data-i18n="modals.adminConsole.backups.restoreKeyLabel" class="mb-1 block text-sm font-medium text-slate-600 dark:text-slate-300">Clé de chiffrement</label>
+                <textarea id="admin-backups-restore-key" rows="2" autocomplete="off" autocapitalize="characters" spellcheck="false"
+                          placeholder="TRAKKA-BK1-…" class="w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-4 py-3 text-base text-slate-900 dark:text-slate-100 placeholder:text-slate-500 focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500/30 font-mono text-sm"></textarea>
+                <p data-i18n="modals.adminConsole.backups.restoreKeyHint" class="mt-1 text-xs text-slate-500 dark:text-slate-400">Collez la clé, ou importez le fichier .key ci-dessous. Laissez vide pour utiliser la clé actuelle de cette instance.</p>
+              </div>
+              <div>
+                <label for="admin-backups-restore-key-file" data-i18n="modals.adminConsole.backups.restoreKeyFileLabel" class="mb-1 block text-sm font-medium text-slate-600 dark:text-slate-300">Fichier de clé (.key, optionnel)</label>
+                <input type="file" id="admin-backups-restore-key-file" accept=".key,.txt,text/plain" class="block w-full text-sm text-slate-600 dark:text-slate-300 file:mr-3 file:rounded-lg file:border-0 file:bg-slate-200 dark:file:bg-slate-700 file:px-3 file:py-2 file:text-sm file:font-semibold file:text-slate-700 dark:file:text-slate-200">
+              </div>
+              <p id="admin-backups-restore-error" hidden role="alert" class="text-sm text-rose-600 dark:text-rose-400"></p>
+              <p id="admin-backups-restore-status" hidden role="status" class="text-sm text-emerald-700 dark:text-emerald-400"></p>
+              <button type="submit" id="admin-backups-restore-submit" data-i18n="modals.adminConsole.backups.restoreSubmit"
+                      class="w-full rounded-xl bg-rose-600 px-4 py-3 text-base font-semibold text-white transition hover:bg-rose-500 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50">Restaurer cette sauvegarde</button>
+            </form>
+          </section>
+        </div>
       </div>
     </div>
   </div>
@@ -854,6 +1025,7 @@
               class="mb-4 flex w-full items-center justify-center gap-2 rounded-xl border border-sky-300 dark:border-sky-700 bg-sky-50 dark:bg-sky-950/40 px-4 py-3 text-sm font-semibold text-sky-700 dark:text-sky-300 hover:bg-sky-100 dark:hover:bg-sky-900/40">
         <span aria-hidden="true">🛡️</span>
         <span>Console d'Administration</span>
+        <span id="admin-console-alert" hidden role="img" data-i18n-aria-label="modals.adminConsole.backups.alertIndicator" aria-label="Les sauvegardes nécessitent votre attention">⚠️</span>
       </button>
 
       <div class="mb-4 space-y-4">

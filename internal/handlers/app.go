@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"trakka/internal/auth"
+	"trakka/internal/backup"
 	"trakka/internal/config"
 	"trakka/internal/db"
 	"trakka/internal/logbuffer"
@@ -51,6 +52,12 @@ type Application struct {
 	// back to time.UTC — the same "zero value must stay usable" contract
 	// the rate-limiter fields below already follow.
 	Location *time.Location
+
+	// Backups runs encrypted WebDAV backups and restores (see
+	// internal/backup) behind /api/v1/admin/backups/.... May be nil (e.g.
+	// in tests that build an Application by hand), in which case those
+	// endpoints answer 404.
+	Backups *backup.Service
 
 	// Authentication rate-limiter state (see ratelimit.go). Lazily built
 	// through sync.Once rather than in a constructor, because Application is
@@ -167,6 +174,15 @@ func (app *Application) Routes() http.Handler {
 	apiMux.HandleFunc("GET /api/v1/admin/spaces", app.handleAdminSpacesList)
 	apiMux.HandleFunc("DELETE /api/v1/admin/spaces/{id}", app.handleAdminSpacesDelete)
 	apiMux.HandleFunc("GET /api/v1/admin/logs", app.handleAdminLogsList)
+	apiMux.HandleFunc("GET /api/v1/admin/backups", app.handleAdminBackupsStatus)
+	apiMux.HandleFunc("PUT /api/v1/admin/backups/config", app.handleAdminBackupsConfigUpdate)
+	apiMux.HandleFunc("POST /api/v1/admin/backups/test", app.handleAdminBackupsTest)
+	apiMux.HandleFunc("POST /api/v1/admin/backups/run", app.handleAdminBackupsRun)
+	apiMux.HandleFunc("GET /api/v1/admin/backups/remote", app.handleAdminBackupsRemoteList)
+	// A POST although it returns data: it also records that the key was
+	// saved, and no GET route in this app may change state (see csrf.go).
+	apiMux.HandleFunc("POST /api/v1/admin/backups/key/export", app.handleAdminBackupsKeyExport)
+	apiMux.HandleFunc("POST /api/v1/admin/backups/restore", app.handleAdminBackupsRestore)
 
 	apiMux.HandleFunc("GET /api/v1/push/vapid-public-key", app.handlePushVAPIDPublicKey)
 	apiMux.HandleFunc("POST /api/v1/push/subscribe", app.handlePushSubscribe)
