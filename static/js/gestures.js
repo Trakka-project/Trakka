@@ -199,13 +199,16 @@ if (IS_TOUCH_DEVICE) {
         // of the viewport on mobile — see its responsive classes in
         // index.html) is excluded too: its text input/buttons span the full
         // width of that bottom strip, so a tap starting near its left edge
-        // must reach the input, not get hijacked into a back gesture.
+        // must reach the input, not get hijacked into a back gesture. The
+        // same goes for #bulk-actions-bar (multi-select mode, selection.js),
+        // whose "Annuler" button sits at that same left edge.
         if (
           touch.clientX > EDGE_BACK_ZONE_PX ||
           event.target.closest('.swipe-item') ||
           event.target.closest('.reorder-row') ||
           event.target.closest('#dashboard-tabs') ||
-          event.target.closest('#create-item-form-anchor')
+          event.target.closest('#create-item-form-anchor') ||
+          event.target.closest('#bulk-actions-bar')
         ) {
           tracking = false;
           return;
@@ -387,10 +390,26 @@ function attachItemSwipeGestures(li, item, { canToggleDone }) {
     { passive: true },
   );
 
+  // A long press on this same card (attachLongPress in buildItemRow) can
+  // enter multi-select mode mid-touch; if the finger then keeps moving, this
+  // swipe must not go on to complete or delete the item. The re-render that
+  // mode triggers has already detached this card, so just stop tracking.
+  function abandonForSelectionMode() {
+    dragging = false;
+    dx = 0;
+    axisLocked = null;
+    foreground.style.transform = '';
+    setBackgroundOpacity(0);
+  }
+
   foreground.addEventListener(
     'touchmove',
     (event) => {
       if (!dragging) return;
+      if (isSelectionModeActive()) {
+        abandonForSelectionMode();
+        return;
+      }
       const touch = event.touches[0];
       const rawDx = touch.clientX - startX;
       const rawDy = touch.clientY - startY;
@@ -428,6 +447,10 @@ function attachItemSwipeGestures(li, item, { canToggleDone }) {
 
   function finish() {
     if (!dragging) return;
+    if (isSelectionModeActive()) {
+      abandonForSelectionMode();
+      return;
+    }
     dragging = false;
     // Restores (rather than drops) the app-wide theme-crossfade transition
     // this element's own bg-/border-/text- classes normally carry via

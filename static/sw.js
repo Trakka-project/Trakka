@@ -7,8 +7,8 @@ importScripts('/js/db.js');
 
 // Bump both on any change to APP_SHELL's contents so activate()
 // evicts the old cache instead of serving stale assets forever.
-const SHELL_CACHE = 'trakka-shell-v100';
-const RUNTIME_CACHE = 'trakka-runtime-v100';
+const SHELL_CACHE = 'trakka-shell-v102';
+const RUNTIME_CACHE = 'trakka-runtime-v102';
 const KNOWN_CACHES = [SHELL_CACHE, RUNTIME_CACHE];
 
 const APP_SHELL = [
@@ -25,6 +25,7 @@ const APP_SHELL = [
   '/js/list_view.js',
   '/js/gestures.js',
   '/js/reorder.js',
+  '/js/selection.js',
   '/js/planning.js',
   '/js/urgent.js',
   '/js/spaces.js',

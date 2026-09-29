@@ -69,6 +69,9 @@
     "financeTotal": "Total estimé",
     "financeSpent": "Déjà dépensé",
     "financeRemaining": "Reste à dépenser",
+    "financeFilteredBadge": "Filtré",
+    "financeFilteredNoteOne": "Calculé uniquement sur {count} article filtré sur {total}",
+    "financeFilteredNoteOther": "Calculé uniquement sur les {count} articles filtrés sur {total}",
     "advancedToggleAriaLabel": "Options avancées",
     "openLinkAriaLabel": "Ouvrir le lien de {title}",
     "linkCopied": "Lien copié !",
@@ -344,7 +347,9 @@
       "searchPlaceholder": "Rechercher ou créer un label…",
       "searchAriaLabel": "Rechercher ou créer un label",
       "empty": "Aucun label pour l'instant. Tapez pour en créer un.",
-      "createOption": "+ Créer « {label} »"
+      "createOption": "+ Créer « {label} »",
+      "bulkTitle": "Labels de {count} articles",
+      "partialAriaLabel": "« {label} » : {count} article(s) sur {total}"
     },
     "imagePreview": {
       "ariaLabel": "Aperçu de l'image de l'article",
@@ -554,6 +559,36 @@
         "step4": "Confirmez l'installation."
       }
     }
+  },
+  "bulk": {
+    "selectItems": "Sélectionner des articles",
+    "barAriaLabel": "Actions sur la sélection",
+    "exitAriaLabel": "Quitter la sélection",
+    "selectItemAriaLabel": "Sélectionner « {title} »",
+    "noneSelected": "Aucune sélection",
+    "selectedOne": "{count} sélectionné",
+    "selectedOther": "{count} sélectionnés",
+    "total": "Total : {amount}",
+    "selectAll": "Tout sélectionner",
+    "deselectAll": "Tout désélectionner",
+    "markDone": "Cocher",
+    "markUndone": "Décocher",
+    "labels": "Labels",
+    "targetMonth": "Mois",
+    "delete": "Supprimer",
+    "markedDoneOne": "{count} article marqué comme terminé",
+    "markedDoneOther": "{count} articles marqués comme terminés",
+    "markedUndoneOne": "{count} article marqué comme à faire",
+    "markedUndoneOther": "{count} articles marqués comme à faire",
+    "deletedOne": "{count} article supprimé",
+    "deletedOther": "{count} articles supprimés",
+    "targetMonthSheetTitle": "Mois d'achat prévu",
+    "targetMonthSubtitleOne": "Pour {count} article sélectionné",
+    "targetMonthSubtitleOther": "Pour {count} articles sélectionnés",
+    "targetMonthAppliedOne": "{month} appliqué à {count} article",
+    "targetMonthAppliedOther": "{month} appliqué à {count} articles",
+    "targetMonthClearedOne": "Mois retiré de {count} article",
+    "targetMonthClearedOther": "Mois retiré de {count} articles"
   },
   "undo": {
     "cancel": "Annuler",

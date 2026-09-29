@@ -711,11 +711,12 @@ html {
    either way, satisfying WCAG 2.2 SC 2.5.8's "equivalent control elsewhere"
    exception for a link inline with text. */
 
-/* Long-press targets (an item's title and its inline 🔗 link icon — see
-   attachLongPress/buildItemRow in list_view.js) must not also trigger the
-   browser/OS's own long-press UI, since the whole point of the gesture here
-   is to open Trakka's own #item-actions-sheet, focused on its link group,
-   instead. The `contextmenu` listener attachLongPress installs on these same
+/* Long-press targets (an item card on a touch device, and its inline 🔗 link
+   icon — see attachLongPress/buildItemRow in list_view.js) must not also
+   trigger the browser/OS's own long-press UI, since the whole point of the
+   gesture here is Trakka's own action instead: entering multi-select mode
+   for the card, opening #item-actions-sheet focused on its link group for
+   the icon. The `contextmenu` listener attachLongPress installs on these same
    elements covers Android Chrome's long-press menu; -webkit-touch-callout/
    user-select cover iOS Safari, which shows its own link callout (Open/Add
    to Reading List/Copy/Share) on a plain long press without ever firing a
@@ -759,6 +760,31 @@ html {
    notched phone's home-indicator/gesture area in fullscreen PWA mode. */
 #reorder-actions-bar {
   padding-bottom: calc(0.75rem + env(safe-area-inset-bottom, 0px));
+}
+
+/* Multi-select mode (static/js/selection.js): the same safe-area reasoning
+   for #bulk-actions-bar, which replaces the quick-add bar at every width
+   while the mode is active. #items-section.is-selecting reserves room for
+   that taller, two-row bar so the last item can still scroll clear above it
+   — it outranks the mobile-only `#items-section` padding above by
+   specificity, and applies on desktop too, where the bar is fixed as well. */
+#bulk-actions-bar {
+  padding-bottom: calc(0.5rem + env(safe-area-inset-bottom, 0px));
+}
+
+#items-section.is-selecting {
+  padding-bottom: calc(150px + env(safe-area-inset-bottom, 0px));
+}
+
+/* A selected card (decorateSelectableRow in selection.js). Plain CSS rather
+   than Tailwind utilities toggled from JS: the card already carries its own
+   bg-/border- utilities (buildItemRow), and two conflicting utilities of the
+   same kind resolve by stylesheet order, not class order — this compound
+   selector outranks them either way. */
+.item-card.is-selected {
+  border-color: rgb(14 165 233 / 0.7);
+  background-color: rgb(14 165 233 / 0.08);
+  box-shadow: 0 0 0 1px rgb(14 165 233 / 0.7);
 }
 
 /* Drag handle cursor + touch behavior for reorder mode's rows

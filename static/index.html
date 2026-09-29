@@ -335,6 +335,10 @@
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="h-5 w-5" aria-hidden="true"><path d="M4 6h16"/><path d="M4 12h16"/><path d="M4 18h16"/></svg>
             </span>
           </button>
+          <button type="button" id="select-items-button-desktop" hidden data-i18n-aria-label="bulk.selectItems" aria-label="Sélectionner des articles"
+                  class="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl text-slate-500 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-800 hover:text-slate-900 dark:hover:text-slate-200 disabled:cursor-not-allowed disabled:opacity-40">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="h-5 w-5" aria-hidden="true"><rect x="3" y="4" width="6" height="6" rx="1"/><path d="M3 17l2 2 4-4"/><path d="M13 7h8"/><path d="M13 17h8"/></svg>
+          </button>
           <button type="button" id="reorder-list-button-desktop" hidden data-i18n-aria-label="items.reorderList" aria-label="Réordonner les articles"
                   class="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl text-slate-500 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-800 hover:text-slate-900 dark:hover:text-slate-200 disabled:cursor-not-allowed disabled:opacity-40">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="h-5 w-5" aria-hidden="true"><path d="M7 15l5 5 5-5"/><path d="M7 9l5-5 5 5"/></svg>
@@ -384,7 +388,18 @@
       <details id="finance-summary" data-item-field="price" hidden open class="group mb-4 rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/30 p-4 shadow-sm">
         <summary class="flex cursor-pointer list-none items-center justify-between gap-2 [&::-webkit-details-marker]:hidden">
           <span class="flex shrink-0 items-center gap-2 text-sm font-semibold text-slate-600 dark:text-slate-300">
-            <span aria-hidden="true">📊</span>
+            <span id="finance-summary-icon" aria-hidden="true">📊</span>
+            <!-- Takes the 📊 icon's place while a filter is active (toggled in
+                 updateFinanceSummary, list_view.js): every figure is then
+                 computed from the filtered items only. Swapped in rather than
+                 added so this row stays as wide as before and the compact
+                 figures still fit on a phone; the word is for screen readers,
+                 #finance-filtered-note below says it in full. -->
+            <span id="finance-filtered-badge" hidden
+                  class="inline-flex items-center rounded-full bg-sky-500/10 p-1 text-sky-600 dark:text-sky-400">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" class="h-3 w-3" aria-hidden="true"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/></svg>
+              <span class="sr-only" data-i18n="items.financeFilteredBadge">Filtré</span>
+            </span>
             <span class="hidden group-open:inline" data-i18n="items.financeSummaryLabel">Résumé du budget</span>
             <span class="group-open:hidden" data-i18n="items.financeSummaryLabelShort">Résumé</span>
           </span>
@@ -403,6 +418,10 @@
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="h-4 w-4 shrink-0 text-slate-400 transition-transform group-open:rotate-180" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>
           </span>
         </summary>
+        <!-- "Calculé uniquement sur les N articles filtrés sur M" — same
+             visibility rule as #finance-filtered-badge above; the explicit,
+             spelled-out warning that these figures aren't the whole list's. -->
+        <p id="finance-filtered-note" hidden class="mt-3 text-xs font-medium text-sky-600 dark:text-sky-400"></p>
         <div class="mt-3 grid grid-cols-1 gap-3 border-t border-slate-200 dark:border-slate-700 pt-3 sm:grid-cols-3">
           <div class="flex flex-col gap-1">
             <span data-i18n="items.financeTotal" class="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Total estimé</span>
@@ -515,6 +534,55 @@
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" class="h-4 w-4" aria-hidden="true"><path d="M20 6L9 17l-5-5"/></svg>
           <span data-i18n="items.reorderConfirm">Valider l'ordre</span>
         </button>
+      </div>
+
+      <!-- Shown only while multi-select mode is active (static/js/selection.js),
+           in place of the quick-add bar: row 1 is "Annuler" (✕), the live
+           selection count plus — on shopping-type lists, once a selected
+           item has a price — the selection's estimated total, and "Tout
+           sélectionner/Tout désélectionner"; row 2 holds the bulk actions,
+           disabled while nothing is selected. #bulk-done-button/
+           #bulk-target-month-button hide themselves on list types without a
+           done state/target month (updateBulkActionsBar). Safe-area bottom
+           padding lives in base.css, next to #reorder-actions-bar's. -->
+      <div id="bulk-actions-bar" hidden role="region" data-i18n-aria-label="bulk.barAriaLabel" aria-label="Actions sur la sélection"
+           class="fixed inset-x-0 bottom-0 z-30 border-t border-slate-200 dark:border-slate-700 bg-white/95 dark:bg-slate-900/95 px-3 pt-2 shadow-[0_-4px_12px_rgba(0,0,0,0.06)] backdrop-blur">
+        <div class="mx-auto flex max-w-3xl flex-col gap-2">
+          <div class="flex min-w-0 items-center gap-2">
+            <button type="button" id="bulk-cancel-button" data-i18n-aria-label="bulk.exitAriaLabel" aria-label="Quitter la sélection"
+                    class="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl text-slate-500 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-800 hover:text-slate-900 dark:hover:text-slate-200">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" class="h-5 w-5" aria-hidden="true"><path d="M18 6L6 18M6 6l12 12"/></svg>
+            </button>
+            <div class="min-w-0 flex-1">
+              <p id="bulk-selection-count" aria-live="polite" class="truncate text-sm font-semibold text-slate-900 dark:text-slate-100"></p>
+              <p id="bulk-selection-total" hidden class="truncate text-sm font-semibold tabular-nums text-[color:var(--tk-money-total)]"></p>
+            </div>
+            <button type="button" id="bulk-toggle-all-button"
+                    class="max-w-[45%] shrink-0 rounded-xl px-3 py-2 text-right text-sm font-semibold leading-tight text-sky-600 dark:text-sky-400 hover:bg-sky-500/10 disabled:cursor-not-allowed disabled:opacity-40"></button>
+          </div>
+          <div class="grid auto-cols-fr grid-flow-col gap-1.5">
+            <button type="button" id="bulk-done-button"
+                    class="flex min-h-[52px] min-w-0 flex-col items-center justify-center gap-0.5 rounded-xl px-1 py-1.5 text-xs font-medium text-slate-700 dark:text-slate-200 hover:bg-slate-200 dark:hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-40">
+              <span aria-hidden="true" class="text-lg leading-none">✅</span>
+              <span id="bulk-done-label" class="max-w-full truncate">Cocher</span>
+            </button>
+            <button type="button" id="bulk-labels-button"
+                    class="flex min-h-[52px] min-w-0 flex-col items-center justify-center gap-0.5 rounded-xl px-1 py-1.5 text-xs font-medium text-slate-700 dark:text-slate-200 hover:bg-slate-200 dark:hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-40">
+              <span aria-hidden="true" class="text-lg leading-none">🏷️</span>
+              <span data-i18n="bulk.labels" class="max-w-full truncate">Labels</span>
+            </button>
+            <button type="button" id="bulk-target-month-button" hidden
+                    class="flex min-h-[52px] min-w-0 flex-col items-center justify-center gap-0.5 rounded-xl px-1 py-1.5 text-xs font-medium text-slate-700 dark:text-slate-200 hover:bg-slate-200 dark:hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-40">
+              <span aria-hidden="true" class="text-lg leading-none">📅</span>
+              <span data-i18n="bulk.targetMonth" class="max-w-full truncate">Mois</span>
+            </button>
+            <button type="button" id="bulk-delete-button"
+                    class="flex min-h-[52px] min-w-0 flex-col items-center justify-center gap-0.5 rounded-xl px-1 py-1.5 text-xs font-medium text-rose-600 dark:text-rose-400 hover:bg-rose-500/10 disabled:cursor-not-allowed disabled:opacity-40">
+              <span aria-hidden="true" class="text-lg leading-none">🗑️</span>
+              <span data-i18n="bulk.delete" class="max-w-full truncate">Supprimer</span>
+            </button>
+          </div>
+        </div>
       </div>
     </section>
 
@@ -1494,6 +1562,13 @@
           </span>
           <span id="view-mode-toggle-label">Passer en affichage compact</span>
         </button>
+        <!-- Enters multi-select mode (static/js/selection.js); hidden while
+             the list has nothing selectable, and while the mode is active. -->
+        <button type="button" id="select-items-button" hidden
+                class="flex items-center gap-3 rounded-xl px-3 py-3 text-left text-base font-medium text-slate-900 dark:text-slate-100 hover:bg-slate-200 dark:hover:bg-slate-700">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="h-5 w-5" aria-hidden="true"><rect x="3" y="4" width="6" height="6" rx="1"/><path d="M3 17l2 2 4-4"/><path d="M13 7h8"/><path d="M13 17h8"/></svg>
+          <span data-i18n="bulk.selectItems">Sélectionner des articles</span>
+        </button>
         <button type="button" id="reorder-list-button" hidden data-i18n-aria-label="items.reorderList" aria-label="Réordonner les articles"
                 class="flex items-center gap-3 rounded-xl px-3 py-3 text-left text-base font-medium text-slate-900 dark:text-slate-100 hover:bg-slate-200 dark:hover:bg-slate-700">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="h-5 w-5" aria-hidden="true"><path d="M7 15l5 5 5-5"/><path d="M7 9l5-5 5 5"/></svg>
@@ -1505,6 +1580,27 @@
           <span data-i18n="items.editList">Modifier la liste</span>
         </button>
       </div>
+    </div>
+  </div>
+
+  <!-- Bulk target-month bottom sheet: opened by #bulk-target-month-button in
+       the multi-select bar (static/js/selection.js). #bulk-target-month-options
+       is filled on open with one row per option of the create form's own
+       #item-target-month select ("Non planifié" + the next 12 months); a tap
+       applies it to every selected item right away, like the sort sheet. -->
+  <div id="bulk-target-month-sheet" hidden class="fixed inset-0 z-40 flex items-end justify-center bg-slate-950/30 dark:bg-slate-950/70 p-0 sm:items-center sm:p-4">
+    <div role="dialog" aria-modal="true" aria-labelledby="bulk-target-month-sheet-title" class="w-full rounded-t-2xl bg-slate-100 dark:bg-slate-800 p-5 shadow-xl sm:max-w-md sm:rounded-2xl">
+      <div class="mb-3 flex items-center justify-between gap-3">
+        <div class="min-w-0 flex-1">
+          <h2 id="bulk-target-month-sheet-title" data-i18n="bulk.targetMonthSheetTitle" class="truncate text-lg font-semibold">Mois d'achat prévu</h2>
+          <p id="bulk-target-month-subtitle" class="truncate text-sm text-slate-500 dark:text-slate-400"></p>
+        </div>
+        <button type="button" id="close-bulk-target-month-sheet-button" data-i18n-aria-label="modals.close" aria-label="Fermer"
+                class="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-slate-500 dark:text-slate-400 hover:bg-slate-300 dark:hover:bg-slate-700 hover:text-slate-900 dark:hover:text-slate-200">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" class="h-5 w-5" aria-hidden="true"><path d="M18 6L6 18M6 6l12 12"/></svg>
+        </button>
+      </div>
+      <div id="bulk-target-month-options" class="flex max-h-[60vh] flex-col gap-1 overflow-y-auto"></div>
     </div>
   </div>
 
@@ -1681,6 +1777,7 @@
   <script src="/js/list_view.js" defer></script>
   <script src="/js/gestures.js" defer></script>
   <script src="/js/reorder.js" defer></script>
+  <script src="/js/selection.js" defer></script>
   <script src="/js/planning.js" defer></script>
   <script src="/js/urgent.js" defer></script>
   <script src="/js/spaces.js" defer></script>

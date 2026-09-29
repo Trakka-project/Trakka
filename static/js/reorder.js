@@ -88,6 +88,10 @@ function enterReorderMode() {
   // reorder mode has to close it first, the same as every other row there.
   closeListOptionsSheet();
   hideError();
+  // exitSelectionModeIfActive is defined in selection.js — multi-select
+  // mode's bulk actions bar and this mode's own bar both take over the
+  // bottom of the screen, so only one of the two can be active at once.
+  exitSelectionModeIfActive();
   reorderMode = true;
   const items = (state.currentList.items || []).filter((item) => !item.pendingDelete);
   // Matches the server's own ORDER BY position ASC, id ASC (internal/db's

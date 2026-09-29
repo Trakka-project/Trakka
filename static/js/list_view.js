@@ -50,6 +50,9 @@ const listEls = {
   financeTotalCollapsed: document.getElementById('finance-total-collapsed'),
   financeSpentCollapsed: document.getElementById('finance-spent-collapsed'),
   financeRemainingCollapsed: document.getElementById('finance-remaining-collapsed'),
+  financeSummaryIcon: document.getElementById('finance-summary-icon'),
+  financeFilteredBadge: document.getElementById('finance-filtered-badge'),
+  financeFilteredNote: document.getElementById('finance-filtered-note'),
   createItemFormAnchor: document.getElementById('create-item-form-anchor'),
   createItemForm: document.getElementById('create-item-form'),
   itemTitle: document.getElementById('item-title'),
@@ -123,15 +126,17 @@ let itemActionsSheetItem = null;
 // closed — set by openEditItemModal, read by editItemForm's submit handler.
 let editingItem = null;
 
-// The item currently open in the label management bottom sheet
+// The item(s) currently open in the label management bottom sheet
 // (#label-manage-sheet), or null when it's closed — set by
 // openLabelManageSheet, read by renderLabelManageSheetChips and the search
-// input's own listeners below. Reachable from both #item-actions-sheet's
-// "Gérer les labels" button and the edit-item modal's own "🏷️ Gérer les
-// labels" button — either one closes itself first (the same sequential
-// close/open pattern the edit-item entry point already uses), so at most one
-// bottom sheet/modal is ever open at a time.
-let labelManageItem = null;
+// input's own listeners below. A one-element array when opened for a single
+// item, from either #item-actions-sheet's "Gérer les labels" button or the
+// edit-item modal's own "🏷️ Gérer les labels" button — either one closes
+// itself first (the same sequential close/open pattern the edit-item entry
+// point already uses), so at most one bottom sheet/modal is ever open at a
+// time — or the whole current selection when opened from the multi-select
+// bar's "Labels" action (selection.js).
+let labelManageItems = null;
 
 const PENCIL_ICON_SVG =
   '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="h-5 w-5" aria-hidden="true">' +
@@ -235,11 +240,12 @@ async function shareLink(item) {
 }
 
 // ---------------------------------------------------------------------------
-// Long-press gesture (~500ms touch hold) — the mobile affordance that opens
-// #item-actions-sheet (focused on its link group) from an item's title or
-// its inline 🔗 link icon (see buildItemRow) — the same sheet a short tap
-// already opens, just pre-focused on the link actions rather than a separate
-// sheet of its own. Touch-only by design: a desktop mouse never fires
+// Long-press gesture (~500ms touch hold) — two mobile affordances in
+// buildItemRow: on an item's inline 🔗 link icon it opens #item-actions-sheet
+// focused on its link group (the same sheet a short tap on the title already
+// opens, just pre-focused on the link actions); anywhere else on the card it
+// enters multi-select mode with that item selected (enterSelectionMode,
+// selection.js). Touch-only by design: a desktop mouse never fires
 // touchstart, so attachLongPress is a complete no-op there and the element's
 // ordinary click handler (openItemActionsSheet on the title, ordinary
 // navigation on the link icon) is entirely unaffected.
@@ -254,7 +260,10 @@ const LONG_PRESS_MOVE_TOLERANCE_PX = 10;
 // own default is prevented when a long press actually fired, so the
 // synthetic `click` a touch normally triggers afterward can't also run the
 // element's ordinary tap handler on top of the long-press action.
-function attachLongPress(el, onLongPress) {
+// `ignoreSelector` skips a touch that starts inside a matching descendant —
+// used by buildItemRow's whole-card gesture so a press on the inline 🔗 icon
+// is left to that icon's own long press instead of firing both.
+function attachLongPress(el, onLongPress, { ignoreSelector = null } = {}) {
   let timer = null;
   let startX = 0;
   let startY = 0;
@@ -268,8 +277,9 @@ function attachLongPress(el, onLongPress) {
   el.addEventListener(
     'touchstart',
     (event) => {
-      if (event.touches.length !== 1) {
+      if (event.touches.length !== 1 || (ignoreSelector && event.target.closest(ignoreSelector))) {
         clearTimer();
+        firedLongPress = false;
         return;
       }
       const touch = event.touches[0];
@@ -1133,8 +1143,23 @@ listEls.editItemReminder.addEventListener('change', () => {
 // an optimistic local edit, or the offline sync queue. `item.price` is a
 // per-unit price, so every line contributes `price * quantity` — see
 // lineTotal below, also used by buildItemRow's per-item price display so
-// the row-level subtotals and this bar's total always agree.
-function updateFinanceSummary(items) {
+// the row-level subtotals and this bar's total always agree. While a filter
+// is active, renderItems passes only the items it actually shows (`items`
+// is then that subset, `totalCount` the whole list's count) — the bar's
+// "Filtré" badge and its "N articles filtrés" note say so explicitly, so a
+// narrowed total is never mistaken for the whole list's.
+function updateFinanceSummary(items, { filtered = false, totalCount = items.length } = {}) {
+  listEls.financeSummaryIcon.hidden = filtered;
+  listEls.financeFilteredBadge.hidden = !filtered;
+  listEls.financeFilteredNote.hidden = !filtered;
+  if (filtered) {
+    listEls.financeFilteredBadge.title = t('items.financeFilteredBadge');
+    listEls.financeFilteredNote.textContent = t(
+      items.length === 1 ? 'items.financeFilteredNoteOne' : 'items.financeFilteredNoteOther',
+      { count: items.length, total: totalCount }
+    );
+  }
+
   let total = 0;
   let spent = 0;
   for (const item of items) {
@@ -1865,7 +1890,15 @@ function buildItemRow(item, { showCheckbox = true, index, showQuantity = true, s
   const rowBottom = compact ? rowTop : document.createElement('div');
   if (!compact) rowBottom.className = 'item-card__row-bottom grid shrink-0 grid-cols-[auto_1fr_auto] items-center gap-2';
 
-  if (showCheckbox) {
+  // Multi-select mode (selection.js) swaps the leading done checkbox/line
+  // marker for a selection checkbox and leaves every other per-item action
+  // unwired — a tap anywhere on the card toggles its selection instead (see
+  // decorateSelectableRow, called at the very end of this function).
+  const selecting = isSelectionModeActive();
+
+  if (selecting) {
+    rowTop.appendChild(buildSelectionToggle(item));
+  } else if (showCheckbox) {
     const checkboxLabel = document.createElement('label');
     checkboxLabel.className = 'flex h-11 w-11 shrink-0 cursor-pointer items-center justify-center';
     const checkbox = document.createElement('input');
@@ -1927,7 +1960,7 @@ function buildItemRow(item, { showCheckbox = true, index, showQuantity = true, s
   // where quantity is hidden entirely) fall back to the old "title × N"
   // form, still used as a compact read-only summary in urgent.js/planning.js.
   title.textContent = !showQuantity && item.quantity > 1 ? `${item.title} × ${item.quantity}` : item.title;
-  title.addEventListener('click', () => openItemActionsSheet(item));
+  if (!selecting) title.addEventListener('click', () => openItemActionsSheet(item));
   rowTop.appendChild(title);
 
   // Compact view's whole point is a single line with nothing but checkbox +
@@ -1992,24 +2025,23 @@ function buildItemRow(item, { showCheckbox = true, index, showQuantity = true, s
   // Compact's whole point is a dense, at-a-glance list of what's still left
   // to buy, and the running cost earns that slot more than a link that's
   // still one tap away regardless, via #item-actions-sheet's own "Ouvrir le
-  // lien" entry (or a long press on the title, kept below either way). Every
-  // other row (Détaillé price lists, and compact `todo`/`custom`, which have
-  // no price to show) keeps the plain link-icon-or-empty-slot behavior.
+  // lien" entry (a tap on the title opens that sheet). Every other row
+  // (Détaillé price lists, and compact `todo`/`custom`, which have no price
+  // to show) keeps the plain link-icon-or-empty-slot behavior.
   if (compact && showPrice) {
     const priceLabel = buildCompactPriceLabel(item);
     if (priceLabel) trailing.appendChild(priceLabel);
-    if (hasLink) attachLongPress(title, () => openItemActionsSheet(item, { focusLink: true }));
   } else if (showLink) {
     if (hasLink) {
       const linkIcon = buildInlineLinkIcon(item);
       trailing.appendChild(linkIcon);
       // A long press (~500ms touch hold, desktop mouse unaffected — see
-      // attachLongPress) on either the title or the link icon itself opens
-      // the very same #item-actions-sheet a short tap does, just pre-focused
-      // on its Ouvrir/Copier/Partager link group — the "appui long sur
-      // l'item ou le lien" gesture, without a second sheet to keep in sync.
-      attachLongPress(title, () => openItemActionsSheet(item, { focusLink: true }));
-      attachLongPress(linkIcon, () => openItemActionsSheet(item, { focusLink: true }));
+      // attachLongPress) on the link icon itself opens the very same
+      // #item-actions-sheet a short tap on the title does, just pre-focused
+      // on its Ouvrir/Copier/Partager link group, without a second sheet to
+      // keep in sync. A long press anywhere else on the card enters
+      // multi-select mode instead (see the end of this function).
+      if (!selecting) attachLongPress(linkIcon, () => openItemActionsSheet(item, { focusLink: true }));
     } else {
       // Same h-8 w-8 footprint as buildInlineLinkIcon's own <a> so a list
       // where only some items carry a url (the common case) still keeps
@@ -2021,34 +2053,39 @@ function buildItemRow(item, { showCheckbox = true, index, showQuantity = true, s
 
   rowBottom.appendChild(trailing);
 
-  const actions = document.createElement('div');
-  actions.className = 'item-card__actions hidden shrink-0 items-center gap-1 md:flex';
+  // Per-item actions (✏️/🗑️ on wide screens, [⋮] below `md`) are left out
+  // entirely in multi-select mode: the bulk actions bar replaces them, and a
+  // tap anywhere on the card toggles its selection instead.
+  if (!selecting) {
+    const actions = document.createElement('div');
+    actions.className = 'item-card__actions hidden shrink-0 items-center gap-1 md:flex';
 
-  const editBtn = document.createElement('button');
-  editBtn.type = 'button';
-  editBtn.setAttribute('aria-label', t('items.editItemAriaLabel', { title: item.title }));
-  editBtn.className = 'flex h-11 w-11 shrink-0 items-center justify-center rounded-lg text-slate-500 hover:bg-sky-500/10 hover:text-sky-600 dark:hover:text-sky-400';
-  editBtn.innerHTML = PENCIL_ICON_SVG;
-  editBtn.addEventListener('click', () => openEditItemModal(item));
-  actions.appendChild(editBtn);
+    const editBtn = document.createElement('button');
+    editBtn.type = 'button';
+    editBtn.setAttribute('aria-label', t('items.editItemAriaLabel', { title: item.title }));
+    editBtn.className = 'flex h-11 w-11 shrink-0 items-center justify-center rounded-lg text-slate-500 hover:bg-sky-500/10 hover:text-sky-600 dark:hover:text-sky-400';
+    editBtn.innerHTML = PENCIL_ICON_SVG;
+    editBtn.addEventListener('click', () => openEditItemModal(item));
+    actions.appendChild(editBtn);
 
-  const deleteBtn = document.createElement('button');
-  deleteBtn.type = 'button';
-  deleteBtn.setAttribute('aria-label', t('items.deleteItemAriaLabel', { title: item.title }));
-  deleteBtn.className = 'flex h-11 w-11 shrink-0 items-center justify-center rounded-lg text-slate-500 hover:bg-rose-500/10 hover:text-rose-600 dark:hover:text-rose-400';
-  deleteBtn.innerHTML = TRASH_ICON_SVG;
-  deleteBtn.addEventListener('click', () => removeItem(item));
-  actions.appendChild(deleteBtn);
+    const deleteBtn = document.createElement('button');
+    deleteBtn.type = 'button';
+    deleteBtn.setAttribute('aria-label', t('items.deleteItemAriaLabel', { title: item.title }));
+    deleteBtn.className = 'flex h-11 w-11 shrink-0 items-center justify-center rounded-lg text-slate-500 hover:bg-rose-500/10 hover:text-rose-600 dark:hover:text-rose-400';
+    deleteBtn.innerHTML = TRASH_ICON_SVG;
+    deleteBtn.addEventListener('click', () => removeItem(item));
+    actions.appendChild(deleteBtn);
 
-  rowTop.appendChild(actions);
+    rowTop.appendChild(actions);
 
-  const kebabBtn = document.createElement('button');
-  kebabBtn.type = 'button';
-  kebabBtn.setAttribute('aria-label', t('items.moreActionsAriaLabel', { title: item.title }));
-  kebabBtn.className = 'item-card__kebab flex h-11 w-11 shrink-0 items-center justify-center rounded-lg text-slate-500 hover:bg-slate-200 dark:hover:bg-slate-700 md:hidden';
-  kebabBtn.innerHTML = KEBAB_ICON_SVG;
-  kebabBtn.addEventListener('click', () => openItemActionsSheet(item));
-  rowTop.appendChild(kebabBtn);
+    const kebabBtn = document.createElement('button');
+    kebabBtn.type = 'button';
+    kebabBtn.setAttribute('aria-label', t('items.moreActionsAriaLabel', { title: item.title }));
+    kebabBtn.className = 'item-card__kebab flex h-11 w-11 shrink-0 items-center justify-center rounded-lg text-slate-500 hover:bg-slate-200 dark:hover:bg-slate-700 md:hidden';
+    kebabBtn.innerHTML = KEBAB_ICON_SVG;
+    kebabBtn.addEventListener('click', () => openItemActionsSheet(item));
+    rowTop.appendChild(kebabBtn);
+  }
 
   if (!compact) {
     // A non-compact row's label chips (buildLabelChipsRow) render "under the
@@ -2074,6 +2111,27 @@ function buildItemRow(item, { showCheckbox = true, index, showQuantity = true, s
       li.appendChild(rowTop);
     }
     li.appendChild(rowBottom);
+  }
+
+  if (selecting) {
+    // decorateSelectableRow is defined in selection.js — wires the tap-to-
+    // select behavior and the selected styling. Swipe gestures stay off in
+    // this mode: a swipe must never delete or complete an item while the
+    // user is picking a selection.
+    decorateSelectableRow(li, item);
+    return li;
+  }
+
+  // A long press anywhere on the card (except the 🔗 icon, which keeps its
+  // own long press above) enters multi-select mode with this item already
+  // selected — enterSelectionMode/isSelectableItem are defined in
+  // selection.js. `long-press-target` (base.css) keeps iOS from turning the
+  // same hold into a text selection/callout; applied on touch devices only
+  // (IS_TOUCH_DEVICE, gestures.js), so a desktop mouse can still select a
+  // title's text.
+  if (isSelectableItem(item)) {
+    attachLongPress(li, () => enterSelectionMode(item), { ignoreSelector: 'a[href]' });
+    if (IS_TOUCH_DEVICE) li.classList.add('long-press-target');
   }
 
   // attachItemSwipeGestures is defined in gestures.js — swipe right to
@@ -2181,7 +2239,15 @@ function renderItems() {
   }
 
   const visibility = fieldVisibilityFor(list.type);
-  if (visibility.price) updateFinanceSummary(items);
+  // With a filter active, the budget is computed from exactly what's
+  // rendered below (active + done, i.e. after the status filter too), so a
+  // "Restant" filter shows 0 € spent and an "Acheté" one 0 € remaining.
+  if (visibility.price) {
+    updateFinanceSummary(filterActive ? [...active, ...done] : items, {
+      filtered: filterActive,
+      totalCount: items.length,
+    });
+  }
   // getViewMode is defined above — the user's own Compact/Detailed choice
   // for this list's type, re-read on every render so switching the toggle
   // (or reopening a differently-typed list) is reflected immediately.
@@ -2243,6 +2309,12 @@ function renderItems() {
   // automatically so the very thing the filter was set to show isn't left
   // behind a collapsed <details> the user has to know to expand.
   if (filterState.status === 'done' && done.length > 0) listEls.doneSection.open = true;
+
+  // syncSelectionWithRender is defined in selection.js — drops any selected
+  // item this render no longer shows (deleted, filtered out, replaced by a
+  // sync), remembers which rows "Tout sélectionner" targets, and shows/hides
+  // the bulk actions bar and the "Sélectionner" entry points accordingly.
+  syncSelectionWithRender(active, done);
 
   // updateReorderButtonVisibility is defined in reorder.js — re-evaluated on
   // every normal render so the "⇅ Réordonner" button reflects the current
@@ -2366,6 +2438,7 @@ function setListActionButtonsEnabled(enabled) {
   listEls.viewModeToggleButtonDesktop.disabled = !enabled;
   listEls.editListButtonDesktop.disabled = !enabled;
   reorderEls.toggleButtonDesktop.disabled = !enabled;
+  selectionEls.toggleButtonDesktop.disabled = !enabled;
 }
 
 async function selectList(id, opts = {}) {
@@ -2373,8 +2446,10 @@ async function selectList(id, opts = {}) {
   hideError();
   // exitReorderModeIfActive is defined in reorder.js — opening another list
   // (or reopening this one) mid-drag must not leave the new view stuck in
-  // reorder mode.
+  // reorder mode. exitSelectionModeIfActive (selection.js) is the same for
+  // multi-select mode: a selection never carries over to another list.
   exitReorderModeIfActive();
+  exitSelectionModeIfActive();
 
   // Stale-while-revalidate: paint immediately from whatever's already in
   // the local mirror, before the network fetch below even starts, so
@@ -2430,8 +2505,10 @@ function showDashboard() {
   // exitReorderModeIfActive is defined in reorder.js — leaving the list
   // detail view mid-drag must not leave reorder mode's chrome (the bottom
   // action bar, the hidden quick-add bar/FAB) stuck on for whatever's opened
-  // next.
+  // next — and likewise for multi-select mode's bulk actions bar
+  // (selection.js).
   exitReorderModeIfActive();
+  exitSelectionModeIfActive();
   state.currentListId = null;
   state.currentList = null;
   listEls.itemsSection.hidden = true;
@@ -2989,7 +3066,7 @@ function openEditItemModal(item) {
 listEls.editItemManageLabelsButton.addEventListener('click', () => {
   const item = editingItem;
   closeEditItemModal();
-  if (item) openLabelManageSheet(item);
+  if (item) openLabelManageSheet([item]);
 });
 
 // Editing the price field by hand is what "modifier en un clic" means in
@@ -3070,7 +3147,7 @@ listEls.itemActionsEditButton.addEventListener('click', () => {
 listEls.itemActionsLabelsButton.addEventListener('click', () => {
   const item = itemActionsSheetItem;
   closeItemActionsSheet();
-  if (item) openLabelManageSheet(item);
+  if (item) openLabelManageSheet([item]);
 });
 
 listEls.itemActionsOpenLinkButton.addEventListener('click', () => {
@@ -3108,55 +3185,134 @@ listEls.itemActionsDeleteButton.addEventListener('click', () => {
 // input plus a list of toggleable chips, opened from either
 // #item-actions-sheet's "Gérer les labels" button or the edit-item modal's
 // own one (both close their own modal/sheet first — see those two click
-// handlers above). Every chip tap commits immediately (commitItemLabels,
-// the same optimistic-with-rollback + coalesced-in-flight-request pattern
-// changeQuantity/toggleUrgent already use above) — there is no separate
-// "save" step, matching the "d'un simple tap" requirement.
+// handlers above), or for the whole current selection from the multi-select
+// bar's "Labels" action (selection.js). Every chip tap commits immediately
+// (commitItemLabels, the same optimistic-with-rollback + coalesced-in-
+// flight-request pattern changeQuantity/toggleUrgent already use above) —
+// there is no separate "save" step, matching the "d'un simple tap"
+// requirement.
 // ---------------------------------------------------------------------------
 
-// Same coalescing pattern as pendingQuantityUpdates/pendingUrgentUpdates
-// above: tracks the last server-confirmed label set plus an in-flight
-// request id per item, so a slower response from an earlier tap can never
-// clobber a set the user has since moved past with further taps.
-const pendingLabelUpdates = new Map();
+// Upper bound on how many of one multi-item action's per-item requests
+// (commitItemPatches below, and the bulk done/delete actions in
+// selection.js) are in flight at once. There is no bulk endpoint: each item
+// still goes through its own PATCH/DELETE /api/v1/items/{id}, which is what
+// lets sw.js queue, mirror and temp-id-resolve every one of them offline
+// exactly as it already does for a single-item edit. The cap keeps a large
+// selection from opening dozens of requests at once against SQLite's single
+// writer (or dozens of IndexedDB transactions in the service worker), and
+// none of it blocks the UI, since every caller has already applied its
+// change optimistically before the first request goes out.
+const BULK_REQUEST_CONCURRENCY = 4;
 
-function commitItemLabels(item, newLabels) {
-  hideError();
-
-  const pending = pendingLabelUpdates.get(item);
-  const committedLabels = pending ? pending.committedLabels : item.labels || [];
-  const requestId = Symbol('labels-update');
-
-  item.labels = newLabels;
-  pendingLabelUpdates.set(item, { committedLabels, requestId });
-  renderItems();
-  if (labelManageItem === item) renderLabelManageSheetChips();
-
-  (async () => {
-    try {
-      const updated = await apiRequest(`/items/${item.id}`, { method: 'PATCH', body: JSON.stringify({ labels: newLabels }) });
-      if (pendingLabelUpdates.get(item)?.requestId !== requestId) return; // superseded by a newer tap
-      Object.assign(item, updated);
-      pendingLabelUpdates.delete(item);
-    } catch (err) {
-      if (pendingLabelUpdates.get(item)?.requestId !== requestId) return;
-      item.labels = committedLabels;
-      pendingLabelUpdates.delete(item);
-      if (!isNetworkError(err)) showError(err.message);
-    } finally {
-      renderItems();
-      if (labelManageItem === item) renderLabelManageSheetChips();
-      if (editingItem === item) renderEditItemLabelsPreview(item);
+// Runs `worker(task)` over every task with at most `limit` in flight at a
+// time, resolving once all of them have settled. `worker` must catch its own
+// errors — a rejection here would abandon whatever tasks its lane had left.
+async function runWithConcurrency(tasks, limit, worker) {
+  let next = 0;
+  const lanes = Array.from({ length: Math.min(limit, tasks.length) }, async () => {
+    while (next < tasks.length) {
+      const task = tasks[next];
+      next += 1;
+      await worker(task);
     }
-    await refreshPendingBadge();
-  })();
+  });
+  await Promise.all(lanes);
 }
 
-function toggleItemLabel(item, label) {
-  const current = item.labels || [];
-  const has = current.some((l) => l.toLowerCase() === label.toLowerCase());
-  const next = has ? current.filter((l) => l.toLowerCase() !== label.toLowerCase()) : [...current, label];
-  commitItemLabels(item, next);
+// Surfaces the first genuine (non-connectivity) failure among a multi-item
+// action's requests — once, rather than one banner per item. Connectivity
+// failures stay silent, the same as every single-item mutation above.
+function reportBulkErrors(errors) {
+  const err = errors.find((e) => !isNetworkError(e));
+  if (err) showError(err.message);
+}
+
+// Same coalescing pattern as pendingQuantityUpdates/pendingUrgentUpdates
+// above, keyed per item: the last server-confirmed value of the patched
+// fields (`committed`) plus an in-flight request id, so a slower response
+// from an earlier tap can never clobber a value the user has since moved
+// past with further taps. One map per kind of field (labels here, the
+// target month in selection.js), so patching one never supersedes an
+// in-flight patch of the other.
+const pendingLabelUpdates = new Map();
+
+function repaintAfterItemPatches(items) {
+  renderItems();
+  if (labelManageItems) renderLabelManageSheetChips();
+  if (editingItem && items.includes(editingItem)) renderEditItemLabelsPreview(editingItem);
+}
+
+// Optimistically applies `patchFor(item)` — a PATCH body whose keys are item
+// fields, or null to leave that item alone — to every item and re-renders
+// once, then sends the PATCHes in the background, BULK_REQUEST_CONCURRENCY
+// at a time. A failed item is rolled back on its own; the others keep their
+// new value. Resolves once every request has settled.
+async function commitItemPatches(items, pendingMap, patchFor) {
+  hideError();
+
+  const jobs = [];
+  for (const item of items) {
+    const patch = patchFor(item);
+    if (!patch) continue;
+    const pending = pendingMap.get(item);
+    const committed = pending ? pending.committed : Object.fromEntries(Object.keys(patch).map((key) => [key, item[key]]));
+    const requestId = Symbol('item-patch');
+    Object.assign(item, patch);
+    pendingMap.set(item, { committed, requestId });
+    jobs.push({ item, patch, committed, requestId });
+  }
+  if (jobs.length === 0) return;
+  repaintAfterItemPatches(items);
+
+  const errors = [];
+  await runWithConcurrency(jobs, BULK_REQUEST_CONCURRENCY, async ({ item, patch, committed, requestId }) => {
+    try {
+      const updated = await apiRequest(`/items/${item.id}`, { method: 'PATCH', body: JSON.stringify(patch) });
+      if (pendingMap.get(item)?.requestId !== requestId) return; // superseded by a newer tap
+      Object.assign(item, updated);
+      pendingMap.delete(item);
+    } catch (err) {
+      if (pendingMap.get(item)?.requestId !== requestId) return;
+      Object.assign(item, committed);
+      pendingMap.delete(item);
+      errors.push(err);
+    }
+  });
+  repaintAfterItemPatches(items);
+  reportBulkErrors(errors);
+  await refreshPendingBadge();
+}
+
+// `labelsFor(item)` returns that item's new label array, or null to leave it
+// unchanged.
+function commitItemLabels(items, labelsFor) {
+  return commitItemPatches(items, pendingLabelUpdates, (item) => {
+    const next = labelsFor(item);
+    return next ? { labels: next } : null;
+  });
+}
+
+function itemHasLabel(item, label) {
+  const key = label.toLowerCase();
+  return (item.labels || []).some((l) => l.toLowerCase() === key);
+}
+
+function addLabelToItems(items, label) {
+  commitItemLabels(items, (item) => (itemHasLabel(item, label) ? null : [...(item.labels || []), label]));
+}
+
+// A chip tap: removes the label from every item when all of them already
+// carry it, otherwise adds it to each one that doesn't (merged with that
+// item's other labels, never replacing them) — for a single item, the same
+// plain on/off toggle this sheet has always had.
+function toggleItemsLabel(items, label) {
+  if (items.every((item) => itemHasLabel(item, label))) {
+    const key = label.toLowerCase();
+    commitItemLabels(items, (item) => (item.labels || []).filter((l) => l.toLowerCase() !== key));
+  } else {
+    addLabelToItems(items, label);
+  }
 }
 
 // Every distinct label used anywhere in the currently open list, deduped
@@ -3190,38 +3346,51 @@ function collectListStoreSuggestions() {
   return Array.from(seen).sort((a, b) => a.localeCompare(b));
 }
 
-function buildLabelToggleChip(item, label, isSelected) {
+// `count` is how many of `items` already carry `label`: all of them shows
+// the ringed "✓" chip, none the plain grey one, and anything in between
+// (only possible for a multi-item selection) the label's own color plus a
+// "2/5" tally, with aria-pressed="mixed" — a tap then adds it to the rest.
+function buildLabelToggleChip(items, label, count) {
   const chip = document.createElement('button');
   chip.type = 'button';
-  chip.className = isSelected
-    ? `flex items-center gap-1 rounded-full px-3 py-1.5 text-sm font-semibold ring-2 ring-offset-1 ring-offset-slate-100 dark:ring-offset-slate-800 ${labelChipClasses(label)}`
-    : 'flex items-center gap-1 rounded-full bg-slate-200/70 dark:bg-slate-700/50 px-3 py-1.5 text-sm font-medium text-slate-600 dark:text-slate-300 hover:bg-slate-300 dark:hover:bg-slate-600';
-  chip.textContent = isSelected ? `✓ ${label}` : label;
-  chip.setAttribute('aria-pressed', String(isSelected));
-  chip.addEventListener('click', () => toggleItemLabel(item, label));
+  if (count === items.length) {
+    chip.className = `flex items-center gap-1 rounded-full px-3 py-1.5 text-sm font-semibold ring-2 ring-offset-1 ring-offset-slate-100 dark:ring-offset-slate-800 ${labelChipClasses(label)}`;
+    chip.textContent = `✓ ${label}`;
+    chip.setAttribute('aria-pressed', 'true');
+  } else if (count > 0) {
+    chip.className = `flex items-center gap-1 rounded-full px-3 py-1.5 text-sm font-medium ${labelChipClasses(label)}`;
+    chip.textContent = `${label} · ${count}/${items.length}`;
+    chip.setAttribute('aria-pressed', 'mixed');
+    chip.setAttribute('aria-label', t('modals.labelManage.partialAriaLabel', { label, count, total: items.length }));
+  } else {
+    chip.className =
+      'flex items-center gap-1 rounded-full bg-slate-200/70 dark:bg-slate-700/50 px-3 py-1.5 text-sm font-medium text-slate-600 dark:text-slate-300 hover:bg-slate-300 dark:hover:bg-slate-600';
+    chip.textContent = label;
+    chip.setAttribute('aria-pressed', 'false');
+  }
+  chip.addEventListener('click', () => toggleItemsLabel(items, label));
   return chip;
 }
 
-function buildCreateLabelChip(item, text) {
+function buildCreateLabelChip(items, text) {
   const chip = document.createElement('button');
   chip.type = 'button';
   chip.className =
     'flex items-center gap-1 rounded-full border border-dashed border-sky-400 dark:border-sky-500 px-3 py-1.5 text-sm font-medium text-sky-600 dark:text-sky-300 hover:bg-sky-500/10';
   chip.textContent = t('modals.labelManage.createOption', { label: text });
   chip.addEventListener('click', () => {
-    const next = [...(item.labels || []), text];
     listEls.labelManageSearch.value = '';
-    commitItemLabels(item, next);
+    addLabelToItems(items, text);
   });
   return chip;
 }
 
 function renderLabelManageSheetChips() {
-  if (!labelManageItem) return;
-  const item = labelManageItem;
+  if (!labelManageItems) return;
+  const items = labelManageItems;
   const query = listEls.labelManageSearch.value.trim();
   const queryLower = query.toLowerCase();
-  const selected = new Set((item.labels || []).map((l) => l.toLowerCase()));
+  const applied = new Set(items.flatMap((item) => (item.labels || []).map((l) => l.toLowerCase())));
   const suggestions = collectListLabelSuggestions();
   const filtered = query ? suggestions.filter((l) => l.toLowerCase().includes(queryLower)) : suggestions;
 
@@ -3233,22 +3402,24 @@ function renderLabelManageSheetChips() {
     listEls.labelManageChips.appendChild(empty);
   }
   for (const label of filtered) {
-    listEls.labelManageChips.appendChild(buildLabelToggleChip(item, label, selected.has(label.toLowerCase())));
+    const count = items.filter((item) => itemHasLabel(item, label)).length;
+    listEls.labelManageChips.appendChild(buildLabelToggleChip(items, label, count));
   }
   // Offer creating a brand-new label only when the typed text doesn't
-  // already match an existing suggestion or one of the item's own labels
+  // already match an existing suggestion or one of the items' own labels
   // (case-insensitively) — validated client-side the same way
   // internal/validate.Labels validates server-side (via the input's own
   // maxlength="30"), so a reject here never surprises the user with a 400.
-  const exists = suggestions.some((l) => l.toLowerCase() === queryLower) || selected.has(queryLower);
+  const exists = suggestions.some((l) => l.toLowerCase() === queryLower) || applied.has(queryLower);
   if (query && !exists) {
-    listEls.labelManageChips.appendChild(buildCreateLabelChip(item, query));
+    listEls.labelManageChips.appendChild(buildCreateLabelChip(items, query));
   }
 }
 
-function openLabelManageSheet(item) {
-  labelManageItem = item;
-  listEls.labelManageSheetTitle.textContent = item.title;
+function openLabelManageSheet(items) {
+  labelManageItems = items;
+  listEls.labelManageSheetTitle.textContent =
+    items.length === 1 ? items[0].title : t('modals.labelManage.bulkTitle', { count: items.length });
   listEls.labelManageSearch.value = '';
   renderLabelManageSheetChips();
   listEls.labelManageSheet.hidden = false;
@@ -3257,7 +3428,7 @@ function openLabelManageSheet(item) {
 }
 
 function closeLabelManageSheet() {
-  labelManageItem = null;
+  labelManageItems = null;
   listEls.labelManageSheet.hidden = true;
   document.body.classList.remove('overflow-hidden');
 }
@@ -3274,18 +3445,17 @@ listEls.labelManageSearch.addEventListener('input', renderLabelManageSheetChips)
 listEls.labelManageSearch.addEventListener('keydown', (event) => {
   if (event.key !== 'Enter') return;
   event.preventDefault();
-  if (!labelManageItem) return;
+  if (!labelManageItems) return;
   const query = listEls.labelManageSearch.value.trim();
   if (!query) return;
   const queryLower = query.toLowerCase();
-  const alreadySelected = (labelManageItem.labels || []).some((l) => l.toLowerCase() === queryLower);
-  if (alreadySelected) return;
   // Prefer an existing suggestion's own casing over whatever the user just
   // typed, so pressing Enter on "bio" adds the list's existing "Bio" rather
   // than a second, differently-cased near-duplicate.
   const canonical = collectListLabelSuggestions().find((l) => l.toLowerCase() === queryLower) || query;
+  if (labelManageItems.every((item) => itemHasLabel(item, canonical))) return;
   listEls.labelManageSearch.value = '';
-  toggleItemLabel(labelManageItem, canonical);
+  addLabelToItems(labelManageItems, canonical);
 });
 
 listEls.editItemForm.addEventListener('submit', async (event) => {
