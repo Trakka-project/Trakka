@@ -656,7 +656,9 @@ curl -b cookies.txt http://localhost:8080/api/v1/admin/settings
   "oidc_enabled": false,
   "oidc_issuer": "",
   "oidc_client_id": "",
-  "oidc_client_secret_set": false
+  "oidc_client_secret_set": false,
+  "oidc_exclusive": false,
+  "oidc_provider_name": ""
 }
 ```
 
@@ -680,6 +682,8 @@ curl -X PATCH http://localhost:8080/api/v1/admin/settings \
 - `registration_open` (bool) — when `false`, `GET /auth/login?mode=register` and `POST /auth/register` both redirect with `?error=registration_closed` instead of showing/accepting the registration form. Existing accounts (local or OIDC) can still log in regardless.
 - `oidc_enabled` (bool), `oidc_issuer`/`oidc_client_id` (string) — the same three inputs `OIDC_ISSUER`/`OIDC_CLIENT_ID`/`OIDC_CLIENT_SECRET` configure via environment variables (see [docs/DEPLOYMENT.md](DEPLOYMENT.md)), now editable at runtime without a restart.
 - `oidc_client_secret` (string) — a non-empty value replaces the stored secret; omitted or empty leaves whatever's currently stored untouched. There is no way to explicitly blank the secret out other than disabling OIDC.
+- `oidc_exclusive` (bool) — when `true`, `POST /auth/login` and `POST /auth/register` return `403` and the login page shows only the SSO button. `400` if OIDC isn't enabled or no admin is linked to the configured issuer. Password login comes back on its own if either stops being true.
+- `oidc_provider_name` (string, optional) — label for the login page's SSO button ("Se connecter avec Authentik"); empty falls back to "SSO". `400` if over 200 characters.
 
 Enabling OIDC (or changing its issuer/client id/secret while already enabled) re-runs OIDC discovery synchronously against the new values, bounded to 10s, **before** anything is persisted: `400` with a descriptive message if `oidc_issuer`/`oidc_client_id`/`oidc_client_secret` aren't all non-empty, if the server's `BASE_URL` environment variable isn't set (still required — see [docs/DEPLOYMENT.md](DEPLOYMENT.md) — since it isn't itself one of the dynamic settings), or if discovery against the new issuer fails. On any of these the previously active configuration (and OIDC client) is left completely untouched. On success, the new settings are saved and take effect immediately for the next `/auth/oidc/login` — no server restart needed. `400` also if `instance_name` would end up empty. `200` with the resulting settings (in the same shape as the `GET` above) otherwise.
 

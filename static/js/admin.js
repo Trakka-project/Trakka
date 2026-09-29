@@ -56,6 +56,9 @@ const adminConsoleEls = {
   oidcIssuer: document.getElementById('admin-oidc-issuer'),
   oidcClientId: document.getElementById('admin-oidc-client-id'),
   oidcClientSecret: document.getElementById('admin-oidc-client-secret'),
+  oidcExclusive: document.getElementById('admin-oidc-exclusive'),
+  oidcProviderName: document.getElementById('admin-oidc-provider-name'),
+  settingsError: document.getElementById('admin-settings-error'),
   status: document.getElementById('admin-settings-status'),
 
   // "Utilisateurs" tab.
@@ -222,12 +225,15 @@ async function loadAdminSettings() {
   adminConsoleEls.oidcEnabled.checked = settings.oidc_enabled;
   adminConsoleEls.oidcIssuer.value = settings.oidc_issuer;
   adminConsoleEls.oidcClientId.value = settings.oidc_client_id;
+  adminConsoleEls.oidcExclusive.checked = settings.oidc_exclusive;
+  adminConsoleEls.oidcProviderName.value = settings.oidc_provider_name;
   applySecretPlaceholder(settings.oidc_client_secret_set);
 }
 
 adminConsoleEls.form.addEventListener('submit', async (event) => {
   event.preventDefault();
   hideError();
+  adminConsoleEls.settingsError.hidden = true;
   adminConsoleEls.status.hidden = true;
 
   const body = {
@@ -236,6 +242,8 @@ adminConsoleEls.form.addEventListener('submit', async (event) => {
     oidc_enabled: adminConsoleEls.oidcEnabled.checked,
     oidc_issuer: adminConsoleEls.oidcIssuer.value.trim(),
     oidc_client_id: adminConsoleEls.oidcClientId.value.trim(),
+    oidc_exclusive: adminConsoleEls.oidcExclusive.checked,
+    oidc_provider_name: adminConsoleEls.oidcProviderName.value.trim(),
   };
   // The secret field only ever carries a *new* value: it's never
   // pre-filled with the stored one (see adminSettingsView server-side), so
@@ -249,7 +257,11 @@ adminConsoleEls.form.addEventListener('submit', async (event) => {
   try {
     settings = await apiRequest('/admin/settings', { method: 'PATCH', body: JSON.stringify(body) });
   } catch (err) {
-    if (!isNetworkError(err)) showError(err.message);
+    // Shown inside the form: app.js's error banner sits under this modal.
+    if (!isNetworkError(err)) {
+      adminConsoleEls.settingsError.textContent = err.message;
+      adminConsoleEls.settingsError.hidden = false;
+    }
     return;
   }
 

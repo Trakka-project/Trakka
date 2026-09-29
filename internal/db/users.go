@@ -199,6 +199,19 @@ func (d *DB) CountAdmins(ctx context.Context) (int, error) {
 	return count, nil
 }
 
+// CountOIDCAdmins returns how many admins are linked to an identity from the
+// given OIDC issuer, i.e. could still sign in with local login disabled.
+func (d *DB) CountOIDCAdmins(ctx context.Context, issuer string) (int, error) {
+	var count int
+	if err := d.conn.QueryRowContext(ctx,
+		`SELECT COUNT(*) FROM users WHERE is_admin = 1 AND oidc_subject IS NOT NULL AND oidc_subject != '' AND oidc_issuer = ?`,
+		issuer,
+	).Scan(&count); err != nil {
+		return 0, fmt.Errorf("counting oidc admins: %w", err)
+	}
+	return count, nil
+}
+
 // SetUserAdmin grants or revokes the system-wide admin role for a single
 // account. Callers (internal/handlers) are responsible for refusing to
 // demote the last remaining admin — this method just performs the write.

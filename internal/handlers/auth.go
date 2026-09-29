@@ -19,6 +19,8 @@ import (
 type loginPageData struct {
 	OIDCEnabled      bool
 	RegistrationOpen bool
+	OIDCExclusive    bool   // hides the password and registration forms
+	OIDCProviderName string // SSO button label; the template falls back to "SSO" when empty
 	InstanceName     string
 	Mode             string // "login" | "register"
 	Error            string
@@ -53,9 +55,14 @@ func (app *Application) handleLoginPage(w http.ResponseWriter, r *http.Request) 
 		app.serverError(w, r, err)
 		return
 	}
+	exclusive, err := app.oidcExclusive(r, current)
+	if err != nil {
+		app.serverError(w, r, err)
+		return
+	}
 
 	mode := "login"
-	if r.URL.Query().Get("mode") == "register" {
+	if r.URL.Query().Get("mode") == "register" && !exclusive {
 		mode = "register"
 	}
 	if mode == "register" && !current.RegistrationOpen {
@@ -70,6 +77,8 @@ func (app *Application) handleLoginPage(w http.ResponseWriter, r *http.Request) 
 	data := loginPageData{
 		OIDCEnabled:      app.Auth.OIDC() != nil,
 		RegistrationOpen: current.RegistrationOpen,
+		OIDCExclusive:    exclusive,
+		OIDCProviderName: current.OIDCProviderName,
 		InstanceName:     current.InstanceName,
 		Mode:             mode,
 		Error:            loginErrorMessages[r.URL.Query().Get("error")],
@@ -81,7 +90,42 @@ func (app *Application) handleLoginPage(w http.ResponseWriter, r *http.Request) 
 	}
 }
 
+// oidcExclusive reports whether local password login and registration are
+// disabled. It re-checks the admin PATCH's lockout safeguard on every call:
+// if OIDC isn't live (e.g. discovery failed at boot) or no admin is linked
+// to the configured issuer any more, local login comes back instead of
+// locking every administrator out.
+func (app *Application) oidcExclusive(r *http.Request, current settings.Values) (bool, error) {
+	if !current.OIDCExclusive || app.Auth.OIDC() == nil {
+		return false, nil
+	}
+	n, err := app.DB.CountOIDCAdmins(r.Context(), current.OIDCIssuer)
+	return n > 0, err
+}
+
+// rejectLocalAuth answers 403 and returns true while OIDC-exclusive mode is
+// in effect — checked before anything else in the password form handlers.
+func (app *Application) rejectLocalAuth(w http.ResponseWriter, r *http.Request, current settings.Values) bool {
+	exclusive, err := app.oidcExclusive(r, current)
+	if err != nil {
+		app.serverError(w, r, err)
+		return true
+	}
+	if exclusive {
+		http.Error(w, "La connexion par mot de passe est désactivée : utilisez la connexion SSO.", http.StatusForbidden)
+	}
+	return exclusive
+}
+
 func (app *Application) handleLoginSubmit(w http.ResponseWriter, r *http.Request) {
+	current, err := settings.Resolve(r.Context(), app.DB, app.Config)
+	if err != nil {
+		app.serverError(w, r, err)
+		return
+	}
+	if app.rejectLocalAuth(w, r, current) {
+		return
+	}
 	if err := r.ParseForm(); err != nil {
 		http.Redirect(w, r, "/auth/login?error=bad_request", http.StatusFound)
 		return
@@ -142,6 +186,9 @@ func (app *Application) handleRegisterSubmit(w http.ResponseWriter, r *http.Requ
 	current, err := settings.Resolve(r.Context(), app.DB, app.Config)
 	if err != nil {
 		app.serverError(w, r, err)
+		return
+	}
+	if app.rejectLocalAuth(w, r, current) {
 		return
 	}
 	if !current.RegistrationOpen {

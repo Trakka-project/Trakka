@@ -7,8 +7,8 @@ importScripts('/js/db.js');
 
 // Bump both on any change to APP_SHELL's contents so activate()
 // evicts the old cache instead of serving stale assets forever.
-const SHELL_CACHE = 'trakka-shell-v96';
-const RUNTIME_CACHE = 'trakka-runtime-v96';
+const SHELL_CACHE = 'trakka-shell-v97';
+const RUNTIME_CACHE = 'trakka-runtime-v97';
 const KNOWN_CACHES = [SHELL_CACHE, RUNTIME_CACHE];
 
 const APP_SHELL = [
