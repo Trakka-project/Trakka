@@ -14,7 +14,7 @@ import (
 // id). This mirrors the three access sources AccessLevelForList already
 // combines for a single user, just inverted: "who can see this list" rather
 // than "can this one user see this list". Used by
-// internal/handlers.notifyListChange/RunRecurringDueScan to address a Web
+// internal/handlers.notifyListChange/RunDueReminderScan to address a Web
 // Push notification — a plain UNION (deduplicating automatically) is enough
 // here, unlike AccessLevelForList, since no caller needs to know *what
 // level* of access each recipient holds, only that they should be told

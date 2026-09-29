@@ -30,10 +30,13 @@ func scanItem(row rowScanner) (*models.Item, error) {
 	var targetPrice sql.NullFloat64
 	var alertOnPriceDrop int
 	var labelsJSON string
+	var reminderEnabled int
+	var reminderOffsetDays sql.NullInt64
+	var reminderTime sql.NullString
 	if err := row.Scan(&it.ID, &it.ListID, &it.Title, &it.URL, &it.Quantity, &done,
 		&it.Position, &it.CreatedAt, &it.UpdatedAt, &price, &priceAuto, &imageURL, &targetMonth,
 		&dueDate, &isRecurring, &recurrenceRule, &recurrenceEndDate, &isUrgent, &recurrenceLeadMinutes,
-		&targetPrice, &alertOnPriceDrop, &labelsJSON); err != nil {
+		&targetPrice, &alertOnPriceDrop, &labelsJSON, &reminderEnabled, &reminderOffsetDays, &reminderTime); err != nil {
 		return nil, err
 	}
 	it.Done = done != 0
@@ -81,6 +84,15 @@ func scanItem(row rowScanner) (*models.Item, error) {
 		}
 	}
 	it.Labels = labels
+	it.ReminderEnabled = reminderEnabled != 0
+	if reminderOffsetDays.Valid {
+		n := int(reminderOffsetDays.Int64)
+		it.ReminderOffsetDays = &n
+	}
+	if reminderTime.Valid && reminderTime.String != "" {
+		s := reminderTime.String
+		it.ReminderTime = &s
+	}
 	return it, nil
 }
 
@@ -90,7 +102,7 @@ func scanItem(row rowScanner) (*models.Item, error) {
 func (d *DB) ListItemsByList(ctx context.Context, listID int64) ([]*models.Item, error) {
 	rows, err := d.conn.QueryContext(ctx,
 		`SELECT id, list_id, title, url, quantity, done, position, created_at, updated_at, price, price_auto, image_url, target_month,
-		 due_date, is_recurring, recurrence_rule, recurrence_end_date, is_urgent, recurrence_lead_minutes, target_price, alert_on_price_drop, labels
+		 due_date, is_recurring, recurrence_rule, recurrence_end_date, is_urgent, recurrence_lead_minutes, target_price, alert_on_price_drop, labels, reminder_enabled, reminder_offset_days, reminder_time
 		 FROM items WHERE list_id = ? ORDER BY position ASC, id ASC`, listID)
 	if err != nil {
 		return nil, fmt.Errorf("querying items for list %d: %w", listID, err)
@@ -150,7 +162,7 @@ func (d *DB) CreateItem(ctx context.Context, listID int64, title string, url *st
 func (d *DB) GetItem(ctx context.Context, id int64) (*models.Item, error) {
 	row := d.conn.QueryRowContext(ctx,
 		`SELECT id, list_id, title, url, quantity, done, position, created_at, updated_at, price, price_auto, image_url, target_month,
-		 due_date, is_recurring, recurrence_rule, recurrence_end_date, is_urgent, recurrence_lead_minutes, target_price, alert_on_price_drop, labels
+		 due_date, is_recurring, recurrence_rule, recurrence_end_date, is_urgent, recurrence_lead_minutes, target_price, alert_on_price_drop, labels, reminder_enabled, reminder_offset_days, reminder_time
 		 FROM items WHERE id = ?`, id)
 	item, err := scanItem(row)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -319,6 +331,35 @@ func (d *DB) SetItemLabels(ctx context.Context, id int64, labels []string) (*mod
 		string(encoded), id)
 	if err != nil {
 		return nil, fmt.Errorf("updating labels for item %d: %w", id, err)
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return nil, fmt.Errorf("reading rows affected for item %d: %w", id, err)
+	}
+	if n == 0 {
+		return nil, ErrNotFound
+	}
+	return d.GetItem(ctx, id)
+}
+
+// SetItemReminder replaces an item's whole due-date-reminder configuration
+// (see models.Item.ReminderEnabled/ReminderOffsetDays/ReminderTime) and
+// returns the updated row. Kept as its own method rather than folded into
+// CreateItem/UpdateItem's already-long parameter list, the same reasoning
+// SetItemLabels already established. Callers (internal/handlers) are
+// responsible for resolving offsetDays/timeOfDay to concrete values from the
+// acting user's own reminder defaults whenever the request asked to use
+// "the default" rather than an explicit per-item override — this method
+// only persists whatever it's given. offsetDays/timeOfDay are typically nil
+// exactly when enabled is false. Returns ErrNotFound if no such item
+// exists.
+func (d *DB) SetItemReminder(ctx context.Context, id int64, enabled bool, offsetDays *int, timeOfDay *string) (*models.Item, error) {
+	res, err := d.conn.ExecContext(ctx,
+		`UPDATE items SET reminder_enabled = ?, reminder_offset_days = ?, reminder_time = ?,
+		 updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE id = ?`,
+		boolToInt(enabled), offsetDays, timeOfDay, id)
+	if err != nil {
+		return nil, fmt.Errorf("updating reminder for item %d: %w", id, err)
 	}
 	n, err := res.RowsAffected()
 	if err != nil {

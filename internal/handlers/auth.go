@@ -382,18 +382,48 @@ func (app *Application) materializeInvitations(r *http.Request, user *models.Use
 
 // handleMeUpdate applies a partial update to the caller's own profile
 // preferences: keep_last_page (see the "keep last page on launch" feature in
-// static/js/settings.js) and language (the account's own UI-language
+// static/js/settings.js), language (the account's own UI-language
 // preference, set from the "Langue" section of the "Paramètres" modal — see
-// static/js/i18n.js/settings.js). Both follow the same "absent = untouched"
-// PATCH convention as handleItemsPatch; either, both, or neither may be
-// present in a single request.
+// static/js/i18n.js/settings.js), and reminder_default_offset_days/
+// reminder_default_time (the default due-date-reminder timing applied to any
+// task left as "use the default" — see models.User.ReminderDefaultOffsetDays/
+// ReminderDefaultTime and the reminder-resolution logic in items.go). All
+// follow the same "absent = untouched" PATCH convention as handleItemsPatch;
+// any subset may be present in a single request. reminder_default_offset_days
+// and reminder_default_time are treated as a pair — either both are given
+// together or neither is, since sending just one without the other would
+// leave the account in an ambiguous half-updated state.
 func (app *Application) handleMeUpdate(w http.ResponseWriter, r *http.Request) {
 	var in struct {
-		KeepLastPage *bool   `json:"keep_last_page"`
-		Language     *string `json:"language"`
+		KeepLastPage              *bool   `json:"keep_last_page"`
+		Language                  *string `json:"language"`
+		ReminderDefaultOffsetDays *int    `json:"reminder_default_offset_days"`
+		ReminderDefaultTime       *string `json:"reminder_default_time"`
 	}
 	if !decodeJSON(w, r, &in) {
 		return
+	}
+
+	if (in.ReminderDefaultOffsetDays == nil) != (in.ReminderDefaultTime == nil) {
+		writeError(w, http.StatusBadRequest, "reminder_default_offset_days and reminder_default_time must be given together")
+		return
+	}
+	var cleanReminderTime string
+	if in.ReminderDefaultTime != nil {
+		if *in.ReminderDefaultOffsetDays < 0 {
+			writeError(w, http.StatusBadRequest, "reminder_default_offset_days cannot be negative")
+			return
+		}
+		var err error
+		cleanReminderTime, err = validate.TimeOfDay(*in.ReminderDefaultTime)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		if cleanReminderTime == "" {
+			writeError(w, http.StatusBadRequest, "reminder_default_time is required")
+			return
+		}
 	}
 
 	user := userFromContext(r)
@@ -417,6 +447,18 @@ func (app *Application) handleMeUpdate(w http.ResponseWriter, r *http.Request) {
 
 	if in.KeepLastPage != nil {
 		updated, err := app.DB.UpdateUserKeepLastPage(r.Context(), user.ID, *in.KeepLastPage)
+		if errors.Is(err, db.ErrNotFound) {
+			writeError(w, http.StatusNotFound, "user not found")
+			return
+		} else if err != nil {
+			app.serverError(w, r, err)
+			return
+		}
+		user = updated
+	}
+
+	if in.ReminderDefaultTime != nil {
+		updated, err := app.DB.UpdateUserReminderDefaults(r.Context(), user.ID, *in.ReminderDefaultOffsetDays, cleanReminderTime)
 		if errors.Is(err, db.ErrNotFound) {
 			writeError(w, http.StatusNotFound, "user not found")
 			return

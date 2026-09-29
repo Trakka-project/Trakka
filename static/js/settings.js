@@ -38,6 +38,10 @@ const userSettingsEls = {
   languageSelect: document.getElementById('user-settings-language'),
   form: document.getElementById('user-settings-form'),
   keepLastPage: document.getElementById('user-settings-keep-last-page'),
+  reminderPreset: document.getElementById('user-settings-reminder-preset'),
+  reminderOffset: document.getElementById('user-settings-reminder-offset'),
+  reminderOffsetSuffix: document.getElementById('user-settings-reminder-offset-suffix'),
+  reminderTime: document.getElementById('user-settings-reminder-time'),
   status: document.getElementById('user-settings-status'),
   updateVersion: document.getElementById('user-settings-update-version'),
   updateCheckButton: document.getElementById('user-settings-update-check-button'),
@@ -57,6 +61,18 @@ function openUserSettingsModal() {
   // server value, falling back to the localStorage mirror if /me hasn't
   // resolved yet (e.g. opened while offline).
   userSettingsEls.keepLastPage.checked = isKeepLastPageEnabled();
+  // state.currentUser's own reminder_default_offset_days/_time (from
+  // GET/PATCH /api/v1/me) drive the preset select — matched against the two
+  // named presets the same way reminderItemToSelection (list_view.js) does
+  // for a per-item reminder, falling back to the "Le jour même" defaults if
+  // /me hasn't resolved yet (e.g. opened while offline).
+  const currentDefault = (state.currentUser && state.currentUser.reminder_default_offset_days != null)
+    ? { offsetDays: state.currentUser.reminder_default_offset_days, time: state.currentUser.reminder_default_time || '09:00' }
+    : { offsetDays: 0, time: '09:00' };
+  userSettingsEls.reminderPreset.value = reminderDefaultsToPreset(currentDefault);
+  userSettingsEls.reminderOffset.value = currentDefault.offsetDays;
+  userSettingsEls.reminderTime.value = currentDefault.time;
+  updateReminderOffsetVisibility();
   // refreshPushToggleUI is defined in push.js — re-checked every time the
   // modal opens (not just cached from an earlier check) since notification
   // permission/subscription state can change outside the app at any time,
@@ -89,6 +105,46 @@ function closeUserSettingsModal() {
   document.body.classList.remove('overflow-hidden');
 }
 
+// reminderDefaultsToPreset derives which named preset ("Le jour même"/
+// "La veille"/"Personnalisé") to show for a resolved
+// {offsetDays, time} pair — the same "match the two fixed presets, else
+// custom" logic list_view.js's reminderItemToSelection uses for a per-item
+// reminder, kept as its own small copy here rather than shared, since
+// list_view.js isn't loaded on every page this modal could in principle
+// appear on.
+function reminderDefaultsToPreset({ offsetDays, time }) {
+  if (offsetDays === 0 && time === '09:00') return 'same_day';
+  if (offsetDays === 1 && time === '20:00') return 'day_before';
+  return 'custom';
+}
+
+// updateReminderOffsetVisibility shows the "N jour(s) avant à" number input
+// only for the "Personnalisé" preset — "Le jour même"/"la veille" fix the
+// offset implicitly (0/1) with nothing further to enter, matching how
+// list_view.js's own per-item reminder select only reveals its offset input
+// for "custom".
+function updateReminderOffsetVisibility() {
+  const isCustom = userSettingsEls.reminderPreset.value === 'custom';
+  userSettingsEls.reminderOffset.hidden = !isCustom;
+  userSettingsEls.reminderOffsetSuffix.hidden = !isCustom;
+}
+
+userSettingsEls.reminderPreset.addEventListener('change', () => {
+  updateReminderOffsetVisibility();
+  // Picking "Le jour même"/"la veille" fills in its named default (0 at
+  // 09:00 / 1 at 20:00, per this feature's own spec) — the time input stays
+  // visible and freely editable afterward (unlike list_view.js's per-item
+  // reminder select, where these two presets are fixed with no further
+  // input at all), so this is only the starting suggestion, not a lock.
+  if (userSettingsEls.reminderPreset.value === 'same_day') {
+    userSettingsEls.reminderOffset.value = 0;
+    userSettingsEls.reminderTime.value = '09:00';
+  } else if (userSettingsEls.reminderPreset.value === 'day_before') {
+    userSettingsEls.reminderOffset.value = 1;
+    userSettingsEls.reminderTime.value = '20:00';
+  }
+});
+
 userSettingsEls.button.addEventListener('click', openUserSettingsModal);
 userSettingsEls.closeButton.addEventListener('click', closeUserSettingsModal);
 userSettingsEls.modal.addEventListener('click', (event) => {
@@ -111,9 +167,23 @@ userSettingsEls.form.addEventListener('submit', async (event) => {
   userSettingsEls.status.hidden = true;
 
   const keepLastPage = userSettingsEls.keepLastPage.checked;
+  // Read straight from the offset/time inputs' current values, not the
+  // preset select — "Personnalisé" has no other source, and for
+  // "same_day"/"day_before" the change listener above already filled them
+  // in with that preset's own fixed values, so this is always what's
+  // actually shown on screen.
+  const reminderDefaultOffsetDays = Math.max(0, Number.parseInt(userSettingsEls.reminderOffset.value, 10) || 0);
+  const reminderDefaultTime = userSettingsEls.reminderTime.value || '09:00';
   let user;
   try {
-    user = await apiRequest('/me', { method: 'PATCH', body: JSON.stringify({ keep_last_page: keepLastPage }) });
+    user = await apiRequest('/me', {
+      method: 'PATCH',
+      body: JSON.stringify({
+        keep_last_page: keepLastPage,
+        reminder_default_offset_days: reminderDefaultOffsetDays,
+        reminder_default_time: reminderDefaultTime,
+      }),
+    });
   } catch (err) {
     if (!isNetworkError(err)) showError(err.message);
     return;

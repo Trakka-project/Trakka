@@ -98,6 +98,17 @@ func main() {
 	}
 	authService := auth.NewService(database, oidcClient, cfg.SessionTTL, cfg.SessionCookieSecure)
 
+	// Resolved once at startup, the same graceful-degrade-with-warning
+	// posture as a broken OIDC discovery above: reminder times of day (see
+	// models.User.ReminderDefaultTime, models.Item.ReminderTime) are
+	// meaningless without a time zone to interpret them in, but a typo'd
+	// APP_TIMEZONE shouldn't take the whole instance down.
+	location, err := time.LoadLocation(cfg.AppTimeZone)
+	if err != nil {
+		logger.Warn("unrecognized APP_TIMEZONE; falling back to UTC", "app_timezone", cfg.AppTimeZone, "error", err)
+		location = time.UTC
+	}
+
 	loginTemplate, err := template.ParseFiles(filepath.Join(cfg.TemplatesDir, "login.html"))
 	if err != nil {
 		logger.Error("parsing login template", "error", err)
@@ -112,6 +123,7 @@ func main() {
 		LoginTemplate: loginTemplate,
 		Config:        cfg,
 		LogBuffer:     logHandler,
+		Location:      location,
 	}
 
 	srv := &http.Server{
@@ -141,13 +153,13 @@ func main() {
 		go runTargetPriceScanLoop(priceScanCtx, app, cfg.TargetPriceScrapeInterval, logger)
 	}
 
-	// The recurring-task due-date reminder scan (Web Push "Use Case 2")
-	// shares the same detached-context/immediate-first-run pattern as the
-	// price scan above, and is gated on both a positive scan interval and
-	// push actually being configured — with no VAPID keys, RunRecurringDueScan
+	// The task due-date reminder scan (Web Push "Use Case 2") shares the
+	// same detached-context/immediate-first-run pattern as the price scan
+	// above, and is gated on both a positive scan interval and push
+	// actually being configured — with no VAPID keys, RunDueReminderScan
 	// would just no-op on every tick, so there is no reason to run it at all.
-	if cfg.NotifRecurringScanInterval > 0 && cfg.PushEnabled() {
-		go runRecurringNotifyScanLoop(priceScanCtx, app, cfg.NotifRecurringScanInterval, logger)
+	if cfg.NotifDueScanInterval > 0 && cfg.PushEnabled() {
+		go runDueReminderScanLoop(priceScanCtx, app, cfg.NotifDueScanInterval, logger)
 	}
 
 	// Expired sessions are swept on the same detached-context pattern as the
@@ -234,26 +246,25 @@ func runTargetPriceScanLoop(ctx context.Context, app *handlers.Application, inte
 	}
 }
 
-// runRecurringNotifyScanLoop periodically checks every recurring item's due
-// date against its (instance-default or per-item) lead time and sends a
-// reminder push once it falls within it (see
-// handlers.Application.RunRecurringDueScan), stopping once ctx is canceled
-// during shutdown. Runs an initial scan immediately, same reasoning as
-// runPriceAlertScanLoop: a freshly deployed instance shouldn't sit with a
-// backlog of overdue reminders for up to a full NOTIF_RECURRING_SCAN_INTERVAL_MINUTES
-// before its first check.
-func runRecurringNotifyScanLoop(ctx context.Context, app *handlers.Application, interval time.Duration, logger *slog.Logger) {
+// runDueReminderScanLoop periodically checks every item's due date against
+// its own (already-resolved) reminder offset/time and sends a push once
+// that moment is reached (see handlers.Application.RunDueReminderScan),
+// stopping once ctx is canceled during shutdown. Runs an initial scan
+// immediately, same reasoning as runPriceAlertScanLoop: a freshly deployed
+// instance shouldn't sit with a backlog of overdue reminders for up to a
+// full NOTIF_DUE_SCAN_INTERVAL_MINUTES before its first check.
+func runDueReminderScanLoop(ctx context.Context, app *handlers.Application, interval time.Duration, logger *slog.Logger) {
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 
-	logger.Info("starting periodic recurring due-date notification scan", "interval", interval)
-	app.RunRecurringDueScan(ctx)
+	logger.Info("starting periodic due-date reminder scan", "interval", interval)
+	app.RunDueReminderScan(ctx)
 	for {
 		select {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			app.RunRecurringDueScan(ctx)
+			app.RunDueReminderScan(ctx)
 		}
 	}
 }
