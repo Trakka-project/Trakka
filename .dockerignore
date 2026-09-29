@@ -6,3 +6,6 @@ data/
 *.db
 *.db-wal
 *.db-shm
+# Only ever supplied explicitly, via --build-context vendor=./vendor (see
+# the Dockerfile's vendor stage) — never part of the ordinary context.
+vendor/

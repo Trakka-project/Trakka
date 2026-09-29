@@ -12,3 +12,6 @@
 !.env.example
 *.pem
 *.key
+
+# Local-only offline build input (docs/DEPLOYMENT.md, "When the build can't download Go modules")
+vendor/

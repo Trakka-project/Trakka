@@ -28,6 +28,8 @@ const (
 	KeyOIDCIssuer       = "oidc_issuer"
 	KeyOIDCClientID     = "oidc_client_id"
 	KeyOIDCClientSecret = "oidc_client_secret" // #nosec G101 -- this is the settings-table key name, not a credential value
+	KeyOIDCExclusive    = "oidc_exclusive"
+	KeyOIDCProviderName = "oidc_provider_name"
 )
 
 // Values is the fully resolved set of runtime settings. OIDCClientSecret is
@@ -41,6 +43,8 @@ type Values struct {
 	OIDCIssuer       string
 	OIDCClientID     string
 	OIDCClientSecret string
+	OIDCExclusive    bool
+	OIDCProviderName string // login button label; empty means the generic "SSO"
 }
 
 // Resolve reads system_settings and merges it over cfg's env-var defaults.
@@ -57,6 +61,8 @@ func Resolve(ctx context.Context, database *db.DB, cfg config.Config) (Values, e
 		OIDCIssuer:       stringSetting(stored, KeyOIDCIssuer, cfg.OIDCIssuer),
 		OIDCClientID:     stringSetting(stored, KeyOIDCClientID, cfg.OIDCClientID),
 		OIDCClientSecret: stringSetting(stored, KeyOIDCClientSecret, cfg.OIDCClientSecret),
+		OIDCExclusive:    boolSetting(stored, KeyOIDCExclusive, false),
+		OIDCProviderName: stringSetting(stored, KeyOIDCProviderName, ""),
 	}
 	return v, nil
 }

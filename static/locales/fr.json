@@ -360,6 +360,9 @@
       "oidcClientSecretLabel": "Client Secret",
       "oidcClientSecretPlaceholderSet": "•••••••• (laisser vide pour conserver)",
       "oidcClientSecretPlaceholderUnset": "Aucun secret enregistré",
+      "oidcExclusiveLabel": "Désactiver la connexion par mot de passe (OIDC exclusif)",
+      "oidcProviderNameLabel": "Nom du fournisseur SSO (optionnel)",
+      "oidcProviderNamePlaceholder": "Authentik, Keycloak, Google...",
       "submit": "Enregistrer",
       "saved": "Paramètres enregistrés."
     },

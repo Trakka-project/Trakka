@@ -80,6 +80,29 @@ Multi-stage [Dockerfile](../Dockerfile):
 
 The Go version in the build stage and the `go` directive in [go.mod](../go.mod) are intentionally kept in lockstep (both `1.27.0`) — see [CLAUDE.md](../CLAUDE.md) if you need to bump the SQLite driver or Go version. The distroless runtime tag is not part of that lockstep (it tracks Debian 12 rebuilds, not a Go version); pin it to a digest before relying on it for production reproducibility.
 
+### When the build can't download Go modules
+
+Go modules are downloaded into their own layer (`RUN go mod download`, re-run only when `go.mod`/`go.sum` change). That step needs to reach `proxy.golang.org`. If it fails with an error like `lookup proxy.golang.org: i/o timeout`, work through these fixes in order:
+
+1. **Build with the host's network.** This is the usual cause on a Linux laptop running `systemd-resolved`. `/etc/resolv.conf` points at the local stub `127.0.0.53`, which a build container on Docker's bridge network can't use, so Docker falls back to public resolvers (`8.8.8.8`) that a VPN such as Tailscale, a hotspot, or a filtered network may block. With `--network=host`, the build steps use the host's own resolver:
+
+   ```bash
+   docker build --network=host -t trakka:latest .
+   ```
+
+   To fix it permanently for every container instead, give the Docker daemon a reachable DNS server in `/etc/docker/daemon.json` (`{"dns": ["<your DNS server>"]}`, listed by `resolvectl dns`), then restart Docker.
+2. **Use a reachable module mirror**, if `proxy.golang.org` itself is blocked: `--build-arg GOPROXY=https://goproxy.io` (or your organization's Athens/Artifactory proxy). `GOPROXY=direct` won't work in this image: it fetches from each module's own repository and the Alpine build image has no `git`.
+3. **Build fully offline from vendored modules.** Run `go mod vendor` somewhere that does have access (it writes `vendor/`), then pass the directory as a named build context:
+
+   ```bash
+   go mod vendor
+   docker build --build-context vendor=./vendor -t trakka:latest .
+   ```
+
+   The Dockerfile's otherwise empty `vendor` stage is replaced by that directory, `go mod download` is skipped, and `go build` compiles from `vendor/` without any network access. `vendor/` is in `.dockerignore`, so an ordinary build never uploads it. It isn't committed to the repository either, so re-run `go mod vendor` after any dependency change, or delete `vendor/` once you no longer need it: while it exists, local `go build`/`go test` also use it instead of the module cache. `--build-context` needs BuildKit (Docker 23+) or Podman 4.4+.
+
+The compile step itself uses a BuildKit cache mount for Go's build cache, so rebuilds after a source change are incremental. The module download deliberately does *not* use a cache mount: CI's GitHub Actions layer cache (`cache-from: type=gha`) only stores layers, so keeping modules in a layer is what spares each CI build a fresh download.
+
 Distroless ships no `tzdata`, unlike the old Alpine runtime image (which had it installed via `apk add`). This is harmless here: the app never calls `time.LoadLocation`, and every timestamp it stores or logs is UTC by convention (see [CLAUDE.md](../CLAUDE.md)) — with no zoneinfo database and no `TZ` set, Go's `time.Local` simply behaves as UTC. `compose.yml` no longer sets `TZ`, since distroless would silently ignore it anyway.
 
 ## Healthcheck

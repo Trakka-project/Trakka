@@ -796,6 +796,19 @@
                      class="w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-4 py-3 text-base text-slate-900 dark:text-slate-100 placeholder:text-slate-500 focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500/30">
             </div>
 
+            <div>
+              <label for="admin-oidc-provider-name" data-i18n="modals.adminSettings.oidcProviderNameLabel" class="mb-1 block text-sm font-medium text-slate-600 dark:text-slate-300">Nom du fournisseur SSO (optionnel)</label>
+              <input type="text" id="admin-oidc-provider-name" maxlength="200" data-i18n-placeholder="modals.adminSettings.oidcProviderNamePlaceholder" placeholder="Authentik, Keycloak, Google..."
+                     class="w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-4 py-3 text-base text-slate-900 dark:text-slate-100 placeholder:text-slate-500 focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500/30">
+            </div>
+
+            <label class="flex cursor-pointer items-center gap-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-4 py-3 text-sm font-medium text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-800">
+              <input type="checkbox" id="admin-oidc-exclusive"
+                     class="h-4 w-4 rounded border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 text-sky-500 focus:ring-sky-500/40">
+              <span data-i18n="modals.adminSettings.oidcExclusiveLabel">Désactiver la connexion par mot de passe (OIDC exclusif)</span>
+            </label>
+
+            <p id="admin-settings-error" class="text-sm text-rose-600 dark:text-rose-400" role="alert" hidden></p>
             <p id="admin-settings-status" class="text-sm text-emerald-600 dark:text-emerald-400" role="status" hidden></p>
 
             <button type="submit" data-i18n="modals.adminSettings.submit" class="w-full rounded-xl bg-sky-500 px-4 py-3 text-base font-semibold text-white transition hover:bg-sky-400 active:scale-[0.98]">Enregistrer</button>

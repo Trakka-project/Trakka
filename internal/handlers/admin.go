@@ -31,6 +31,8 @@ type adminSettingsView struct {
 	OIDCIssuer          string `json:"oidc_issuer"`
 	OIDCClientID        string `json:"oidc_client_id"`
 	OIDCClientSecretSet bool   `json:"oidc_client_secret_set"`
+	OIDCExclusive       bool   `json:"oidc_exclusive"`
+	OIDCProviderName    string `json:"oidc_provider_name"`
 }
 
 func adminSettingsViewFrom(v settings.Values) adminSettingsView {
@@ -41,6 +43,8 @@ func adminSettingsViewFrom(v settings.Values) adminSettingsView {
 		OIDCIssuer:          v.OIDCIssuer,
 		OIDCClientID:        v.OIDCClientID,
 		OIDCClientSecretSet: v.OIDCClientSecret != "",
+		OIDCExclusive:       v.OIDCExclusive,
+		OIDCProviderName:    v.OIDCProviderName,
 	}
 }
 
@@ -74,6 +78,8 @@ type adminSettingsUpdate struct {
 	// an empty value is always read as "unchanged". Disabling OIDC
 	// altogether is done via OIDCEnabled, not by clearing the secret.
 	OIDCClientSecret *string `json:"oidc_client_secret"`
+	OIDCExclusive    *bool   `json:"oidc_exclusive"`
+	OIDCProviderName *string `json:"oidc_provider_name"`
 }
 
 func (app *Application) handleAdminSettingsUpdate(w http.ResponseWriter, r *http.Request) {
@@ -112,6 +118,12 @@ func (app *Application) handleAdminSettingsUpdate(w http.ResponseWriter, r *http
 	if body.OIDCEnabled != nil {
 		next.OIDCEnabled = *body.OIDCEnabled
 	}
+	if body.OIDCExclusive != nil {
+		next.OIDCExclusive = *body.OIDCExclusive
+	}
+	if body.OIDCProviderName != nil {
+		next.OIDCProviderName = validate.Text(*body.OIDCProviderName)
+	}
 
 	if next.InstanceName == "" {
 		writeError(w, http.StatusBadRequest, "instance_name cannot be empty")
@@ -120,6 +132,28 @@ func (app *Application) handleAdminSettingsUpdate(w http.ResponseWriter, r *http
 	if !validate.MaxLen(next.InstanceName, validate.MaxNameLen) {
 		writeError(w, http.StatusBadRequest, "instance_name is too long")
 		return
+	}
+	if !validate.MaxLen(next.OIDCProviderName, validate.MaxNameLen) {
+		writeError(w, http.StatusBadRequest, "oidc_provider_name is too long")
+		return
+	}
+	// Lockout prevention: OIDC-exclusive mode needs OIDC itself and at least
+	// one admin able to sign in through it (with the resulting issuer), since
+	// there is no CLI to grant the admin role back.
+	if next.OIDCExclusive {
+		if !next.OIDCEnabled {
+			writeError(w, http.StatusBadRequest, "Impossible d'activer le mode OIDC exclusif : la connexion OIDC doit être activée.")
+			return
+		}
+		n, err := app.DB.CountOIDCAdmins(r.Context(), next.OIDCIssuer)
+		if err != nil {
+			app.serverError(w, r, err)
+			return
+		}
+		if n == 0 {
+			writeError(w, http.StatusBadRequest, "Impossible d'activer le mode OIDC exclusif : aucun administrateur n'est lié à un compte OIDC.")
+			return
+		}
 	}
 
 	var newClient *auth.OIDCClient
@@ -151,6 +185,8 @@ func (app *Application) handleAdminSettingsUpdate(w http.ResponseWriter, r *http
 		settings.KeyOIDCEnabled:      strconv.FormatBool(next.OIDCEnabled),
 		settings.KeyOIDCIssuer:       next.OIDCIssuer,
 		settings.KeyOIDCClientID:     next.OIDCClientID,
+		settings.KeyOIDCExclusive:    strconv.FormatBool(next.OIDCExclusive),
+		settings.KeyOIDCProviderName: next.OIDCProviderName,
 	}
 	if secretChanged {
 		updates[settings.KeyOIDCClientSecret] = next.OIDCClientSecret
