@@ -15,6 +15,10 @@ import (
 // DB wraps a *sql.DB configured for Trakka's usage pattern.
 type DB struct {
 	conn *sql.DB
+	// path is the database file Open was given — needed by SnapshotTo
+	// (backup.go), which reads the file through a second, read-only
+	// connection of its own rather than the shared one above.
+	path string
 }
 
 // Open opens (creating if necessary) the SQLite database at path, applies
@@ -52,7 +56,7 @@ func Open(path string, logger *slog.Logger) (*DB, error) {
 		return nil, fmt.Errorf("seeding default house: %w", err)
 	}
 
-	return &DB{conn: conn}, nil
+	return &DB{conn: conn, path: path}, nil
 }
 
 // ensureDefaultHouse guarantees at least one house always exists and that

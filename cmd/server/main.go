@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"trakka/internal/auth"
+	"trakka/internal/backup"
 	"trakka/internal/config"
 	"trakka/internal/db"
 	"trakka/internal/handlers"
@@ -29,10 +30,16 @@ import (
 func main() {
 	healthcheck := flag.Bool("healthcheck", false, "probe the local /healthz endpoint and exit (used by HEALTHCHECK)")
 	generateVAPIDKeys := flag.Bool("generate-vapid-keys", false, "print a fresh VAPID key pair for VAPID_PUBLIC_KEY/VAPID_PRIVATE_KEY and exit")
+	decryptBackup := flag.String("decrypt-backup", "", "decrypt this encrypted .tkb backup into a plain SQLite file (see -backup-key, -decrypt-output) and exit")
+	backupKey := flag.String("backup-key", "", "with -decrypt-backup: the backup key, or the path to a downloaded .key file")
+	decryptOutput := flag.String("decrypt-output", "", "with -decrypt-backup: where to write the decrypted SQLite database (must not exist)")
 	flag.Parse()
 
 	if *generateVAPIDKeys {
 		os.Exit(runGenerateVAPIDKeys())
+	}
+	if *decryptBackup != "" {
+		os.Exit(runDecryptBackup(*decryptBackup, *backupKey, *decryptOutput))
 	}
 
 	cfg := config.Load()
@@ -115,6 +122,14 @@ func main() {
 		os.Exit(1)
 	}
 
+	backups := backup.New(backup.Options{
+		DB:                   database,
+		DBPath:               cfg.DBPath,
+		Logger:               logger,
+		Location:             location,
+		AllowPrivateNetworks: cfg.BackupWebDAVAllowPrivate,
+	})
+
 	app := &handlers.Application{
 		DB:            database,
 		StaticDir:     cfg.StaticDir,
@@ -124,6 +139,7 @@ func main() {
 		Config:        cfg,
 		LogBuffer:     logHandler,
 		Location:      location,
+		Backups:       backups,
 	}
 
 	srv := &http.Server{
@@ -166,6 +182,11 @@ func main() {
 	// price scan above: nothing deleted them before, so the table grew for
 	// the life of the instance (see db.DeleteExpiredSessions).
 	go runSessionCleanupLoop(priceScanCtx, database, logger)
+
+	// The backup scheduler always runs, on the same detached context: it
+	// is a cheap once-a-minute settings read that does nothing until an
+	// admin switches automatic backups on from the console.
+	go runBackupSchedulerLoop(priceScanCtx, backups)
 
 	serverErrs := make(chan error, 1)
 	go func() {
@@ -303,6 +324,93 @@ func runSessionCleanupLoop(ctx context.Context, database *db.DB, logger *slog.Lo
 			sweep()
 		}
 	}
+}
+
+// backupSchedulerTick is how often the backup scheduler checks whether an
+// automatic backup is due. The schedule itself is expressed in whole
+// minutes (HH:MM), so checking more often would gain nothing.
+const backupSchedulerTick = time.Minute
+
+// runBackupSchedulerLoop asks the backup service, once a minute, to run an
+// automatic backup if one is due (see backup.Service.RunScheduledIfDue for
+// the due/retry rules), stopping once ctx is canceled during shutdown. The
+// first check is immediate, so a slot missed while the server was down is
+// caught up right after startup rather than a minute later.
+func runBackupSchedulerLoop(ctx context.Context, backups *backup.Service) {
+	ticker := time.NewTicker(backupSchedulerTick)
+	defer ticker.Stop()
+
+	backups.RunScheduledIfDue(ctx)
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			backups.RunScheduledIfDue(ctx)
+		}
+	}
+}
+
+// runDecryptBackup implements `trakka -decrypt-backup`: the disaster-
+// recovery path that needs no running server, no admin account and no web
+// UI — it turns an encrypted .tkb backup back into a plain SQLite file the
+// operator can put in place at DB_PATH before starting Trakka (see
+// docs/DEPLOYMENT.md). Like -generate-vapid-keys it runs before any
+// configuration is loaded. keyArg is either the key itself or the path to
+// a downloaded .key file.
+func runDecryptBackup(inPath, keyArg, outPath string) int {
+	if keyArg == "" || outPath == "" {
+		fmt.Fprintln(os.Stderr, "-decrypt-backup needs both -backup-key and -decrypt-output")
+		return 2
+	}
+	keyText := keyArg
+	if data, err := os.ReadFile(keyArg); err == nil { // #nosec G304 -- operator-supplied path on the operator's own command line
+		keyText = string(data)
+	}
+	key, err := backup.ParseKey(keyText)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "reading backup key:", err)
+		return 1
+	}
+
+	in, err := os.Open(inPath) // #nosec G304 -- operator-supplied path on the operator's own command line
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "opening backup:", err)
+		return 1
+	}
+	defer func() { _ = in.Close() }()
+	out, err := os.OpenFile(outPath, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600) // #nosec G304 -- operator-supplied path on the operator's own command line
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "creating output file:", err)
+		return 1
+	}
+	if err := backup.Decrypt(out, in, key); err != nil {
+		_ = out.Close()
+		_ = os.Remove(outPath)
+		fmt.Fprintln(os.Stderr, "decrypting backup:", err)
+		return 1
+	}
+	if err := out.Close(); err != nil {
+		fmt.Fprintln(os.Stderr, "writing output file:", err)
+		return 1
+	}
+	fmt.Printf("decrypted %s into %s (key %s)\n", inPath, outPath, key.Fingerprint())
+
+	// The decrypted database's own backup settings — its encrypted WebDAV
+	// password in particular — were sealed with this same key, so it is
+	// installed as the instance key next to the output (if none is there
+	// yet) for the database to come up fully working at that location.
+	installed, err := backup.InstallKey(filepath.Dir(outPath), key, time.Now())
+	switch {
+	case err != nil:
+		fmt.Fprintln(os.Stderr, "warning: could not install the backup key next to the database:", err)
+	case installed:
+		fmt.Printf("installed the backup key as %s\n", filepath.Join(filepath.Dir(outPath), backup.KeyFileName))
+	default:
+		fmt.Printf("note: %s already exists and was left untouched; if it isn't key %s, re-enter the WebDAV password in the admin console after starting\n",
+			filepath.Join(filepath.Dir(outPath), backup.KeyFileName), key.Fingerprint())
+	}
+	return 0
 }
 
 // runGenerateVAPIDKeys implements `trakka -generate-vapid-keys`: a one-time

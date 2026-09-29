@@ -179,6 +179,18 @@ const legacySchemaVersion = 9
 //     (see backupBeforeMigration) — the ordinary "pull a new release" path
 //     this system exists for.
 func migrate(conn *sql.DB, dbPath string, logger *slog.Logger) error {
+	return migrateSchema(conn, logger, func(fromVersion, toVersion int) error {
+		return backupBeforeMigration(conn, dbPath, fromVersion, toVersion, logger)
+	})
+}
+
+// migrateSchema is migrate's engine, with the pre-migration backup step
+// injected rather than hard-wired: the live database always passes
+// backupBeforeMigration (via migrate above), while a decrypted backup
+// staged for restore (see PrepareRestoreFile) passes nil — that file is
+// already a disposable copy, and snapshotting it into /data/backups/ would
+// only leave a stray duplicate of old data behind.
+func migrateSchema(conn *sql.DB, logger *slog.Logger, backup func(fromVersion, toVersion int) error) error {
 	migrations, err := loadMigrations()
 	if err != nil {
 		return fmt.Errorf("loading migrations: %w", err)
@@ -211,8 +223,8 @@ func migrate(conn *sql.DB, dbPath string, logger *slog.Logger) error {
 		return nil
 	}
 
-	if current > 0 {
-		if err := backupBeforeMigration(conn, dbPath, current, latest, logger); err != nil {
+	if current > 0 && backup != nil {
+		if err := backup(current, latest); err != nil {
 			return fmt.Errorf("backing up database before migration: %w", err)
 		}
 	}

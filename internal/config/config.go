@@ -104,6 +104,17 @@ type Config struct {
 	// same "invalid env var falls back to the fallback" convention as
 	// envBool/envInt below.
 	DefaultAppLanguage string
+
+	// BackupWebDAVAllowPrivate lets the encrypted-backup feature (see
+	// internal/backup) reach a WebDAV server on a private, loopback or
+	// CGNAT/Tailscale address — the usual self-hosted setup, e.g. a
+	// Nextcloud on the same LAN. Off by default: the WebDAV URL is entered
+	// at runtime from the admin console, so the backup client applies the
+	// same public-addresses-only SSRF guard as the scraper and Web Push
+	// until the operator — who knows the deployment's network — opts in
+	// here. Link-local addresses (including the cloud metadata endpoint)
+	// stay blocked either way.
+	BackupWebDAVAllowPrivate bool
 }
 
 func Load() Config {
@@ -138,6 +149,8 @@ func Load() Config {
 		AppTimeZone: envOr("APP_TIMEZONE", "Europe/Paris"),
 
 		DefaultAppLanguage: envLanguage("DEFAULT_APP_LANGUAGE", "en"),
+
+		BackupWebDAVAllowPrivate: envBool("BACKUP_WEBDAV_ALLOW_PRIVATE", false),
 	}
 }
 

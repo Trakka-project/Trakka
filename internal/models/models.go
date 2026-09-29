@@ -515,3 +515,19 @@ type PushSubscription struct {
 	UserAgent string `json:"-"`
 	CreatedAt string `json:"created_at"`
 }
+
+// BackupRun is one finished encrypted-backup attempt (see internal/backup),
+// manual or scheduled — the admin console's "Sauvegardes" history rows and
+// the raw material for its failure/staleness alerts. Timestamps use the same
+// ISO-8601-UTC-with-milliseconds text format as every other *_at column, so
+// they stay lexicographically comparable in SQL.
+type BackupRun struct {
+	ID         int64  `json:"id"`
+	Source     string `json:"source"` // "manual" or "scheduled"
+	Status     string `json:"status"` // "success" or "failed"
+	StartedAt  string `json:"started_at"`
+	FinishedAt string `json:"finished_at"`
+	FileName   string `json:"file_name"`
+	SizeBytes  int64  `json:"size_bytes"`
+	Error      string `json:"error"`
+}

@@ -7,8 +7,8 @@ importScripts('/js/db.js');
 
 // Bump both on any change to APP_SHELL's contents so activate()
 // evicts the old cache instead of serving stale assets forever.
-const SHELL_CACHE = 'trakka-shell-v97';
-const RUNTIME_CACHE = 'trakka-runtime-v97';
+const SHELL_CACHE = 'trakka-shell-v100';
+const RUNTIME_CACHE = 'trakka-runtime-v100';
 const KNOWN_CACHES = [SHELL_CACHE, RUNTIME_CACHE];
 
 const APP_SHELL = [
@@ -190,6 +190,18 @@ self.addEventListener('fetch', (event) => {
   // item write can, and the server-rendered error/mode state on this page
   // can't be meaningfully cached either.
   if (url.pathname.startsWith('/auth/')) {
+    return;
+  }
+
+  // Backup actions (admin console → "Sauvegardes") go straight to the
+  // network, untouched: handleApiWrite would read the whole body into
+  // memory to be able to queue it — a restore uploads an entire encrypted
+  // database as multipart/form-data — and none of these (run a backup now,
+  // restore, export the key, test/save the WebDAV settings) may ever be
+  // silently queued and replayed later. Offline, fetch() simply rejects and
+  // admin.js reports it in place. Reads (GET status/remote listing) still
+  // take the normal path below.
+  if (url.pathname.startsWith(API_PREFIX + '/admin/backups') && request.method !== 'GET') {
     return;
   }
 

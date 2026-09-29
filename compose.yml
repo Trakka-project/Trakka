@@ -20,6 +20,10 @@ services:
       # TZ intentionally not set: the distroless runtime image ships no
       # tzdata, so it would be silently ignored — every timestamp this app
       # stores or logs is already UTC by convention (see CLAUDE.md).
+      # Uncomment to let the encrypted WebDAV backups (admin console →
+      # Sauvegardes) reach a server on your LAN/Tailscale, e.g. a Nextcloud
+      # next to Trakka — see docs/DEPLOYMENT.md#encrypted-webdav-backups.
+      # BACKUP_WEBDAV_ALLOW_PRIVATE: "true"
     ports:
       - "8080:8080"
     volumes:
