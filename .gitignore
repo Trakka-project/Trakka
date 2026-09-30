@@ -15,3 +15,6 @@
 
 # Local-only offline build input (docs/DEPLOYMENT.md, "When the build can't download Go modules")
 vendor/
+
+# Maintainer tooling dependencies (scripts/package.json)
+node_modules/

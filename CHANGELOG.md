@@ -1,5 +1,45 @@
 ## [unreleased]
 
+## [1.2.0] - 2026-09-30
+
+### 🚀 Features
+
+- Improve UX and refacto some code for mobile usage
+- Document the notification implementation usage
+- Add label support and simplify vue on mobile
+- Add admin panel control
+- Add the possibility to sort lists by prices, name or labels
+- Add more filters and fix updates on PWA
+- Add new filters like store, tags
+- Add trigger to notify tasks schedule
+- *(auth)* Permit password auth disabling if OIDC is enabled and configured
+- *(chore)* Add backup with webDAV system
+- *(list-view)* Update budget summary calculation for active filters
+- *(ui)* Replace fixed icon list with customizable emoji picker
+- *(ui)* Disable select mode when unselect last item selected
+- *(lists)* Improve recurring tasks configuration
+- *(chore)* Add vibration on notifications with configuration in parameter
+
+### 🐛 Bug Fixes
+
+- Fix latest tag for docker image only for release tags
+- Fix item bar width on mobile
+- Change the way price badge on dashboard is calculated to fix it
+- Fix multi user spaces which show unwanted items or lists
+- Delete quantity for notes
+- Change the minified view to replace link button by price view
+- Fix issues with differents offline and online display
+- Fix menu not showing on mobile display & change UX for the lists parameters
+- Add placeholder on custom reminder
+- *(ci)* Change icon texts to fix linting ci
+- *(ui)* Fix mobile gesture on vanadium android
+
+### 💼 Other
+
+- Move language and theme selection in parameters
+- Change button on mobile for simplicity and overlay issues
+- *(claude.md)* Refacto the CLAUDE.md file to optimize the token usage
+
 ## [1.1.0] - 2026-09-02
 
 ### 🚀 Features
