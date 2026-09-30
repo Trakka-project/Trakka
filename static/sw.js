@@ -2,13 +2,14 @@
 
 // Trakka service worker: offline-first app shell + an IndexedDB-backed
 // sync queue for API mutations made while offline. Uses static/js/db.js
-// for all persistence (see that file for why it's importScripts()-safe).
-importScripts('/js/db.js');
+// for all persistence and static/js/recurrence.js for recurrence rules (see
+// those files for why they're importScripts()-safe).
+importScripts('/js/db.js', '/js/recurrence.js');
 
 // Bump both on any change to APP_SHELL's contents so activate()
 // evicts the old cache instead of serving stale assets forever.
-const SHELL_CACHE = 'trakka-shell-v108';
-const RUNTIME_CACHE = 'trakka-runtime-v108';
+const SHELL_CACHE = 'trakka-shell-v111';
+const RUNTIME_CACHE = 'trakka-runtime-v111';
 const KNOWN_CACHES = [SHELL_CACHE, RUNTIME_CACHE];
 
 const APP_SHELL = [
@@ -21,9 +22,11 @@ const APP_SHELL = [
   '/js/i18n.js',
   '/js/app.js',
   '/js/db.js',
+  '/js/recurrence.js',
   '/js/undo.js',
   '/js/emoji-picker.js',
   '/js/list_view.js',
+  '/js/recurrence-editor.js',
   '/js/gestures.js',
   '/js/reorder.js',
   '/js/selection.js',
@@ -125,11 +128,14 @@ self.addEventListener('message', (event) => {
 // (internal/handlers/push.go), encrypted per RFC 8291 — decryption itself is
 // handled entirely by the browser/OS push stack before this event ever
 // fires; by the time 'push' runs, event.data is already the plaintext JSON
-// pushPayload {title, body, url} the Go backend sent. Every push this app
+// pushPayload {title, body, url, tag?} the Go backend sent. Every push this app
 // sends is a real, user-visible notification (never a data-only "silent
 // push" with no UI, which browsers restrict/penalize) — `silent: true` on
 // the Notification itself is what satisfies the "sans son, discrète" intent
-// instead: no sound/vibration, but still shown.
+// instead: no sound/vibration, but still shown. A payload's own `tag` (one
+// per item for due reminders) wins over the per-URL default, so a newer
+// notification replaces an older one for the same thing without hiding a
+// reminder for a different task of the same list.
 self.addEventListener('push', (event) => {
   let data = {};
   try {
@@ -145,7 +151,7 @@ self.addEventListener('push', (event) => {
       icon: '/icons/trakka-icon-192.png',
       badge: '/icons/trakka-maskable-192.png',
       silent: true,
-      tag: 'trakka-' + url,
+      tag: data.tag || 'trakka-' + url,
       data: { url },
     })
   );
@@ -818,7 +824,7 @@ async function applyOptimisticEdit(pathname, method, body) {
     // cached total, the response handed back to the page) is derived from
     // this row, so it must land before either of them.
     const updated = { ...existing, ...body, id, updated_at: now };
-    applyRecurrenceCompletionOffline(updated, existing.done);
+    applyRecurrenceLifecycleOffline(updated, existing);
     await self.TrakkaDB.putItem(updated);
     // Step 2: recompute the parent list's cached total_amount from every
     // item now mirrored under it (including this one's new done/quantity/
@@ -916,46 +922,42 @@ async function queueOfflineReorder(pathname, listId, body, headers, now) {
 }
 
 // ---------------------------------------------------------------------------
-// Recurring-item completion, mirrored offline. This is a hand-kept JS port
-// of applyRecurrenceCompletion/nextDueDate in internal/handlers/recurrence.go
-// — there's no way to share code between the two runtimes — so that
-// checking off a recurring item while offline advances it to its next
-// occurrence exactly the way the server would, rather than leaving it
-// stuck "done" until the sync queue flushes and a refetch corrects it. Any
-// change to the Go version's rule handling must be mirrored here too.
+// Recurring-item lifecycle, mirrored offline. A hand-kept JS port of
+// applyRecurrenceLifecycle in internal/handlers/recurrence.go — there's no
+// way to share code between the two runtimes — so that checking off a
+// recurring item while offline leaves it done with the same next_due_date
+// the server will compute, and un-checking it cancels that, instead of
+// waiting for the sync queue to flush and a refetch to correct it. The
+// occurrence arithmetic itself (RRULE parsing, BYDAY weeks, month-end
+// clamp) comes from static/js/recurrence.js, shared with the page scripts.
+// Bringing the item back when its next occurrence starts stays server-only
+// (RunNextOccurrenceScan). Any change to the Go version must be mirrored
+// here too. The PATCH field rules that go with it are mirrored as well:
+// clearing the rule clears recurrence_end_date, clearing the due date clears
+// due_time, and a rule is stored in its canonical spelling.
 // ---------------------------------------------------------------------------
 
-function applyRecurrenceCompletionOffline(updated, wasDone) {
-  if (wasDone || !updated.done || !updated.recurrence_rule) return;
-
-  const next = nextDueDateOffline(updated.due_date || '', updated.recurrence_rule);
-  if (!next) return; // unrecognized rule — leave it done, same as the Go path
-
-  if (updated.recurrence_end_date && next > updated.recurrence_end_date) return;
-
-  updated.due_date = next;
-  updated.done = false;
-}
-
-function nextDueDateOffline(currentDueDate, rule) {
-  const base = currentDueDate ? new Date(`${currentDueDate}T00:00:00Z`) : new Date();
-  if (Number.isNaN(base.getTime())) return null;
-
-  if (rule === 'DAILY') {
-    base.setUTCDate(base.getUTCDate() + 1);
-  } else if (rule === 'WEEKLY') {
-    base.setUTCDate(base.getUTCDate() + 7);
-  } else if (rule === 'MONTHLY') {
-    base.setUTCMonth(base.getUTCMonth() + 1);
-  } else if (rule === 'YEARLY') {
-    base.setUTCFullYear(base.getUTCFullYear() + 1);
+function applyRecurrenceLifecycleOffline(updated, before) {
+  if (updated.recurrence_rule) {
+    updated.recurrence_rule = self.TrakkaRecurrence.normalizeRule(updated.recurrence_rule) || updated.recurrence_rule;
   } else {
-    const match = /^EVERY_X_DAYS:([1-9][0-9]*)$/.exec(rule);
-    if (!match) return null;
-    base.setUTCDate(base.getUTCDate() + Number(match[1]));
+    updated.recurrence_end_date = null;
+  }
+  if (!updated.due_date) updated.due_time = null;
+
+  if (!updated.recurrence_rule || !updated.done) {
+    updated.next_due_date = null;
+    return;
+  }
+  if (before.done && self.TrakkaRecurrence.normalizeRule(before.recurrence_rule) === updated.recurrence_rule &&
+      (before.due_date || '') === (updated.due_date || '') &&
+      (before.recurrence_end_date || '') === (updated.recurrence_end_date || '')) {
+    updated.next_due_date = before.next_due_date ?? null;
+    return;
   }
 
-  return base.toISOString().slice(0, 10);
+  const next = self.TrakkaRecurrence.nextOccurrence(updated.due_date || '', updated.recurrence_rule, self.TrakkaRecurrence.localDateISO());
+  updated.next_due_date = !next || (updated.recurrence_end_date && next > updated.recurrence_end_date) ? null : next;
 }
 
 // A PATCH/PUT/DELETE against a temp-* id targets something that only ever
@@ -1017,7 +1019,7 @@ async function resolveAgainstPendingCreate(tempId, method, body, headers) {
 
   const existing = (await self.TrakkaDB.getItem(tempId)) || { id: tempId };
   const updated = { ...existing, ...body, id: tempId, updated_at: now };
-  applyRecurrenceCompletionOffline(updated, existing.done);
+  applyRecurrenceLifecycleOffline(updated, existing);
   await self.TrakkaDB.putItem(updated);
   await recomputeListTotalAmount(updated.list_id);
   return new Response(JSON.stringify(updated), { status: 200, headers });

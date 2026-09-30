@@ -184,6 +184,12 @@ type pushPayload struct {
 	Title string `json:"title"`
 	Body  string `json:"body"`
 	URL   string `json:"url"`
+	// Tag, when set, is the Notification tag static/sw.js shows this under
+	// instead of its per-URL default: a later notification with the same
+	// tag replaces the earlier one rather than stacking. Due reminders use
+	// one tag per item, so two tasks of the same list never hide each
+	// other's reminder.
+	Tag string `json:"tag,omitempty"`
 }
 
 // sendToUsers delivers payload to every subscription belonging to any of
@@ -299,13 +305,17 @@ const dueReminderScanTimeout = 5 * time.Minute
 // RunDueReminderScan checks every not-done item with a due date and an
 // active reminder (see db.ListItemsForDueReminderScan) and sends a push to
 // every user with access to its list once the current time has reached that
-// item's own (already-resolved) reminder moment — computed from its
-// due date, reminder_offset_days, and reminder_time, interpreted in
-// app.location(). Applies to any item with a due date, not only a recurring
-// one — see models.Item.ReminderEnabled/ReminderOffsetDays/ReminderTime and
-// the reminder-resolution logic in items.go for how those get set. Called
-// on a timer from cmd/server/main.go; also safe to call directly for an
-// immediate, whole-catalog scan. Best-effort throughout, mirroring
+// item's own (already-resolved) reminder moment — see reminderMoment:
+// its due date and due time, reminder_at_due_time, reminder_offset_days and
+// reminder_time, interpreted in app.location(). Applies to any item with a
+// due date, not only a recurring one — see models.Item.ReminderEnabled/
+// ReminderOffsetDays/ReminderTime/ReminderAtDueTime and the
+// reminder-resolution logic in items.go for how those get set. Runs
+// RunNextOccurrenceScan first, so a recurring task whose next occurrence
+// starts at its reminder moment is back (not done, due on its new date) by
+// the time this pass looks for it. Called on a timer from
+// cmd/server/main.go; also safe to call directly for an immediate,
+// whole-catalog scan. Best-effort throughout, mirroring
 // RunPriceAlertScan: one item's failure (a bad due date, a db error
 // resolving its list/recipients) is logged and never stops the rest of the
 // scan.
@@ -313,6 +323,8 @@ func (app *Application) RunDueReminderScan(ctx context.Context) {
 	if !app.Config.PushEnabled() {
 		return
 	}
+
+	app.RunNextOccurrenceScan(ctx)
 
 	scanCtx, cancel := context.WithTimeout(ctx, dueReminderScanTimeout)
 	defer cancel()
@@ -323,7 +335,9 @@ func (app *Application) RunDueReminderScan(ctx context.Context) {
 		return
 	}
 
-	app.Logger.Info("running due-date reminder scan", "item_count", len(candidates))
+	// Debug rather than Info: the scan runs every minute by default, since
+	// an "at the exact due time" reminder can't wait half an hour.
+	app.Logger.Debug("running due-date reminder scan", "item_count", len(candidates))
 	now := time.Now()
 	for _, c := range candidates {
 		if scanCtx.Err() != nil {
@@ -338,21 +352,16 @@ func (app *Application) RunDueReminderScan(ctx context.Context) {
 // checkItemForDueReminder evaluates one candidate: if now has already
 // reached its computed reminder moment, it notifies every user with access
 // to its list and records that the reminder was sent for this exact due
-// date (db.MarkDueReminderSent) so the next scan tick doesn't repeat it —
-// see that method's own comment for why storing the due date value itself,
-// rather than a plain boolean, is what makes this automatically re-arm once
-// the item's due date next changes.
+// date/time (db.MarkDueReminderSent) so the next scan tick doesn't repeat
+// it — see that method's own comment for why storing the due date/time key
+// itself, rather than a plain boolean, is what makes this automatically
+// re-arm once the item's due date or time next changes.
 func (app *Application) checkItemForDueReminder(ctx context.Context, c *db.DueReminderCandidate, now time.Time) error {
 	loc := app.location()
-	due, err := time.ParseInLocation("2006-01-02", c.DueDate, loc)
+	reminderAt, err := reminderMoment(c.DueDate, c.DueTime, c.AtDueTime, c.OffsetDays, c.TimeOfDay, loc)
 	if err != nil {
-		return fmt.Errorf("parsing due date %q: %w", c.DueDate, err)
+		return err
 	}
-	hour, minute, err := parseTimeOfDay(c.TimeOfDay)
-	if err != nil {
-		return fmt.Errorf("parsing reminder time %q: %w", c.TimeOfDay, err)
-	}
-	reminderAt := time.Date(due.Year(), due.Month(), due.Day()-c.OffsetDays, hour, minute, 0, 0, loc)
 	if now.Before(reminderAt) {
 		return nil // not due soon enough yet
 	}
@@ -381,16 +390,86 @@ func (app *Application) checkItemForDueReminder(ctx context.Context, c *db.DueRe
 	// notify and nothing further to do.
 	if len(recipients) > 0 {
 		app.sendToUsers(ctx, recipients, pushPayload{
-			Title: "Rappel de tâche",
-			Body:  fmt.Sprintf("« %s » (%s) arrive à échéance le %s", c.Title, list.Name, c.DueDate),
+			Title: c.Title,
+			Body:  fmt.Sprintf("🔔 %s — %s", describeDueFR(c.DueDate, c.DueTime, now.In(loc)), list.Name),
 			URL:   fmt.Sprintf("/?list=%d", list.ID),
+			Tag:   fmt.Sprintf("trakka-reminder-%d", c.ItemID),
 		})
 	}
 
-	if err := app.DB.MarkDueReminderSent(ctx, c.ItemID, c.DueDate); err != nil {
+	if err := app.DB.MarkDueReminderSent(ctx, c.ItemID, c.Key()); err != nil {
 		return fmt.Errorf("marking reminder sent: %w", err)
 	}
 	return nil
+}
+
+// reminderMoment computes when an item's due reminder fires, in loc: at
+// dueDate + dueTime in the "at the exact due time" mode when the item has a
+// due time, otherwise offsetDays whole days before dueDate at timeOfDay
+// (the fallback the write path always resolves — see
+// resolveReminderDefaults). The single place that instant is computed:
+// checkItemForDueReminder sends at it, and occurrenceStart brings a
+// recurring task back no later than it.
+func reminderMoment(dueDate, dueTime string, atDueTime bool, offsetDays int, timeOfDay string, loc *time.Location) (time.Time, error) {
+	due, err := time.ParseInLocation(dateLayout, dueDate, loc)
+	if err != nil {
+		return time.Time{}, fmt.Errorf("parsing due date %q: %w", dueDate, err)
+	}
+	if atDueTime && dueTime != "" {
+		hour, minute, err := parseTimeOfDay(dueTime)
+		if err != nil {
+			return time.Time{}, fmt.Errorf("parsing due time %q: %w", dueTime, err)
+		}
+		return time.Date(due.Year(), due.Month(), due.Day(), hour, minute, 0, 0, loc), nil
+	}
+	hour, minute, err := parseTimeOfDay(timeOfDay)
+	if err != nil {
+		return time.Time{}, fmt.Errorf("parsing reminder time %q: %w", timeOfDay, err)
+	}
+	return time.Date(due.Year(), due.Month(), due.Day()-offsetDays, hour, minute, 0, 0, loc), nil
+}
+
+var (
+	frenchWeekdays = [...]string{"dim.", "lun.", "mar.", "mer.", "jeu.", "ven.", "sam."}
+	frenchMonths   = [...]string{"janv.", "févr.", "mars", "avr.", "mai", "juin", "juil.", "août", "sept.", "oct.", "nov.", "déc."}
+)
+
+// describeDueFR phrases a due date (and optional HH:MM due time) relative
+// to now for a reminder's body, in French like every server-composed
+// notification (see notifyListChange's doc comment): "Échéance aujourd'hui
+// à 18:00", "Échéance demain", "Échéance le dim. 11 oct.", or "Échéance
+// dépassée (lun. 5 oct.)" when a scan catches up on a reminder whose due
+// date has already passed. The short day/month forms match what the
+// frontend's Intl.DateTimeFormat shows on the task's own badge.
+func describeDueFR(dueDate, dueTime string, now time.Time) string {
+	due, err := time.Parse(dateLayout, dueDate)
+	if err != nil {
+		return "Échéance le " + dueDate
+	}
+	// Calendar-day difference computed on UTC midnights: no DST shift, so
+	// a 23- or 25-hour local day can't round the count off by one.
+	today := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.UTC)
+	days := int(due.Sub(today).Hours() / 24)
+	label := fmt.Sprintf("%s %d %s", frenchWeekdays[due.Weekday()], due.Day(), frenchMonths[due.Month()-1])
+	if due.Year() != now.Year() {
+		label += fmt.Sprintf(" %d", due.Year())
+	}
+
+	var phrase string
+	switch {
+	case days < 0:
+		return "Échéance dépassée (" + label + ")"
+	case days == 0:
+		phrase = "Échéance aujourd'hui"
+	case days == 1:
+		phrase = "Échéance demain"
+	default:
+		phrase = "Échéance le " + label
+	}
+	if dueTime != "" {
+		phrase += " à " + dueTime
+	}
+	return phrase
 }
 
 // parseTimeOfDay parses an HH:MM (24h) string — already validated by

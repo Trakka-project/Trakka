@@ -92,3 +92,43 @@ func TestHandleMeUpdateSetsLanguage(t *testing.T) {
 		t.Fatalf("expected the rejected PATCH to leave language as %q, got %q", "fr", stillFrench.Language)
 	}
 }
+
+// TestHandleMeUpdateReminderAtDueTime covers the "at the exact due time"
+// reminder preset: it is saved with the offset/time pair, the pair alone
+// resets it to false, and it can't be sent without the pair.
+func TestHandleMeUpdateReminderAtDueTime(t *testing.T) {
+	app := newTestApplication(t)
+	user := mustCreateTestUser(t, app, "reminder@example.com")
+
+	patch := func(body string) *httptest.ResponseRecorder {
+		req := httptest.NewRequest(http.MethodPatch, "/api/v1/me", strings.NewReader(body))
+		req = req.WithContext(context.WithValue(req.Context(), userContextKey, user))
+		rec := httptest.NewRecorder()
+		app.handleMeUpdate(rec, req)
+		return rec
+	}
+	decode := func(rec *httptest.ResponseRecorder) (atDueTime bool, timeOfDay string) {
+		t.Helper()
+		if rec.Code != http.StatusOK {
+			t.Fatalf("handleMeUpdate: %d %s", rec.Code, rec.Body.String())
+		}
+		var got struct {
+			AtDueTime bool   `json:"reminder_default_at_due_time"`
+			Time      string `json:"reminder_default_time"`
+		}
+		if err := json.NewDecoder(rec.Body).Decode(&got); err != nil {
+			t.Fatalf("decoding response: %v", err)
+		}
+		return got.AtDueTime, got.Time
+	}
+
+	if atDueTime, timeOfDay := decode(patch(`{"reminder_default_offset_days":0,"reminder_default_time":"08:30","reminder_default_at_due_time":true}`)); !atDueTime || timeOfDay != "08:30" {
+		t.Fatalf("got at_due_time=%v time=%q, want true/08:30", atDueTime, timeOfDay)
+	}
+	if atDueTime, _ := decode(patch(`{"reminder_default_offset_days":1,"reminder_default_time":"20:00"}`)); atDueTime {
+		t.Fatal("expected the offset/time pair alone to reset the at-due-time preset")
+	}
+	if rec := patch(`{"reminder_default_at_due_time":true}`); rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 without the offset/time pair, got %d", rec.Code)
+	}
+}

@@ -42,6 +42,7 @@ const userSettingsEls = {
   reminderOffset: document.getElementById('user-settings-reminder-offset'),
   reminderOffsetSuffix: document.getElementById('user-settings-reminder-offset-suffix'),
   reminderTime: document.getElementById('user-settings-reminder-time'),
+  reminderFallbackHint: document.getElementById('user-settings-reminder-fallback-hint'),
   status: document.getElementById('user-settings-status'),
   updateVersion: document.getElementById('user-settings-update-version'),
   updateCheckButton: document.getElementById('user-settings-update-check-button'),
@@ -61,14 +62,17 @@ function openUserSettingsModal() {
   // server value, falling back to the localStorage mirror if /me hasn't
   // resolved yet (e.g. opened while offline).
   userSettingsEls.keepLastPage.checked = isKeepLastPageEnabled();
-  // state.currentUser's own reminder_default_offset_days/_time (from
-  // GET/PATCH /api/v1/me) drive the preset select — matched against the two
-  // named presets the same way reminderItemToSelection (list_view.js) does
-  // for a per-item reminder, falling back to the "Le jour même" defaults if
-  // /me hasn't resolved yet (e.g. opened while offline).
+  // state.currentUser's own reminder_default_offset_days/_time/_at_due_time
+  // (from GET/PATCH /api/v1/me) drive the preset select (see
+  // reminderDefaultsToPreset), falling back to the "Le jour même" defaults
+  // if /me hasn't resolved yet (e.g. opened while offline).
   const currentDefault = (state.currentUser && state.currentUser.reminder_default_offset_days != null)
-    ? { offsetDays: state.currentUser.reminder_default_offset_days, time: state.currentUser.reminder_default_time || '09:00' }
-    : { offsetDays: 0, time: '09:00' };
+    ? {
+        offsetDays: state.currentUser.reminder_default_offset_days,
+        time: state.currentUser.reminder_default_time || '09:00',
+        atDueTime: Boolean(state.currentUser.reminder_default_at_due_time),
+      }
+    : { offsetDays: 0, time: '09:00', atDueTime: false };
   userSettingsEls.reminderPreset.value = reminderDefaultsToPreset(currentDefault);
   userSettingsEls.reminderOffset.value = currentDefault.offsetDays;
   userSettingsEls.reminderTime.value = currentDefault.time;
@@ -106,15 +110,16 @@ function closeUserSettingsModal() {
 }
 
 // reminderDefaultsToPreset derives which named preset ("Le jour même"/
-// "La veille"/"Personnalisé") to show for a resolved
-// {offsetDays, time} pair — the same "match the two fixed presets, else
-// custom" logic list_view.js's reminderItemToSelection uses for a per-item
-// reminder, kept as its own small copy here rather than shared, since
-// list_view.js isn't loaded on every page this modal could in principle
-// appear on.
-function reminderDefaultsToPreset({ offsetDays, time }) {
-  if (offsetDays === 0 && time === '09:00') return 'same_day';
-  if (offsetDays === 1 && time === '20:00') return 'day_before';
+// "La veille"/"À l'heure exacte de l'échéance"/"Personnalisé") to show for
+// a resolved default. Unlike list_view.js's per-item reminderItemToSelection,
+// the time stays editable under every preset here, so only the offset (and
+// the at-due-time flag) decides: "Le jour même à 08:00" is still "Le jour
+// même". Kept as its own small copy rather than shared, since list_view.js
+// isn't loaded on every page this modal could in principle appear on.
+function reminderDefaultsToPreset({ offsetDays, atDueTime }) {
+  if (atDueTime) return 'at_due_time';
+  if (offsetDays === 0) return 'same_day';
+  if (offsetDays === 1) return 'day_before';
   return 'custom';
 }
 
@@ -122,11 +127,14 @@ function reminderDefaultsToPreset({ offsetDays, time }) {
 // only for the "Personnalisé" preset — "Le jour même"/"la veille" fix the
 // offset implicitly (0/1) with nothing further to enter, matching how
 // list_view.js's own per-item reminder select only reveals its offset input
-// for "custom".
+// for "custom". "À l'heure exacte de l'échéance" keeps the time input as
+// the fallback for a task without a due time, and says so.
 function updateReminderOffsetVisibility() {
-  const isCustom = userSettingsEls.reminderPreset.value === 'custom';
+  const preset = userSettingsEls.reminderPreset.value;
+  const isCustom = preset === 'custom';
   userSettingsEls.reminderOffset.hidden = !isCustom;
   userSettingsEls.reminderOffsetSuffix.hidden = !isCustom;
+  userSettingsEls.reminderFallbackHint.hidden = preset !== 'at_due_time';
 }
 
 userSettingsEls.reminderPreset.addEventListener('change', () => {
@@ -142,6 +150,9 @@ userSettingsEls.reminderPreset.addEventListener('change', () => {
   } else if (userSettingsEls.reminderPreset.value === 'day_before') {
     userSettingsEls.reminderOffset.value = 1;
     userSettingsEls.reminderTime.value = '20:00';
+  } else if (userSettingsEls.reminderPreset.value === 'at_due_time') {
+    // The fallback for a task without a due time: the same day.
+    userSettingsEls.reminderOffset.value = 0;
   }
 });
 
@@ -174,6 +185,7 @@ userSettingsEls.form.addEventListener('submit', async (event) => {
   // actually shown on screen.
   const reminderDefaultOffsetDays = Math.max(0, Number.parseInt(userSettingsEls.reminderOffset.value, 10) || 0);
   const reminderDefaultTime = userSettingsEls.reminderTime.value || '09:00';
+  const reminderDefaultAtDueTime = userSettingsEls.reminderPreset.value === 'at_due_time';
   let user;
   try {
     user = await apiRequest('/me', {
@@ -182,6 +194,7 @@ userSettingsEls.form.addEventListener('submit', async (event) => {
         keep_last_page: keepLastPage,
         reminder_default_offset_days: reminderDefaultOffsetDays,
         reminder_default_time: reminderDefaultTime,
+        reminder_default_at_due_time: reminderDefaultAtDueTime,
       }),
     });
   } catch (err) {

@@ -76,7 +76,10 @@ type Config struct {
 	// an active reminder — independent of, and normally much finer-grained
 	// than, any individual reminder's own offset/time, so a reminder due at
 	// e.g. 09:00 is actually caught reasonably close to on time rather than
-	// only once a day. A value <= 0 disables the periodic scan entirely.
+	// only once a day. Defaults to one minute: with the "at the exact due
+	// time" reminder mode, a coarser interval shows up directly as a late
+	// notification, and the scan is one small query. A value <= 0 disables
+	// the periodic scan entirely.
 	NotifDueScanInterval time.Duration
 
 	// AppTimeZone names the IANA time zone (e.g. "Europe/Paris", "UTC")
@@ -144,7 +147,7 @@ func Load() Config {
 		VAPIDPrivateKey: envOr("VAPID_PRIVATE_KEY", ""),
 		VAPIDSubject:    envOr("VAPID_SUBJECT", ""),
 
-		NotifDueScanInterval: time.Duration(envInt("NOTIF_DUE_SCAN_INTERVAL_MINUTES", 30)) * time.Minute,
+		NotifDueScanInterval: time.Duration(envInt("NOTIF_DUE_SCAN_INTERVAL_MINUTES", 1)) * time.Minute,
 
 		AppTimeZone: envOr("APP_TIMEZONE", "Europe/Paris"),
 

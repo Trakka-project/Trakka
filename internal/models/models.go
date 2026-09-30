@@ -112,21 +112,38 @@ type Item struct {
 	TargetMonth *string `json:"target_month,omitempty"`
 	// DueDate (YYYY-MM-DD) is the date this item (or, for a recurring item,
 	// its current occurrence) is due. Nil means no due date has been set
-	// yet. For a recurring item it is advanced automatically each time the
-	// item is completed (see internal/handlers.applyRecurrenceCompletion)
-	// rather than edited directly through the UI.
+	// yet. For a recurring item it moves to the next occurrence when
+	// internal/handlers.RunNextOccurrenceScan brings a completed item back
+	// (see NextDueDate); while the item sits done it keeps the date of the
+	// occurrence that was completed.
 	DueDate *string `json:"due_date,omitempty"`
+	// DueTime (HH:MM, 24h, internal/validate.TimeOfDay) is an optional
+	// wall-clock time for DueDate, interpreted in the instance's
+	// APP_TIMEZONE. Always nil when DueDate is nil. The "at the exact due
+	// time" reminder mode (ReminderAtDueTime) fires at DueDate + DueTime.
+	DueTime *string `json:"due_time,omitempty"`
+	// NextDueDate (YYYY-MM-DD) is only ever set on a done recurring item:
+	// checking one off leaves it done (see
+	// internal/handlers.applyRecurrenceLifecycle) with this set to its next
+	// occurrence, the first one strictly after today. Once that occurrence
+	// starts (the start of its day, or its reminder moment if that comes
+	// first), internal/handlers.RunNextOccurrenceScan un-checks the item and
+	// moves NextDueDate into DueDate. Nil on a done recurring item means its
+	// series has ended (RecurrenceEndDate reached). Server-computed: never
+	// accepted on a request.
+	NextDueDate *string `json:"next_due_date,omitempty"`
 	// IsRecurring is true exactly when RecurrenceRule is set — it is never
 	// set independently, purely a convenience so callers don't have to
 	// check RecurrenceRule for non-nilness themselves.
 	IsRecurring bool `json:"is_recurring"`
-	// RecurrenceRule is one of the fixed cadences ("DAILY", "WEEKLY",
-	// "MONTHLY", "YEARLY") or the custom "EVERY_X_DAYS:<n>" form (see
-	// internal/validate.Recurrence), or nil if the item doesn't repeat.
-	// Completing a recurring item doesn't delete or clone it — it advances
-	// DueDate to the next occurrence and resets Done to false instead (see
-	// internal/handlers.applyRecurrenceCompletion), so the same row is
-	// reused indefinitely rather than accumulating one row per occurrence.
+	// RecurrenceRule is the item's rule in the canonical iCalendar RRULE
+	// subset of internal/recurrence ("FREQ=WEEKLY", "FREQ=DAILY;INTERVAL=3",
+	// "FREQ=WEEKLY;INTERVAL=2;BYDAY=MO,WE,FR", ...; legacy spellings are
+	// normalized on write, see internal/validate.Recurrence), or nil if the
+	// item doesn't repeat. Completing a recurring item doesn't delete or clone it: it
+	// stays done with NextDueDate set, then comes back for that occurrence,
+	// so the same row is reused indefinitely rather than accumulating one
+	// row per occurrence.
 	RecurrenceRule *string `json:"recurrence_rule,omitempty"`
 	// RecurrenceEndDate (YYYY-MM-DD), if set, is the last date this item
 	// should recur on: once the next computed occurrence would fall after
@@ -166,6 +183,19 @@ type Item struct {
 	// internal/validate.TimeOfDay) the reminder fires at on its computed
 	// day, resolved the same way as ReminderOffsetDays.
 	ReminderTime *string `json:"reminder_time,omitempty"`
+	// ReminderAtDueTime selects the "at the exact due time" reminder mode:
+	// when the item also has a DueTime, the reminder fires at DueDate +
+	// DueTime and ReminderOffsetDays/ReminderTime are ignored. Without a
+	// DueTime those two still apply, as the fallback. Resolved at write time
+	// like the other reminder fields (see
+	// internal/handlers.resolveReminderDefaults).
+	ReminderAtDueTime bool `json:"reminder_at_due_time"`
+	// NotificationSentAt (ISO-8601 UTC) is when the due reminder for the
+	// item's *current* due date/time was pushed, nil while it is still
+	// pending. Read-only: internal/db only reports it while
+	// due_reminder_sent_for still matches the current due date/time, so
+	// moving the task or starting its next occurrence resets it to nil.
+	NotificationSentAt *string `json:"notification_sent_at,omitempty"`
 	// TargetPrice is a user-set threshold (see AlertOnPriceDrop): once
 	// Price drops to or below it, internal/handlers.checkPriceDropAlert
 	// fires an in-app toast (via PriceAlertTriggered below) and a push
@@ -274,6 +304,12 @@ type User struct {
 	// mode field. Settable via PATCH /api/v1/me.
 	ReminderDefaultOffsetDays int    `json:"reminder_default_offset_days"`
 	ReminderDefaultTime       string `json:"reminder_default_time"`
+	// ReminderDefaultAtDueTime is the "at the exact due time" preset: a task
+	// left on "use the default" gets Item.ReminderAtDueTime = true, and
+	// ReminderDefaultOffsetDays/ReminderDefaultTime become the fallback for
+	// a task that has no due time. Settable via PATCH /api/v1/me together
+	// with the other two.
+	ReminderDefaultAtDueTime bool `json:"reminder_default_at_due_time"`
 }
 
 // UserWithCredentials is returned by db lookups used for authentication

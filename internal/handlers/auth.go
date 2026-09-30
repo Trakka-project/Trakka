@@ -440,12 +440,17 @@ func (app *Application) materializeInvitations(r *http.Request, user *models.Use
 // and reminder_default_time are treated as a pair — either both are given
 // together or neither is, since sending just one without the other would
 // leave the account in an ambiguous half-updated state.
+// reminder_default_at_due_time (the "at the exact due time" preset, see
+// models.User.ReminderDefaultAtDueTime) belongs to the same setting: it may
+// only come with that pair, and the pair on its own means false, so a
+// client that predates the preset still saves a plain offset default.
 func (app *Application) handleMeUpdate(w http.ResponseWriter, r *http.Request) {
 	var in struct {
 		KeepLastPage              *bool   `json:"keep_last_page"`
 		Language                  *string `json:"language"`
 		ReminderDefaultOffsetDays *int    `json:"reminder_default_offset_days"`
 		ReminderDefaultTime       *string `json:"reminder_default_time"`
+		ReminderDefaultAtDueTime  *bool   `json:"reminder_default_at_due_time"`
 	}
 	if !decodeJSON(w, r, &in) {
 		return
@@ -453,6 +458,10 @@ func (app *Application) handleMeUpdate(w http.ResponseWriter, r *http.Request) {
 
 	if (in.ReminderDefaultOffsetDays == nil) != (in.ReminderDefaultTime == nil) {
 		writeError(w, http.StatusBadRequest, "reminder_default_offset_days and reminder_default_time must be given together")
+		return
+	}
+	if in.ReminderDefaultAtDueTime != nil && in.ReminderDefaultTime == nil {
+		writeError(w, http.StatusBadRequest, "reminder_default_at_due_time must be given with reminder_default_offset_days and reminder_default_time")
 		return
 	}
 	var cleanReminderTime string
@@ -505,7 +514,8 @@ func (app *Application) handleMeUpdate(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if in.ReminderDefaultTime != nil {
-		updated, err := app.DB.UpdateUserReminderDefaults(r.Context(), user.ID, *in.ReminderDefaultOffsetDays, cleanReminderTime)
+		atDueTime := in.ReminderDefaultAtDueTime != nil && *in.ReminderDefaultAtDueTime
+		updated, err := app.DB.UpdateUserReminderDefaults(r.Context(), user.ID, *in.ReminderDefaultOffsetDays, cleanReminderTime, atDueTime)
 		if errors.Is(err, db.ErrNotFound) {
 			writeError(w, http.StatusNotFound, "user not found")
 			return

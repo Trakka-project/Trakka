@@ -21,15 +21,27 @@ const maxItemQuantity = 100000
 // (or, for timeOfDay, empty) with actingUser's own current reminder default
 // (models.User.ReminderDefaultOffsetDays/ReminderDefaultTime) — but only
 // when enabled is true, since a disabled reminder has nothing to resolve
-// and both come back nil. Called from handleItemsCreate/Update/Patch right
-// before persisting via db.SetItemReminder: resolving here, once, at write
-// time, rather than leaving a nil to be re-derived later, is deliberate —
-// see models.Item.ReminderOffsetDays' own doc comment for why a shared
-// list's item can't simply defer to "whichever recipient is reading it"'s
-// own default at scan/notify time.
-func resolveReminderDefaults(actingUser *models.User, enabled bool, offsetDays *int, timeOfDay *string) (*int, *string) {
+// and everything comes back zero/nil. Called from
+// handleItemsCreate/Update/Patch right before persisting via
+// db.SetItemReminder: resolving here, once, at write time, rather than
+// leaving a nil to be re-derived later, is deliberate — see
+// models.Item.ReminderOffsetDays' own doc comment for why a shared list's
+// item can't simply defer to "whichever recipient is reading it"'s own
+// default at scan/notify time.
+//
+// atDueTime resolves the same way from User.ReminderDefaultAtDueTime, with
+// one refinement: a request that spelled out an explicit offset or time
+// but said nothing about the "at the exact due time" mode chose an explicit
+// offset reminder, so a nil atDueTime then means false rather than "use my
+// default". Only a request leaving all three unset gets the default mode.
+func resolveReminderDefaults(actingUser *models.User, enabled bool, atDueTime *bool, offsetDays *int, timeOfDay *string) (bool, *int, *string) {
 	if !enabled {
-		return nil, nil
+		return false, nil, nil
+	}
+	explicitTiming := offsetDays != nil || (timeOfDay != nil && *timeOfDay != "")
+	resolvedAtDueTime := actingUser.ReminderDefaultAtDueTime && !explicitTiming
+	if atDueTime != nil {
+		resolvedAtDueTime = *atDueTime
 	}
 	resolvedOffset := offsetDays
 	if resolvedOffset == nil {
@@ -41,7 +53,25 @@ func resolveReminderDefaults(actingUser *models.User, enabled bool, offsetDays *
 		t := actingUser.ReminderDefaultTime
 		resolvedTime = &t
 	}
-	return resolvedOffset, resolvedTime
+	return resolvedAtDueTime, resolvedOffset, resolvedTime
+}
+
+// errDueTimeWithoutDate is the 400 for a due_time sent with no due_date to
+// attach it to.
+var errDueTimeWithoutDate = errors.New("due_time requires due_date")
+
+// validateDueTime checks a create/update request's due_time against its
+// already-validated due date (dueDate, "" for none): it comes back as ""
+// (no time) or HH:MM, and is refused without a date.
+func validateDueTime(raw, dueDate string) (string, error) {
+	dueTime, err := validate.TimeOfDay(raw)
+	if err != nil {
+		return "", err
+	}
+	if dueTime != "" && dueDate == "" {
+		return "", errDueTimeWithoutDate
+	}
+	return dueTime, nil
 }
 
 func (app *Application) handleItemsIndex(w http.ResponseWriter, r *http.Request) {
@@ -96,6 +126,8 @@ func (app *Application) handleItemsCreate(w http.ResponseWriter, r *http.Request
 		ReminderEnabled       bool     `json:"reminder_enabled"`
 		ReminderOffsetDays    *int     `json:"reminder_offset_days"`
 		ReminderTime          string   `json:"reminder_time"`
+		ReminderAtDueTime     *bool    `json:"reminder_at_due_time"`
+		DueTime               string   `json:"due_time"`
 	}
 	if !decodeJSON(w, r, &in) {
 		return
@@ -140,6 +172,11 @@ func (app *Application) handleItemsCreate(w http.ResponseWriter, r *http.Request
 		return
 	}
 	cleanDueDate, err := validate.Date(in.DueDate)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	cleanDueTime, err := validateDueTime(in.DueTime, cleanDueDate)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
@@ -207,11 +244,20 @@ func (app *Application) handleItemsCreate(w http.ResponseWriter, r *http.Request
 	// for reminder_enabled (true) can't distinguish "the request never
 	// mentioned it" from "explicitly wants the default timing", and the
 	// latter needs resolveReminderDefaults to run regardless.
-	resolvedOffsetDays, resolvedReminderTime := resolveReminderDefaults(userFromContext(r), in.ReminderEnabled, in.ReminderOffsetDays, nullableString(cleanReminderTime))
-	item, err = app.DB.SetItemReminder(r.Context(), item.ID, in.ReminderEnabled, resolvedOffsetDays, resolvedReminderTime)
+	resolvedAtDueTime, resolvedOffsetDays, resolvedReminderTime := resolveReminderDefaults(userFromContext(r), in.ReminderEnabled, in.ReminderAtDueTime, in.ReminderOffsetDays, nullableString(cleanReminderTime))
+	item, err = app.DB.SetItemReminder(r.Context(), item.ID, in.ReminderEnabled, resolvedOffsetDays, resolvedReminderTime, resolvedAtDueTime)
 	if err != nil {
 		app.serverError(w, r, err)
 		return
+	}
+	// A new item is never done, so it has no next occurrence to schedule —
+	// only a due time needs writing.
+	if cleanDueTime != "" {
+		item, err = app.DB.SetItemSchedule(r.Context(), item.ID, nullableString(cleanDueTime), nil)
+		if err != nil {
+			app.serverError(w, r, err)
+			return
+		}
 	}
 	// A brand new item has no "before" state to compare against, so it can
 	// only ever transition from inactive to active — see
@@ -297,6 +343,8 @@ func (app *Application) handleItemsUpdate(w http.ResponseWriter, r *http.Request
 		ReminderEnabled       bool     `json:"reminder_enabled"`
 		ReminderOffsetDays    *int     `json:"reminder_offset_days"`
 		ReminderTime          string   `json:"reminder_time"`
+		ReminderAtDueTime     *bool    `json:"reminder_at_due_time"`
+		DueTime               string   `json:"due_time"`
 	}
 	if !decodeJSON(w, r, &in) {
 		return
@@ -341,6 +389,11 @@ func (app *Application) handleItemsUpdate(w http.ResponseWriter, r *http.Request
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
+	cleanDueTime, err := validateDueTime(in.DueTime, cleanDueDate)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
 	cleanRecurrenceRule, err := validate.Recurrence(in.RecurrenceRule)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
@@ -379,29 +432,20 @@ func (app *Application) handleItemsUpdate(w http.ResponseWriter, r *http.Request
 		imageURL = nil
 	}
 
-	// A recurring item being checked off (false → true) doesn't stay done —
-	// see applyRecurrenceCompletion — so the done/due_date actually
-	// persisted below may differ from what was requested. This is computed
-	// against a scratch models.Item rather than existing/in directly so the
-	// same helper can be shared with handleItemsPatch.
-	advanced := &models.Item{
+	// A recurring item's next occurrence (see applyRecurrenceLifecycle) is
+	// computed against a scratch models.Item rather than existing/in
+	// directly so the same helper can be shared with handleItemsPatch.
+	scheduled := &models.Item{
 		Done:              in.Done,
 		DueDate:           nullableString(cleanDueDate),
 		RecurrenceRule:    nullableString(cleanRecurrenceRule),
 		RecurrenceEndDate: nullableString(cleanRecurrenceEndDate),
 	}
-	// Captured before applyRecurrenceCompletion runs: for a recurring item,
-	// that call flips advanced.Done back to false the moment it detects this
-	// same false→true transition, so checking advanced.Done afterward could
-	// no longer tell a genuine check-off apart from an item that was never
-	// touched — see notifyListChange below, which needs to know a check-off
-	// happened at all, regardless of whether the item then immediately
-	// un-checked itself for its next occurrence.
 	justCompleted := !existing.Done && in.Done
-	applyRecurrenceCompletion(advanced, existing.Done)
+	applyRecurrenceLifecycle(scheduled, existing, app.today())
 
-	item, err := app.DB.UpdateItem(r.Context(), id, in.Title, nullableString(cleanURL), in.Quantity, in.Price, false, imageURL, advanced.Done, in.Position,
-		nullableString(cleanMonth), advanced.DueDate, advanced.RecurrenceRule, advanced.RecurrenceEndDate, in.IsUrgent, in.RecurrenceLeadMinutes,
+	item, err := app.DB.UpdateItem(r.Context(), id, in.Title, nullableString(cleanURL), in.Quantity, in.Price, false, imageURL, scheduled.Done, in.Position,
+		nullableString(cleanMonth), scheduled.DueDate, scheduled.RecurrenceRule, scheduled.RecurrenceEndDate, in.IsUrgent, in.RecurrenceLeadMinutes,
 		in.TargetPrice, in.AlertOnPriceDrop)
 	if errors.Is(err, db.ErrNotFound) {
 		writeError(w, http.StatusNotFound, "item not found")
@@ -424,8 +468,13 @@ func (app *Application) handleItemsUpdate(w http.ResponseWriter, r *http.Request
 	// resolveReminderDefaults' own doc comment for why offset/time are
 	// resolved from the caller's own current defaults right here rather
 	// than left for the scan to re-derive later.
-	resolvedOffsetDays, resolvedReminderTime := resolveReminderDefaults(userFromContext(r), in.ReminderEnabled, in.ReminderOffsetDays, nullableString(cleanReminderTime))
-	item, err = app.DB.SetItemReminder(r.Context(), item.ID, in.ReminderEnabled, resolvedOffsetDays, resolvedReminderTime)
+	resolvedAtDueTime, resolvedOffsetDays, resolvedReminderTime := resolveReminderDefaults(userFromContext(r), in.ReminderEnabled, in.ReminderAtDueTime, in.ReminderOffsetDays, nullableString(cleanReminderTime))
+	item, err = app.DB.SetItemReminder(r.Context(), item.ID, in.ReminderEnabled, resolvedOffsetDays, resolvedReminderTime, resolvedAtDueTime)
+	if err != nil {
+		app.serverError(w, r, err)
+		return
+	}
+	item, err = app.DB.SetItemSchedule(r.Context(), item.ID, nullableString(cleanDueTime), scheduled.NextDueDate)
 	if err != nil {
 		app.serverError(w, r, err)
 		return
@@ -479,6 +528,8 @@ func (app *Application) handleItemsPatch(w http.ResponseWriter, r *http.Request)
 		ReminderEnabled       *bool           `json:"reminder_enabled"`
 		ReminderOffsetDays    json.RawMessage `json:"reminder_offset_days"`
 		ReminderTime          *string         `json:"reminder_time"`
+		ReminderAtDueTime     json.RawMessage `json:"reminder_at_due_time"`
+		DueTime               *string         `json:"due_time"`
 	}
 	if !decodeJSON(w, r, &in) {
 		return
@@ -496,10 +547,14 @@ func (app *Application) handleItemsPatch(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	previousURL := stringValue(item.URL)
-	previousDone := item.Done
+	// before is the item as it stands prior to this request — every field
+	// below is reassigned rather than mutated in place, so a shallow copy is
+	// enough. applyRecurrenceLifecycle and the check-off notification
+	// compare against it.
+	before := *item
 	// See checkPriceDropAlert's wasActive contract: captured before any of
 	// this request's mutations are applied below, the same reasoning as
-	// previousURL/previousDone.
+	// previousURL/before.
 	wasPriceAlertActive := priceAlertCondition(item)
 
 	if in.Title != nil {
@@ -590,6 +645,24 @@ func (app *Application) handleItemsPatch(w http.ResponseWriter, r *http.Request)
 		}
 		item.DueDate = nullableString(cleanDueDate)
 	}
+	// Same absent/empty/value convention as DueDate. A due time only means
+	// something next to a due date, so clearing the date clears the time
+	// with it, and setting a time on an item with no date is refused.
+	if in.DueTime != nil {
+		cleanDueTime, err := validate.TimeOfDay(*in.DueTime)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		item.DueTime = nullableString(cleanDueTime)
+	}
+	if item.DueDate == nil {
+		if in.DueTime != nil && item.DueTime != nil {
+			writeError(w, http.StatusBadRequest, errDueTimeWithoutDate.Error())
+			return
+		}
+		item.DueTime = nil
+	}
 	if in.RecurrenceRule != nil {
 		cleanRecurrenceRule, err := validate.Recurrence(*in.RecurrenceRule)
 		if err != nil {
@@ -598,9 +671,9 @@ func (app *Application) handleItemsPatch(w http.ResponseWriter, r *http.Request)
 		}
 		item.RecurrenceRule = nullableString(cleanRecurrenceRule)
 		if item.RecurrenceRule == nil {
-			// Turning recurrence off entirely: due_date/recurrence_end_date
-			// only mean anything while the item is recurring.
-			item.DueDate = nil
+			// Turning recurrence off: the end date only means anything
+			// while the item recurs. due_date is kept — any item can have
+			// one (and a reminder on it), recurring or not.
 			item.RecurrenceEndDate = nil
 		}
 	}
@@ -641,9 +714,25 @@ func (app *Application) handleItemsPatch(w http.ResponseWriter, r *http.Request)
 	// actually present in the request, mirroring in.Labels' own "only write
 	// when the field was present" gate below — a plain "done" toggle must
 	// not trigger an extra SetItemReminder write.
-	touchedReminder := in.ReminderEnabled != nil || in.ReminderOffsetDays != nil || in.ReminderTime != nil
+	touchedReminder := in.ReminderEnabled != nil || in.ReminderOffsetDays != nil || in.ReminderTime != nil || in.ReminderAtDueTime != nil
 	if in.ReminderEnabled != nil {
 		item.ReminderEnabled = *in.ReminderEnabled
+	}
+	// Same absent/null/value three-way as ReminderOffsetDays below: absent
+	// keeps the item's current mode, "null" means "use my current default",
+	// a boolean sets it.
+	reminderAtDueTime := &before.ReminderAtDueTime
+	if in.ReminderAtDueTime != nil {
+		if string(in.ReminderAtDueTime) == "null" {
+			reminderAtDueTime = nil
+		} else {
+			var atDueTime bool
+			if err := json.Unmarshal(in.ReminderAtDueTime, &atDueTime); err != nil {
+				writeError(w, http.StatusBadRequest, "reminder_at_due_time must be a boolean")
+				return
+			}
+			reminderAtDueTime = &atDueTime
+		}
 	}
 	// Same absent/null/number three-way as Price/TargetPrice above: absent
 	// leaves item.ReminderOffsetDays untouched, "null" clears the per-item
@@ -710,15 +799,12 @@ func (app *Application) handleItemsPatch(w http.ResponseWriter, r *http.Request)
 		}
 	}
 
-	// Captured before applyRecurrenceCompletion runs — see the identical
-	// comment in handleItemsUpdate for why this can't be read off
-	// item.Done after that call for a recurring item.
-	justCompleted := !previousDone && item.Done
+	justCompleted := !before.Done && item.Done
 
-	// See applyRecurrenceCompletion: a recurring item being checked off
-	// (false → true) here advances due_date and flips Done back to false
-	// instead of actually persisting as done.
-	applyRecurrenceCompletion(item, previousDone)
+	// See applyRecurrenceLifecycle: a recurring item being checked off
+	// (false → true) stays done here, with next_due_date set to its next
+	// occurrence; un-checking it cancels that.
+	applyRecurrenceLifecycle(item, &before, app.today())
 
 	updated, err := app.DB.UpdateItem(r.Context(), id, item.Title, item.URL, item.Quantity, item.Price, item.PriceAuto, item.ImageURL, item.Done, item.Position,
 		item.TargetMonth, item.DueDate, item.RecurrenceRule, item.RecurrenceEndDate, item.IsUrgent, item.RecurrenceLeadMinutes,
@@ -742,8 +828,17 @@ func (app *Application) handleItemsPatch(w http.ResponseWriter, r *http.Request)
 	// resolved from the caller's own current defaults right here rather
 	// than left for the scan to re-derive later.
 	if touchedReminder {
-		resolvedOffsetDays, resolvedReminderTime := resolveReminderDefaults(userFromContext(r), item.ReminderEnabled, item.ReminderOffsetDays, item.ReminderTime)
-		updated, err = app.DB.SetItemReminder(r.Context(), updated.ID, item.ReminderEnabled, resolvedOffsetDays, resolvedReminderTime)
+		resolvedAtDueTime, resolvedOffsetDays, resolvedReminderTime := resolveReminderDefaults(userFromContext(r), item.ReminderEnabled, reminderAtDueTime, item.ReminderOffsetDays, item.ReminderTime)
+		updated, err = app.DB.SetItemReminder(r.Context(), updated.ID, item.ReminderEnabled, resolvedOffsetDays, resolvedReminderTime, resolvedAtDueTime)
+		if err != nil {
+			app.serverError(w, r, err)
+			return
+		}
+	}
+	// Same "only write when something changed" gate: a plain toggle of a
+	// non-recurring item leaves both columns as they were.
+	if stringValue(item.DueTime) != stringValue(before.DueTime) || stringValue(item.NextDueDate) != stringValue(before.NextDueDate) {
+		updated, err = app.DB.SetItemSchedule(r.Context(), updated.ID, item.DueTime, item.NextDueDate)
 		if err != nil {
 			app.serverError(w, r, err)
 			return

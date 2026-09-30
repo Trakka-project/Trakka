@@ -92,8 +92,8 @@ function monthsFromNow(count) {
 // but not "novembre 2026" in fr-FR, hence the manual capitalization below.
 function monthLabel(monthStr, style) {
   const [year, month] = monthStr.split('-').map(Number);
-  const locale = window.TrakkaI18n && TrakkaI18n.getLang() === 'en' ? 'en-US' : 'fr-FR';
-  const formatted = new Intl.DateTimeFormat(locale, { month: style === 'short' ? 'short' : 'long', year: 'numeric' }).format(
+  // intlLocale is defined in list_view.js.
+  const formatted = new Intl.DateTimeFormat(intlLocale(), { month: style === 'short' ? 'short' : 'long', year: 'numeric' }).format(
     new Date(year, month - 1, 1)
   );
   return formatted.charAt(0).toUpperCase() + formatted.slice(1);
@@ -265,37 +265,13 @@ function refreshPlanningIfActive() {
 }
 
 // ---------------------------------------------------------------------------
-// Recurring-item budget projection. This is a third hand-kept port of the
-// occurrence-advance logic in internal/handlers/recurrence.go's
-// nextDueDate (static/sw.js's nextDueDateOffline is the second) — there is
-// no way to share code between the Go backend, the service worker, and this
-// page script, so any change to how the Go/JS advance logic interprets a
-// recurrence_rule must be mirrored here too.
+// Recurring-item budget projection. The occurrence arithmetic comes from
+// static/js/recurrence.js (TrakkaRecurrence), the single JS port of
+// internal/recurrence shared with list_view.js and the service worker.
 // ---------------------------------------------------------------------------
 
 function todayISO() {
   return new Date().toISOString().slice(0, 10);
-}
-
-function nextOccurrenceDate(currentDate, rule) {
-  const base = currentDate ? new Date(`${currentDate}T00:00:00Z`) : new Date();
-  if (Number.isNaN(base.getTime())) return null;
-
-  if (rule === 'DAILY') {
-    base.setUTCDate(base.getUTCDate() + 1);
-  } else if (rule === 'WEEKLY') {
-    base.setUTCDate(base.getUTCDate() + 7);
-  } else if (rule === 'MONTHLY') {
-    base.setUTCMonth(base.getUTCMonth() + 1);
-  } else if (rule === 'YEARLY') {
-    base.setUTCFullYear(base.getUTCFullYear() + 1);
-  } else {
-    const match = /^EVERY_X_DAYS:([1-9][0-9]*)$/.exec(rule || '');
-    if (!match) return null;
-    base.setUTCDate(base.getUTCDate() + Number(match[1]));
-  }
-
-  return base.toISOString().slice(0, 10);
 }
 
 // Walks a recurring item's occurrence dates forward, starting from its
@@ -304,9 +280,9 @@ function nextOccurrenceDate(currentDate, rule) {
 // and tallies how many occurrences land in each month of `range`. A MONTHLY
 // item lands exactly once per month (so a 10€ monthly item adds 10€ to
 // every projected month); a WEEKLY item can land 4-5 times in a given
-// month; an EVERY_X_DAYS:90 item — the closest this app's recurrence
-// vocabulary gets to "quarterly", since there's no dedicated QUARTERLY rule
-// — lands roughly once every three months, i.e. in one month out of three.
+// month (a FREQ=WEEKLY;BYDAY=MO,WE,FR one, 12-14 times); a
+// FREQ=MONTHLY;INTERVAL=3 ("quarterly") item lands in one month out of
+// three.
 // Occurrences past the item's recurrence_end_date, or past the end of
 // `range`, are not counted. Returns a Map<"YYYY-MM", occurrenceCount>.
 function projectRecurringOccurrences(item, range) {
@@ -317,7 +293,15 @@ function projectRecurringOccurrences(item, range) {
   const [lastYear, lastMonthNum] = range[range.length - 1].split('-').map(Number);
   const rangeEnd = new Date(Date.UTC(lastYear, lastMonthNum, 0)).toISOString().slice(0, 10);
 
-  let current = item.due_date || todayISO();
+  // A checked-off recurring item waits in "Terminés" for its next
+  // occurrence (next_due_date): the occurrence it completed is paid and
+  // doesn't count, and a finished series (no next_due_date) projects
+  // nothing. An active one starts from its own due date.
+  let current = item.done ? item.next_due_date : item.due_date || todayISO();
+  if (!current) return counts;
+  // Parsed once for the whole walk. An unrecognized rule parses to null,
+  // which occurrenceAfter answers with null: only `current` then counts.
+  const rule = TrakkaRecurrence.parseRule(item.recurrence_rule);
   let iterations = 0;
   const maxIterations = 3660; // generous cap: ~10 years of DAILY occurrences
 
@@ -328,7 +312,7 @@ function projectRecurringOccurrences(item, range) {
     const month = current.slice(0, 7);
     if (rangeMonths.has(month)) counts.set(month, (counts.get(month) || 0) + 1);
 
-    const next = nextOccurrenceDate(current, item.recurrence_rule);
+    const next = TrakkaRecurrence.occurrenceAfter(current, rule);
     if (!next || next <= current) break; // unrecognized rule, or no progress — avoid looping forever
     current = next;
   }
