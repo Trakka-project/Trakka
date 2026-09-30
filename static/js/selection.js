@@ -366,12 +366,16 @@ function bulkToggleDone() {
   for (const item of items) {
     const pending = pendingToggles.get(item);
     const committedDone = pending ? pending.committedDone : item.done;
+    const committedNextDueDate = pending ? pending.committedNextDueDate : (item.next_due_date ?? null);
     if (pending) pending.dismiss();
-    item.done = newDone;
+    // Same optimistic state as toggleDone (setItemDoneOptimistic is
+    // defined in list_view.js).
+    setItemDoneOptimistic(item, newDone);
     if (newDone === committedDone) {
       pendingToggles.delete(item); // back to the server-confirmed state — nothing to send
+      item.next_due_date = committedNextDueDate;
     } else {
-      entries.push({ item, committedDone });
+      entries.push({ item, committedDone, committedNextDueDate });
     }
   }
   renderItems();
@@ -385,10 +389,11 @@ function bulkToggleDone() {
     message: t(`bulk.${newDone ? 'markedDone' : 'markedUndone'}${plural}`, { count: entries.length }),
     undoLabel: t('undo.cancel'),
     onUndo: () => {
-      for (const { item, committedDone } of entries) {
+      for (const { item, committedDone, committedNextDueDate } of entries) {
         if (!ownsItem(item)) continue;
         pendingToggles.delete(item);
         item.done = committedDone;
+        item.next_due_date = committedNextDueDate;
       }
       renderItems();
       notifyItemsChanged(listId, list.items);
@@ -397,12 +402,14 @@ function bulkToggleDone() {
       const toSend = entries.filter(({ item }) => ownsItem(item));
       for (const { item } of toSend) pendingToggles.delete(item);
       const errors = [];
-      await runWithConcurrency(toSend, BULK_REQUEST_CONCURRENCY, async ({ item, committedDone }) => {
+      await runWithConcurrency(toSend, BULK_REQUEST_CONCURRENCY, async ({ item, committedDone, committedNextDueDate }) => {
         try {
           const updated = await apiRequest(`/items/${item.id}`, { method: 'PATCH', body: JSON.stringify({ done: newDone }) });
-          Object.assign(item, updated);
+          // mergeServerItem is defined in list_view.js.
+          mergeServerItem(item, updated);
         } catch (err) {
           item.done = committedDone;
+          item.next_due_date = committedNextDueDate;
           errors.push(err);
         }
       });
@@ -419,9 +426,9 @@ function bulkToggleDone() {
       await refreshPendingBadge();
     },
   });
-  for (const { item, committedDone } of entries) {
+  for (const { item, committedDone, committedNextDueDate } of entries) {
     // dismiss is a no-op: superseding one item must not cancel the batch.
-    pendingToggles.set(item, { batch, committedDone, dismiss() {} });
+    pendingToggles.set(item, { batch, committedDone, committedNextDueDate, dismiss() {} });
   }
 }
 

@@ -14,6 +14,24 @@ type rowScanner interface {
 	Scan(dest ...any) error
 }
 
+// dueReminderKeyExpr is the value due_reminder_sent_for holds once the
+// reminder for an item's current due date/time has been pushed:
+// "YYYY-MM-DD", or "YYYY-MM-DDTHH:MM" when the item has a due_time (see
+// MarkDueReminderSent and migration 21). NULL when there is no due_date.
+const dueReminderKeyExpr = `items.due_date || COALESCE('T' || items.due_time, '')`
+
+// itemSelectColumns is the column list scanItem expects, in order. Every
+// query that feeds scanItem selects exactly this, qualified with items. so
+// it also works in queries joining lists. notification_sent_at is only
+// reported while it belongs to the current due date/time (see
+// models.Item.NotificationSentAt).
+const itemSelectColumns = `items.id, items.list_id, items.title, items.url, items.quantity, items.done, items.position, items.created_at, items.updated_at,
+		 items.price, items.price_auto, items.image_url, items.target_month,
+		 items.due_date, items.is_recurring, items.recurrence_rule, items.recurrence_end_date, items.is_urgent, items.recurrence_lead_minutes,
+		 items.target_price, items.alert_on_price_drop, items.labels, items.reminder_enabled, items.reminder_offset_days, items.reminder_time,
+		 items.due_time, items.next_due_date, items.reminder_at_due_time,
+		 CASE WHEN items.due_reminder_sent_for = ` + dueReminderKeyExpr + ` THEN items.notification_sent_at END`
+
 func scanItem(row rowScanner) (*models.Item, error) {
 	it := &models.Item{}
 	var done int
@@ -33,10 +51,15 @@ func scanItem(row rowScanner) (*models.Item, error) {
 	var reminderEnabled int
 	var reminderOffsetDays sql.NullInt64
 	var reminderTime sql.NullString
+	var dueTime sql.NullString
+	var nextDueDate sql.NullString
+	var reminderAtDueTime int
+	var notificationSentAt sql.NullString
 	if err := row.Scan(&it.ID, &it.ListID, &it.Title, &it.URL, &it.Quantity, &done,
 		&it.Position, &it.CreatedAt, &it.UpdatedAt, &price, &priceAuto, &imageURL, &targetMonth,
 		&dueDate, &isRecurring, &recurrenceRule, &recurrenceEndDate, &isUrgent, &recurrenceLeadMinutes,
-		&targetPrice, &alertOnPriceDrop, &labelsJSON, &reminderEnabled, &reminderOffsetDays, &reminderTime); err != nil {
+		&targetPrice, &alertOnPriceDrop, &labelsJSON, &reminderEnabled, &reminderOffsetDays, &reminderTime,
+		&dueTime, &nextDueDate, &reminderAtDueTime, &notificationSentAt); err != nil {
 		return nil, err
 	}
 	it.Done = done != 0
@@ -44,32 +67,14 @@ func scanItem(row rowScanner) (*models.Item, error) {
 		it.Price = &price.Float64
 	}
 	it.PriceAuto = priceAuto != 0
-	if imageURL.Valid && imageURL.String != "" {
-		s := imageURL.String
-		it.ImageURL = &s
-	}
-	if targetMonth.Valid && targetMonth.String != "" {
-		s := targetMonth.String
-		it.TargetMonth = &s
-	}
-	if dueDate.Valid && dueDate.String != "" {
-		s := dueDate.String
-		it.DueDate = &s
-	}
+	it.ImageURL = nullStringPtr(imageURL)
+	it.TargetMonth = nullStringPtr(targetMonth)
+	it.DueDate = nullStringPtr(dueDate)
 	it.IsRecurring = isRecurring != 0
-	if recurrenceRule.Valid && recurrenceRule.String != "" {
-		s := recurrenceRule.String
-		it.RecurrenceRule = &s
-	}
-	if recurrenceEndDate.Valid && recurrenceEndDate.String != "" {
-		s := recurrenceEndDate.String
-		it.RecurrenceEndDate = &s
-	}
+	it.RecurrenceRule = nullStringPtr(recurrenceRule)
+	it.RecurrenceEndDate = nullStringPtr(recurrenceEndDate)
 	it.IsUrgent = isUrgent != 0
-	if recurrenceLeadMinutes.Valid {
-		n := int(recurrenceLeadMinutes.Int64)
-		it.RecurrenceLeadMinutes = &n
-	}
+	it.RecurrenceLeadMinutes = nullIntPtr(recurrenceLeadMinutes)
 	if targetPrice.Valid {
 		it.TargetPrice = &targetPrice.Float64
 	}
@@ -85,14 +90,12 @@ func scanItem(row rowScanner) (*models.Item, error) {
 	}
 	it.Labels = labels
 	it.ReminderEnabled = reminderEnabled != 0
-	if reminderOffsetDays.Valid {
-		n := int(reminderOffsetDays.Int64)
-		it.ReminderOffsetDays = &n
-	}
-	if reminderTime.Valid && reminderTime.String != "" {
-		s := reminderTime.String
-		it.ReminderTime = &s
-	}
+	it.ReminderOffsetDays = nullIntPtr(reminderOffsetDays)
+	it.ReminderTime = nullStringPtr(reminderTime)
+	it.DueTime = nullStringPtr(dueTime)
+	it.NextDueDate = nullStringPtr(nextDueDate)
+	it.ReminderAtDueTime = reminderAtDueTime != 0
+	it.NotificationSentAt = nullStringPtr(notificationSentAt)
 	return it, nil
 }
 
@@ -101,8 +104,7 @@ func scanItem(row rowScanner) (*models.Item, error) {
 // callers that need existence checked should call GetList first.
 func (d *DB) ListItemsByList(ctx context.Context, listID int64) ([]*models.Item, error) {
 	rows, err := d.conn.QueryContext(ctx,
-		`SELECT id, list_id, title, url, quantity, done, position, created_at, updated_at, price, price_auto, image_url, target_month,
-		 due_date, is_recurring, recurrence_rule, recurrence_end_date, is_urgent, recurrence_lead_minutes, target_price, alert_on_price_drop, labels, reminder_enabled, reminder_offset_days, reminder_time
+		`SELECT `+itemSelectColumns+`
 		 FROM items WHERE list_id = ? ORDER BY position ASC, id ASC`, listID)
 	if err != nil {
 		return nil, fmt.Errorf("querying items for list %d: %w", listID, err)
@@ -161,8 +163,7 @@ func (d *DB) CreateItem(ctx context.Context, listID int64, title string, url *st
 // exists.
 func (d *DB) GetItem(ctx context.Context, id int64) (*models.Item, error) {
 	row := d.conn.QueryRowContext(ctx,
-		`SELECT id, list_id, title, url, quantity, done, position, created_at, updated_at, price, price_auto, image_url, target_month,
-		 due_date, is_recurring, recurrence_rule, recurrence_end_date, is_urgent, recurrence_lead_minutes, target_price, alert_on_price_drop, labels, reminder_enabled, reminder_offset_days, reminder_time
+		`SELECT `+itemSelectColumns+`
 		 FROM items WHERE id = ?`, id)
 	item, err := scanItem(row)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -185,10 +186,9 @@ func (d *DB) GetItem(ctx context.Context, id int64) (*models.Item, error) {
 // internal/handlers/items.go, which computes this before calling in).
 // targetMonth is the planned purchase month (YYYY-MM) or nil to leave the
 // item unscheduled. dueDate/recurrenceRule/recurrenceEndDate follow the
-// same validation/is_recurring-derivation rules as CreateItem — callers
-// (internal/handlers) are expected to have already run a recurring item's
-// completion through applyRecurrenceCompletion before calling this, so
-// done/dueDate here already reflect any auto-advance. isUrgent is a plain
+// same validation/is_recurring-derivation rules as CreateItem; a recurring
+// item's next_due_date/due_time are written separately by SetItemSchedule
+// (see internal/handlers.applyRecurrenceLifecycle). isUrgent is a plain
 // user-set flag, independent of every other field here — see
 // models.Item.IsUrgent. recurrenceLeadMinutes follows the same
 // "nil means use the instance default" convention as CreateItem. Returns
@@ -343,21 +343,21 @@ func (d *DB) SetItemLabels(ctx context.Context, id int64, labels []string) (*mod
 }
 
 // SetItemReminder replaces an item's whole due-date-reminder configuration
-// (see models.Item.ReminderEnabled/ReminderOffsetDays/ReminderTime) and
-// returns the updated row. Kept as its own method rather than folded into
-// CreateItem/UpdateItem's already-long parameter list, the same reasoning
-// SetItemLabels already established. Callers (internal/handlers) are
-// responsible for resolving offsetDays/timeOfDay to concrete values from the
-// acting user's own reminder defaults whenever the request asked to use
-// "the default" rather than an explicit per-item override — this method
-// only persists whatever it's given. offsetDays/timeOfDay are typically nil
-// exactly when enabled is false. Returns ErrNotFound if no such item
-// exists.
-func (d *DB) SetItemReminder(ctx context.Context, id int64, enabled bool, offsetDays *int, timeOfDay *string) (*models.Item, error) {
+// (see models.Item.ReminderEnabled/ReminderOffsetDays/ReminderTime/
+// ReminderAtDueTime) and returns the updated row. Kept as its own method
+// rather than folded into CreateItem/UpdateItem's already-long parameter
+// list, the same reasoning SetItemLabels already established. Callers
+// (internal/handlers) are responsible for resolving offsetDays/timeOfDay/
+// atDueTime to concrete values from the acting user's own reminder defaults
+// whenever the request asked to use "the default" rather than an explicit
+// per-item override — this method only persists whatever it's given.
+// offsetDays/timeOfDay are typically nil (and atDueTime false) exactly when
+// enabled is false. Returns ErrNotFound if no such item exists.
+func (d *DB) SetItemReminder(ctx context.Context, id int64, enabled bool, offsetDays *int, timeOfDay *string, atDueTime bool) (*models.Item, error) {
 	res, err := d.conn.ExecContext(ctx,
-		`UPDATE items SET reminder_enabled = ?, reminder_offset_days = ?, reminder_time = ?,
+		`UPDATE items SET reminder_enabled = ?, reminder_offset_days = ?, reminder_time = ?, reminder_at_due_time = ?,
 		 updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE id = ?`,
-		boolToInt(enabled), offsetDays, timeOfDay, id)
+		boolToInt(enabled), offsetDays, timeOfDay, boolToInt(atDueTime), id)
 	if err != nil {
 		return nil, fmt.Errorf("updating reminder for item %d: %w", id, err)
 	}
@@ -369,6 +369,50 @@ func (d *DB) SetItemReminder(ctx context.Context, id int64, enabled bool, offset
 		return nil, ErrNotFound
 	}
 	return d.GetItem(ctx, id)
+}
+
+// SetItemSchedule writes an item's due_time and next_due_date (see
+// models.Item.DueTime/NextDueDate) and returns the updated row — a separate
+// method for the same "too many positional params" reason as
+// SetItemLabels/SetItemReminder. The caller must already have validated
+// dueTime (internal/validate.TimeOfDay, nil without a due date) and
+// computed nextDueDate (internal/handlers.applyRecurrenceLifecycle).
+// Returns ErrNotFound if no such item exists.
+func (d *DB) SetItemSchedule(ctx context.Context, id int64, dueTime, nextDueDate *string) (*models.Item, error) {
+	res, err := d.conn.ExecContext(ctx,
+		`UPDATE items SET due_time = ?, next_due_date = ?,
+		 updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE id = ?`,
+		dueTime, nextDueDate, id)
+	if err != nil {
+		return nil, fmt.Errorf("updating schedule for item %d: %w", id, err)
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return nil, fmt.Errorf("reading rows affected for item %d: %w", id, err)
+	}
+	if n == 0 {
+		return nil, ErrNotFound
+	}
+	return d.GetItem(ctx, id)
+}
+
+// nullStringPtr maps a nullable TEXT column to the *string models use: nil
+// for NULL and for "" alike.
+func nullStringPtr(ns sql.NullString) *string {
+	if !ns.Valid || ns.String == "" {
+		return nil
+	}
+	s := ns.String
+	return &s
+}
+
+// nullIntPtr maps a nullable INTEGER column to *int, nil for NULL.
+func nullIntPtr(n sql.NullInt64) *int {
+	if !n.Valid {
+		return nil
+	}
+	v := int(n.Int64)
+	return &v
 }
 
 func boolToInt(b bool) int {

@@ -36,7 +36,7 @@ func TestListItemsForDueReminderScan(t *testing.T) {
 	if err != nil {
 		t.Fatalf("creating plain task: %v", err)
 	}
-	if _, err := d.SetItemReminder(ctx, plainTask.ID, true, &offsetDays, &timeOfDay); err != nil {
+	if _, err := d.SetItemReminder(ctx, plainTask.ID, true, &offsetDays, &timeOfDay, false); err != nil {
 		t.Fatalf("SetItemReminder: %v", err)
 	}
 
@@ -48,7 +48,7 @@ func TestListItemsForDueReminderScan(t *testing.T) {
 	if err != nil {
 		t.Fatalf("creating recurring item: %v", err)
 	}
-	if _, err := d.SetItemReminder(ctx, recurring.ID, true, &offsetDays, &timeOfDay); err != nil {
+	if _, err := d.SetItemReminder(ctx, recurring.ID, true, &offsetDays, &timeOfDay, false); err != nil {
 		t.Fatalf("SetItemReminder: %v", err)
 	}
 
@@ -61,14 +61,14 @@ func TestListItemsForDueReminderScan(t *testing.T) {
 	if err != nil {
 		t.Fatalf("creating item with reminder disabled: %v", err)
 	}
-	if _, err := d.SetItemReminder(ctx, disabled.ID, false, nil, nil); err != nil {
+	if _, err := d.SetItemReminder(ctx, disabled.ID, false, nil, nil, false); err != nil {
 		t.Fatalf("SetItemReminder: %v", err)
 	}
 	doneTask, err := d.CreateItem(ctx, list.ID, "Déjà faite", nil, 1, nil, false, 0, nil, &due, nil, nil, false, nil, nil, false)
 	if err != nil {
 		t.Fatalf("creating done task: %v", err)
 	}
-	if _, err := d.SetItemReminder(ctx, doneTask.ID, true, &offsetDays, &timeOfDay); err != nil {
+	if _, err := d.SetItemReminder(ctx, doneTask.ID, true, &offsetDays, &timeOfDay, false); err != nil {
 		t.Fatalf("SetItemReminder: %v", err)
 	}
 	if _, err := d.UpdateItem(ctx, doneTask.ID, doneTask.Title, doneTask.URL, doneTask.Quantity, doneTask.Price, doneTask.PriceAuto, doneTask.ImageURL,
@@ -143,5 +143,82 @@ func TestListItemsForDueReminderScan(t *testing.T) {
 	}
 	if len(rearmed) != 2 || byID[plainTask.ID] == nil || byID[plainTask.ID].DueDate != newDue {
 		t.Fatalf("expected the plain task to re-arm with its new due date, got %+v", rearmed)
+	}
+}
+
+// TestDueReminderKeyIncludesDueTime covers migration 21's dedup key: an
+// item with a due time is marked sent under "date T time", so moving the
+// task to another time re-arms its reminder, and notification_sent_at is
+// only reported while it belongs to the current due date/time.
+func TestDueReminderKeyIncludesDueTime(t *testing.T) {
+	ctx := context.Background()
+	d := openTestDB(t)
+	owner := mustCreateUser(t, ctx, d)
+	house, err := d.CreateHouseWithOwner(ctx, "Maison Test", owner)
+	if err != nil {
+		t.Fatalf("creating house: %v", err)
+	}
+	list, err := d.CreateList(ctx, "Tâches", "todo", house.ID, nil, "")
+	if err != nil {
+		t.Fatalf("CreateList: %v", err)
+	}
+
+	due := "2026-01-10"
+	offsetDays := 0
+	timeOfDay := "09:00"
+	item, err := d.CreateItem(ctx, list.ID, "Rendez-vous", nil, 1, nil, false, 0, nil, &due, nil, nil, false, nil, nil, false)
+	if err != nil {
+		t.Fatalf("CreateItem: %v", err)
+	}
+	if _, err := d.SetItemReminder(ctx, item.ID, true, &offsetDays, &timeOfDay, true); err != nil {
+		t.Fatalf("SetItemReminder: %v", err)
+	}
+	dueTime := "18:30"
+	if _, err := d.SetItemSchedule(ctx, item.ID, &dueTime, nil); err != nil {
+		t.Fatalf("SetItemSchedule: %v", err)
+	}
+
+	candidates, err := d.ListItemsForDueReminderScan(ctx)
+	if err != nil {
+		t.Fatalf("ListItemsForDueReminderScan: %v", err)
+	}
+	if len(candidates) != 1 {
+		t.Fatalf("expected one candidate, got %+v", candidates)
+	}
+	c := candidates[0]
+	if c.DueTime != dueTime || !c.AtDueTime {
+		t.Fatalf("candidate DueTime/AtDueTime = %q/%v, want %q/true", c.DueTime, c.AtDueTime, dueTime)
+	}
+	if c.Key() != "2026-01-10T18:30" {
+		t.Fatalf("Key() = %q, want 2026-01-10T18:30", c.Key())
+	}
+
+	if err := d.MarkDueReminderSent(ctx, item.ID, c.Key()); err != nil {
+		t.Fatalf("MarkDueReminderSent: %v", err)
+	}
+	if left, err := d.ListItemsForDueReminderScan(ctx); err != nil || len(left) != 0 {
+		t.Fatalf("expected no candidate once sent, got %+v (err %v)", left, err)
+	}
+	sent, err := d.GetItem(ctx, item.ID)
+	if err != nil {
+		t.Fatalf("GetItem: %v", err)
+	}
+	if sent.NotificationSentAt == nil {
+		t.Fatal("expected notification_sent_at to be reported for the current due time")
+	}
+
+	// Moving the task to another time re-arms it, and the earlier send no
+	// longer counts for it.
+	later := "20:00"
+	moved, err := d.SetItemSchedule(ctx, item.ID, &later, nil)
+	if err != nil {
+		t.Fatalf("SetItemSchedule: %v", err)
+	}
+	if moved.NotificationSentAt != nil {
+		t.Fatalf("expected notification_sent_at to reset after moving the due time, got %q", *moved.NotificationSentAt)
+	}
+	rearmed, err := d.ListItemsForDueReminderScan(ctx)
+	if err != nil || len(rearmed) != 1 || rearmed[0].Key() != "2026-01-10T20:00" {
+		t.Fatalf("expected the item to re-arm at its new time, got %+v (err %v)", rearmed, err)
 	}
 }

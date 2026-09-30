@@ -80,14 +80,27 @@ func TestPrepareRestoreFileMigratesOlderSchema(t *testing.T) {
 	if err := d.SnapshotTo(ctx, snap); err != nil {
 		t.Fatalf("SnapshotTo: %v", err)
 	}
-	// Simulate a backup from before migration 20 by dropping its table and
-	// rewinding user_version on the staged copy.
+	// Simulate a backup from before migration 20 by undoing migrations 20,
+	// 21 and 23 (backup_runs, the task-scheduling columns and index, the
+	// due-reminder index; 22 only rewrites rows) and rewinding user_version
+	// on the staged copy.
 	old, err := Open(snap, logger)
 	if err != nil {
 		t.Fatalf("opening snapshot: %v", err)
 	}
-	if _, err := old.conn.Exec(`DROP TABLE backup_runs`); err != nil {
-		t.Fatalf("dropping backup_runs: %v", err)
+	for _, stmt := range []string{
+		`DROP TABLE backup_runs`,
+		`DROP INDEX idx_items_next_due_date`,
+		`DROP INDEX idx_items_pending_reminder`,
+		`ALTER TABLE items DROP COLUMN due_time`,
+		`ALTER TABLE items DROP COLUMN next_due_date`,
+		`ALTER TABLE items DROP COLUMN notification_sent_at`,
+		`ALTER TABLE items DROP COLUMN reminder_at_due_time`,
+		`ALTER TABLE users DROP COLUMN reminder_default_at_due_time`,
+	} {
+		if _, err := old.conn.Exec(stmt); err != nil {
+			t.Fatalf("%s: %v", stmt, err)
+		}
 	}
 	if _, err := old.conn.Exec(`PRAGMA user_version = 19`); err != nil {
 		t.Fatalf("rewinding user_version: %v", err)

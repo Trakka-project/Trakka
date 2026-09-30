@@ -14,6 +14,7 @@ internal/db/           all database/sql usage lives here — nowhere else import
 internal/auth/         non-HTTP auth logic: bcrypt, session tokens, hand-rolled OIDC client
 internal/handlers/     routing, request validation, JSON responses, session middleware, /auth/... handlers
 internal/validate/     small reusable input validators (currently: URL scheme)
+internal/recurrence/   recurrence rules: parse/normalize the RRULE subset items store (Parse/String), step to the next occurrence (After) and past today (Next); no deps beyond the stdlib; imported by validate (write-path normalization) and handlers (task lifecycle)
 internal/scraper/      best-effort background price lookup for an item's URL (OpenGraph/JSON-LD/microdata)
 internal/webpush/      hand-rolled Web Push: VAPID (RFC 8292) JWT signing, aes128gcm (RFC 8291) payload encryption, delivery
 internal/backup/       encrypted WebDAV backups: key file, chunked AES-256-GCM stream format, minimal WebDAV client (SSRF-guarded), scheduler, restore

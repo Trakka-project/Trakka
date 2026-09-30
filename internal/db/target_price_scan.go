@@ -19,10 +19,7 @@ import (
 // price, so this only matters for one created directly through the API.
 func (d *DB) ListItemsForTargetPriceScan(ctx context.Context) ([]*models.Item, error) {
 	rows, err := d.conn.QueryContext(ctx,
-		`SELECT items.id, items.list_id, items.title, items.url, items.quantity, items.done, items.position, items.created_at, items.updated_at,
-		 items.price, items.price_auto, items.image_url, items.target_month,
-		 items.due_date, items.is_recurring, items.recurrence_rule, items.recurrence_end_date, items.is_urgent, items.recurrence_lead_minutes,
-		 items.target_price, items.alert_on_price_drop, items.labels, items.reminder_enabled, items.reminder_offset_days, items.reminder_time
+		`SELECT `+itemSelectColumns+`
 		 FROM items
 		 JOIN lists ON lists.id = items.list_id
 		 WHERE items.done = 0 AND items.url IS NOT NULL AND items.url != ''

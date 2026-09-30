@@ -178,6 +178,12 @@ func main() {
 		go runDueReminderScanLoop(priceScanCtx, app, cfg.NotifDueScanInterval, logger)
 	}
 
+	// Recurring tasks come back for their next occurrence on their own
+	// fixed one-minute cadence, whether or not push is configured: it is
+	// part of the task lifecycle, not a notification (see
+	// handlers.Application.RunNextOccurrenceScan).
+	go runNextOccurrenceLoop(priceScanCtx, app)
+
 	// Expired sessions are swept on the same detached-context pattern as the
 	// price scan above: nothing deleted them before, so the table grew for
 	// the life of the instance (see db.DeleteExpiredSessions).
@@ -286,6 +292,31 @@ func runDueReminderScanLoop(ctx context.Context, app *handlers.Application, inte
 			return
 		case <-ticker.C:
 			app.RunDueReminderScan(ctx)
+		}
+	}
+}
+
+// nextOccurrenceScanInterval is how often done recurring tasks are checked
+// for a next occurrence that has started. One minute keeps a task's return
+// close to its start of day or reminder moment; the scan reads a partial
+// index of done recurring items only, so it costs next to nothing.
+const nextOccurrenceScanInterval = time.Minute
+
+// runNextOccurrenceLoop brings recurring tasks back for their next
+// occurrence (see handlers.Application.RunNextOccurrenceScan), stopping once
+// ctx is canceled during shutdown. Runs once immediately so occurrences
+// that started while the server was down come back at startup.
+func runNextOccurrenceLoop(ctx context.Context, app *handlers.Application) {
+	ticker := time.NewTicker(nextOccurrenceScanInterval)
+	defer ticker.Stop()
+
+	app.RunNextOccurrenceScan(ctx)
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			app.RunNextOccurrenceScan(ctx)
 		}
 	}
 }

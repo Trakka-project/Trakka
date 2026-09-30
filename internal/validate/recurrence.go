@@ -1,53 +1,28 @@
 package validate
 
 import (
-	"errors"
-	"regexp"
-	"strconv"
 	"strings"
+
+	"trakka/internal/recurrence"
 )
 
 // ErrInvalidRecurrenceRule is returned when a user-supplied recurrence rule
-// isn't one of the recognized forms.
-var ErrInvalidRecurrenceRule = errors.New("recurrence_rule must be one of DAILY, WEEKLY, MONTHLY, YEARLY, or EVERY_X_DAYS:<n>")
+// isn't one internal/recurrence accepts.
+var ErrInvalidRecurrenceRule = recurrence.ErrInvalid
 
-var fixedRecurrenceRules = map[string]bool{
-	"DAILY":   true,
-	"WEEKLY":  true,
-	"MONTHLY": true,
-	"YEARLY":  true,
-}
-
-var everyXDaysPattern = regexp.MustCompile(`^EVERY_X_DAYS:([1-9][0-9]*)$`)
-
-// Recurrence trims and validates a user-supplied recurrence rule string. An
-// empty (or whitespace-only) input is valid and returns "" with no error,
-// meaning "not recurring". A non-empty input must be one of the fixed
-// cadences (DAILY/WEEKLY/MONTHLY/YEARLY, case-insensitive on input but
-// normalized to upper case) or the custom "EVERY_X_DAYS:<n>" form (n a
-// positive integer), e.g. "EVERY_X_DAYS:3" to repeat every 3 days.
+// Recurrence validates a user-supplied recurrence rule and returns its
+// canonical spelling (see internal/recurrence), e.g.
+// "FREQ=WEEKLY;INTERVAL=2;BYDAY=MO,WE,FR". An empty (or whitespace-only)
+// input is valid and returns "" with no error, meaning "not recurring". The
+// legacy forms (DAILY, EVERY_X_DAYS:<n>, ...) are accepted and come back in
+// the canonical RRULE form, so only that form is ever stored.
 func Recurrence(raw string) (string, error) {
-	trimmed := strings.ToUpper(strings.TrimSpace(raw))
-	if trimmed == "" {
+	if strings.TrimSpace(raw) == "" {
 		return "", nil
 	}
-	if fixedRecurrenceRules[trimmed] || everyXDaysPattern.MatchString(trimmed) {
-		return trimmed, nil
-	}
-	return "", ErrInvalidRecurrenceRule
-}
-
-// EveryXDaysInterval reports the N in an already-validated "EVERY_X_DAYS:N"
-// rule, or ok=false if rule isn't that form (including the fixed cadences,
-// which callers should check for separately).
-func EveryXDaysInterval(rule string) (n int, ok bool) {
-	m := everyXDaysPattern.FindStringSubmatch(rule)
-	if m == nil {
-		return 0, false
-	}
-	v, err := strconv.Atoi(m[1])
+	rule, err := recurrence.Parse(raw)
 	if err != nil {
-		return 0, false
+		return "", ErrInvalidRecurrenceRule
 	}
-	return v, true
+	return rule.String(), nil
 }

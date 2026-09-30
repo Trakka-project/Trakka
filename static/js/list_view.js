@@ -58,13 +58,18 @@ const listEls = {
   itemTitle: document.getElementById('item-title'),
   quickAddToggle: document.getElementById('quick-add-toggle'),
   quickAddAdvanced: document.getElementById('quick-add-advanced'),
+  quickAddSchedulePill: document.getElementById('quick-add-schedule-pill'),
+  quickAddSchedulePillLabel: document.getElementById('quick-add-schedule-pill-label'),
   itemUrl: document.getElementById('item-url'),
   itemQuantity: document.getElementById('item-quantity'),
   itemPrice: document.getElementById('item-price'),
   itemTargetPrice: document.getElementById('item-target-price'),
   itemTargetMonth: document.getElementById('item-target-month'),
   itemRecurrence: document.getElementById('item-recurrence'),
+  itemRecurrenceSummary: document.getElementById('item-recurrence-summary'),
+  itemRecurrenceSummaryLabel: document.getElementById('item-recurrence-summary-label'),
   itemDueDate: document.getElementById('item-due-date'),
+  itemDueTime: document.getElementById('item-due-time'),
   itemReminder: document.getElementById('item-reminder'),
   itemReminderCustomFields: document.getElementById('item-reminder-custom-fields'),
   itemReminderOffset: document.getElementById('item-reminder-offset'),
@@ -84,7 +89,10 @@ const listEls = {
   editItemTargetPrice: document.getElementById('edit-item-target-price'),
   editItemTargetMonth: document.getElementById('edit-item-target-month'),
   editItemRecurrence: document.getElementById('edit-item-recurrence'),
+  editItemRecurrenceSummary: document.getElementById('edit-item-recurrence-summary'),
+  editItemRecurrenceSummaryLabel: document.getElementById('edit-item-recurrence-summary-label'),
   editItemDueDate: document.getElementById('edit-item-due-date'),
+  editItemDueTime: document.getElementById('edit-item-due-time'),
   editItemReminder: document.getElementById('edit-item-reminder'),
   editItemReminderCustomFields: document.getElementById('edit-item-reminder-custom-fields'),
   editItemReminderOffset: document.getElementById('edit-item-reminder-offset'),
@@ -536,11 +544,55 @@ function hasAdvancedFields(visibility) {
 // HH:MM" inputs only when the reminder <select> itself is both visible (its
 // list type shows a due date at all — see applyListTypeVisibility) and set
 // to "custom" — every other option (par défaut/le jour même/la veille/
-// désactivé) needs no further input. Called both right after
-// applyListTypeVisibility (a list-type switch can hide the select entirely)
-// and from the select's own 'change' listener.
+// à l'heure de l'échéance/désactivé) needs no further input. Called both
+// right after applyListTypeVisibility (a list-type switch can hide the
+// select entirely) and from the select's own 'change' listener.
 function updateReminderCustomFieldsVisibility(reminderSelect, customFieldsEl) {
   customFieldsEl.hidden = reminderSelect.hidden || reminderSelect.value !== 'custom';
+}
+
+// ---------------------------------------------------------------------------
+// Recurrence <select>s (quick-add panel and edit-item modal). The fixed
+// options carry canonical rules as values ("FREQ=WEEKLY", see
+// static/js/recurrence.js); "Personnalisée…" (value "custom") keeps the rule
+// built in the custom recurrence sheet (recurrence-editor.js) in the
+// select's data-custom-rule, and data-committed-value remembers the last
+// value actually applied, so cancelling the sheet puts the select back.
+// ---------------------------------------------------------------------------
+
+// The rule a recurrence <select> currently stands for: "" (not recurring),
+// a fixed cadence, or its applied custom rule.
+function recurrenceSelectionToRule(select) {
+  return select.value === 'custom' ? select.dataset.customRule || '' : select.value;
+}
+
+// setRecurrenceSelection is recurrenceSelectionToRule's inverse, for
+// populating a select from an item: a rule equal to one of the fixed options
+// selects it, anything else selects "custom" and keeps the rule. A legacy
+// spelling (an offline mirror can still hold one) is normalized first.
+function setRecurrenceSelection(select, rule) {
+  const canonical = rule ? TrakkaRecurrence.normalizeRule(rule) : '';
+  const fixed = Array.from(select.options).some((option) => option.value === canonical && option.value !== 'custom');
+  select.dataset.customRule = canonical && !fixed ? canonical : '';
+  select.value = canonical ? (fixed ? canonical : 'custom') : '';
+  select.dataset.committedValue = select.value;
+}
+
+// Writes textContent only when it differs: rewriting identical text still
+// replaces the text node and invalidates layout, and the recurrence summary
+// and schedule pill below are refreshed on every renderItems.
+function setTextIfChanged(el, text) {
+  if (el.textContent !== text) el.textContent = text;
+}
+
+// The applied custom rule, in words, on the button under a select set to
+// "Personnalisée…" — the way back into the sheet. Hidden otherwise.
+function updateRecurrenceSummary(select, summaryButton, labelEl) {
+  const custom = !select.hidden && select.value === 'custom' && Boolean(select.dataset.customRule);
+  summaryButton.hidden = !custom;
+  const label = custom ? recurrenceBadgeLabel(select.dataset.customRule) || '' : '';
+  setTextIfChanged(labelEl, label);
+  if (custom) summaryButton.setAttribute('aria-label', t('recurrenceEditor.summaryAriaLabel', { rule: label }));
 }
 
 // reminderSelectionToPayload reads a reminder <select>'s current value
@@ -554,21 +606,25 @@ function updateReminderCustomFieldsVisibility(reminderSelect, customFieldsEl) {
 // reminder-resolution logic) — rather than this client guessing at what
 // that default currently is. "Le jour même"/"la veille" are fixed,
 // no-further-input presets (09:00/20:00) — only "Personnalisé" reads the
-// extra inputs.
+// extra inputs. "À l'heure de l'échéance" sets reminder_at_due_time and
+// leaves offset/time to the user's default, which the server keeps as the
+// fallback for a task with no due time.
 function reminderSelectionToPayload(select, offsetInput, timeInput) {
   switch (select.value) {
     case 'off':
       return { reminder_enabled: false };
     case 'same_day':
-      return { reminder_enabled: true, reminder_offset_days: 0, reminder_time: '09:00' };
+      return { reminder_enabled: true, reminder_at_due_time: false, reminder_offset_days: 0, reminder_time: '09:00' };
     case 'day_before':
-      return { reminder_enabled: true, reminder_offset_days: 1, reminder_time: '20:00' };
+      return { reminder_enabled: true, reminder_at_due_time: false, reminder_offset_days: 1, reminder_time: '20:00' };
+    case 'at_due_time':
+      return { reminder_enabled: true, reminder_at_due_time: true, reminder_offset_days: null, reminder_time: '' };
     case 'custom': {
       const offsetDays = Math.max(0, Number.parseInt(offsetInput.value, 10) || 0);
-      return { reminder_enabled: true, reminder_offset_days: offsetDays, reminder_time: timeInput.value || '09:00' };
+      return { reminder_enabled: true, reminder_at_due_time: false, reminder_offset_days: offsetDays, reminder_time: timeInput.value || '09:00' };
     }
     default: // 'default'
-      return { reminder_enabled: true, reminder_offset_days: null, reminder_time: '' };
+      return { reminder_enabled: true, reminder_at_due_time: null, reminder_offset_days: null, reminder_time: '' };
   }
 }
 
@@ -587,6 +643,7 @@ function reminderItemToSelection(item) {
   if (!item.reminder_enabled) return { preset: 'off', offsetDays: 0, time: '09:00' };
   const offsetDays = item.reminder_offset_days ?? 0;
   const time = item.reminder_time || '09:00';
+  if (item.reminder_at_due_time) return { preset: 'at_due_time', offsetDays, time };
   if (offsetDays === 0 && time === '09:00') return { preset: 'same_day', offsetDays, time };
   if (offsetDays === 1 && time === '20:00') return { preset: 'day_before', offsetDays, time };
   return { preset: 'custom', offsetDays, time };
@@ -1185,6 +1242,103 @@ listEls.itemReminder.addEventListener('change', () => {
 listEls.editItemReminder.addEventListener('change', () => {
   updateReminderCustomFieldsVisibility(listEls.editItemReminder, listEls.editItemReminderCustomFields);
 });
+// Wires one recurrence <select> to the custom recurrence sheet: picking
+// "Personnalisée…" (or tapping the summary under it) opens the sheet
+// (openRecurrenceEditor, recurrence-editor.js), seeded with the select's
+// current rule and a start date of the form's due date, or today. Applying
+// stores the rule, and moves the due date to the series' first occurrence
+// — that's what "Date de début" means for a task whose due date is its
+// current occurrence. Cancelling puts the select back as it was.
+function wireRecurrenceSelect(select, summaryButton, labelEl, dueDateInput) {
+  const refresh = () => updateRecurrenceSummary(select, summaryButton, labelEl);
+  const openEditor = () => {
+    const previous = select.dataset.committedValue ?? '';
+    openRecurrenceEditor({
+      rule: select.dataset.customRule || (previous !== 'custom' ? previous : ''),
+      start: dueDateInput.value || TrakkaRecurrence.localDateISO(),
+      // Resolved after onApply/onCancel have updated the form: the summary
+      // once a custom rule is in place, else the select itself.
+      returnFocus: () => (summaryButton.hidden ? select : summaryButton),
+      onApply: (rule, firstDate) => {
+        select.dataset.customRule = rule;
+        select.value = 'custom';
+        select.dataset.committedValue = 'custom';
+        dueDateInput.value = firstDate;
+        dueDateInput.dispatchEvent(new Event('input', { bubbles: true }));
+        dueDateInput.dispatchEvent(new Event('change', { bubbles: true }));
+        refresh();
+      },
+      onCancel: () => {
+        select.value = previous;
+        refresh();
+      },
+    });
+  };
+  select.addEventListener('change', () => {
+    if (select.value === 'custom') {
+      openEditor();
+    } else {
+      select.dataset.committedValue = select.value;
+      refresh();
+    }
+  });
+  summaryButton.addEventListener('click', openEditor);
+}
+
+wireRecurrenceSelect(listEls.itemRecurrence, listEls.itemRecurrenceSummary, listEls.itemRecurrenceSummaryLabel, listEls.itemDueDate);
+wireRecurrenceSelect(listEls.editItemRecurrence, listEls.editItemRecurrenceSummary, listEls.editItemRecurrenceSummaryLabel, listEls.editItemDueDate);
+
+// updateQuickAddSchedulePill mirrors the advanced panel's due date/time and
+// recurrence into the quick-add bar's 📅 pill, so a schedule picked there
+// stays visible once the panel is collapsed: a bare icon when nothing is
+// set, else "dim. 11 oct. 🔁" — date only, since the pill shares the bar
+// with the title input on a phone (the time is one tap away in the panel).
+function updateQuickAddSchedulePill() {
+  const parts = [];
+  if (listEls.itemDueDate.value) parts.push(formatDueLabel(listEls.itemDueDate.value));
+  if (!listEls.itemRecurrence.hidden && listEls.itemRecurrence.value !== '') parts.push('🔁');
+  const active = parts.length > 0;
+  setTextIfChanged(listEls.quickAddSchedulePillLabel, parts.join(' '));
+  listEls.quickAddSchedulePillLabel.hidden = !active;
+  const pill = listEls.quickAddSchedulePill;
+  pill.classList.toggle('bg-sky-500/10', active);
+  pill.classList.toggle('text-sky-700', active);
+  pill.classList.toggle('dark:text-sky-300', active);
+}
+
+for (const el of [listEls.itemDueDate, listEls.itemDueTime, listEls.itemRecurrence]) {
+  el.addEventListener('input', updateQuickAddSchedulePill);
+  el.addEventListener('change', updateQuickAddSchedulePill);
+}
+
+// The pill opens the advanced panel straight on the due date, and asks the
+// browser for its native date picker right away where supported
+// (showPicker needs the user activation this click provides; it throws
+// otherwise, and is simply skipped).
+listEls.quickAddSchedulePill.addEventListener('click', () => {
+  setQuickAddAdvancedExpanded(true);
+  listEls.itemDueDate.focus();
+  try {
+    listEls.itemDueDate.showPicker?.();
+  } catch {
+    // focus alone is enough
+  }
+});
+
+// One-tap due date shortcuts ("Aujourd'hui"/"Demain"/"Dans une semaine"),
+// wired once for every group in the page: a [data-due-shortcuts] container
+// names the date input it fills.
+document.addEventListener('click', (event) => {
+  const button = event.target.closest('[data-due-shortcut]');
+  if (!button) return;
+  const container = button.closest('[data-due-shortcuts]');
+  const input = container && document.getElementById(container.dataset.dueShortcuts);
+  if (!input) return;
+  const offsets = { today: 0, tomorrow: 1, 'next-week': 7 };
+  input.value = TrakkaRecurrence.addDaysISO(TrakkaRecurrence.localDateISO(), offsets[button.dataset.dueShortcut] ?? 0);
+  input.dispatchEvent(new Event('input', { bubbles: true }));
+  input.dispatchEvent(new Event('change', { bubbles: true }));
+});
 
 // Recomputes the financial summary bar directly from state.currentList.items
 // — the same array toggleDone/removeItem/create/edit mutate optimistically —
@@ -1252,33 +1406,42 @@ function lineTotal(item) {
   return item.price * quantity;
 }
 
-// recurrenceBadgeLabel turns an item.recurrence_rule value (one of the
-// fixed cadences, or the custom "EVERY_X_DAYS:<n>" form — see
-// internal/validate.Recurrence) into the short, translated phrase shown
-// next to the 🔄 pictogram on a recurring item's row, e.g. "Chaque semaine".
+// weekdayListLabel joins Monday-first weekday indices into "lun., mer.,
+// ven." / "Mon, Wed, Fri".
+function weekdayListLabel(byDay) {
+  return byDay.map((index) => t(`items.weekdayShort${TrakkaRecurrence.WEEKDAYS[index]}`)).join(', ');
+}
+
+// recurrenceBadgeLabel turns a recurrence rule (canonical RRULE or a legacy
+// spelling — see static/js/recurrence.js — or a rule object already parsed
+// by TrakkaRecurrence.parseRule) into the short, translated phrase shown
+// with the 🔁 pictogram: "Chaque semaine", "Toutes les 2 semaines le lun.,
+// ven.", "Du lundi au vendredi", "Tous les 3 mois"... null for an
+// unrecognized rule.
 function recurrenceBadgeLabel(rule) {
-  switch (rule) {
+  const parsed = typeof rule === 'string' ? TrakkaRecurrence.parseRule(rule) : rule;
+  if (!parsed) return null;
+  const n = parsed.interval;
+  switch (parsed.freq) {
     case 'DAILY':
-      return t('items.recurrenceBadgeDaily');
-    case 'WEEKLY':
-      return t('items.recurrenceBadgeWeekly');
-    case 'MONTHLY':
-      return t('items.recurrenceBadgeMonthly');
-    case 'YEARLY':
-      return t('items.recurrenceBadgeYearly');
-    default: {
-      const match = /^EVERY_X_DAYS:([1-9][0-9]*)$/.exec(rule || '');
-      return match ? t('items.recurrenceBadgeEveryXDays', { n: match[1] }) : null;
+      return n === 1 ? t('items.recurrenceBadgeDaily') : t('items.recurrenceBadgeEveryXDays', { n });
+    case 'WEEKLY': {
+      if (parsed.byDay.length === 0) return n === 1 ? t('items.recurrenceBadgeWeekly') : t('items.recurrenceBadgeEveryXWeeks', { n });
+      if (n === 1 && parsed.byDay.join() === '0,1,2,3,4') return t('items.recurrenceBadgeWeekdays');
+      const days = weekdayListLabel(parsed.byDay);
+      return n === 1 ? t('items.recurrenceBadgeWeeklyOn', { days }) : t('items.recurrenceBadgeEveryXWeeksOn', { n, days });
     }
+    case 'MONTHLY':
+      return n === 1 ? t('items.recurrenceBadgeMonthly') : t('items.recurrenceBadgeEveryXMonths', { n });
+    default:
+      return n === 1 ? t('items.recurrenceBadgeYearly') : t('items.recurrenceBadgeEveryXYears', { n });
   }
 }
 
-// A discreet, non-interactive badge (🔄 + frequency) shown on a recurring
-// item's row — see recurrenceBadgeLabel. Completing a recurring item never
-// removes the badge: the server (or, offline, sw.js's own mirror of the
-// same logic) advances due_date and un-checks the item instead of clearing
-// recurrence_rule, so the row simply reappears among the active items with
-// the badge still in place.
+// A discreet, non-interactive badge (🔁 + frequency) shown next to a
+// recurring item wherever only its cadence matters (planning.js's projected
+// charges). The list view's own rows use buildNextDueBadge instead, which
+// announces the next due date.
 function buildRecurrenceBadge(item) {
   const label = recurrenceBadgeLabel(item.recurrence_rule);
   if (!label) return null;
@@ -1287,12 +1450,154 @@ function buildRecurrenceBadge(item) {
   badge.setAttribute('aria-label', t('items.recurrenceBadgeAriaLabel', { frequency: label }));
   const icon = document.createElement('span');
   icon.setAttribute('aria-hidden', 'true');
-  icon.textContent = '🔄';
+  icon.textContent = '🔁';
   const text = document.createElement('span');
   text.textContent = label;
   badge.appendChild(icon);
   badge.appendChild(text);
   return badge;
+}
+
+// ---------------------------------------------------------------------------
+// Due dates & next occurrences
+// ---------------------------------------------------------------------------
+
+// "Today" here is TrakkaRecurrence.localDateISO() (static/js/recurrence.js):
+// the device's own calendar day — unlike planning.js's UTC todayISO — so
+// "aujourd'hui"/"demain" on a badge follow the user's day, which matches
+// the server's APP_TIMEZONE in practice.
+
+// The Intl locale for the active UI language (i18n.js) — shared with
+// planning.js's monthLabel.
+function intlLocale() {
+  return window.TrakkaI18n && TrakkaI18n.getLang() === 'en' ? 'en-US' : 'fr-FR';
+}
+
+// One Intl.DateTimeFormat per locale and year display, reused: formatDueLabel
+// runs for every recurring row on every renderItems, and building a
+// formatter costs far more than formatting with one.
+const dueDateFormatters = new Map();
+function dueDateFormatter(locale, withYear) {
+  const key = `${locale}|${withYear}`;
+  let formatter = dueDateFormatters.get(key);
+  if (!formatter) {
+    const options = { weekday: 'short', day: 'numeric', month: 'short', timeZone: 'UTC' };
+    if (withYear) options.year = 'numeric';
+    formatter = new Intl.DateTimeFormat(locale, options);
+    dueDateFormatters.set(key, formatter);
+  }
+  return formatter;
+}
+
+// formatDueLabel phrases a due date (and optional HH:MM time) for a badge
+// or the actions sheet: "aujourd'hui"/"demain" when close, otherwise the
+// short weekday form ("dim. 11 oct.", "Sun, Oct 11"), with the year only
+// when it isn't the current one. The server's reminder text
+// (internal/handlers.describeDueFR) uses the same short forms.
+function formatDueLabel(dueDate, dueTime) {
+  const today = TrakkaRecurrence.localDateISO();
+  let label;
+  if (dueDate === today) {
+    label = t('items.dueToday');
+  } else if (dueDate === TrakkaRecurrence.addDaysISO(today, 1)) {
+    label = t('items.dueTomorrow');
+  } else {
+    const withYear = dueDate.slice(0, 4) !== today.slice(0, 4);
+    label = dueDateFormatter(intlLocale(), withYear).format(new Date(`${dueDate}T00:00:00Z`));
+  }
+  return dueTime ? t('items.dueAtTime', { date: label, time: dueTime }) : label;
+}
+
+// The next occurrence a recurring item gets once checked off, or null when
+// its series ends first — what the server stores as next_due_date (see
+// applyRecurrenceLifecycle), computed here for the optimistic toggle and for
+// a done item whose server copy hasn't come back yet.
+function computeNextDueDate(item) {
+  if (!item.recurrence_rule) return null;
+  // TrakkaRecurrence.nextOccurrence (static/js/recurrence.js) is the JS
+  // port of internal/handlers.nextOccurrence.
+  const next = TrakkaRecurrence.nextOccurrence(item.due_date, item.recurrence_rule, TrakkaRecurrence.localDateISO());
+  if (!next || (item.recurrence_end_date && next > item.recurrence_end_date)) return null;
+  return next;
+}
+
+// setItemDoneOptimistic flips an item's done state ahead of its deferred
+// PATCH (toggleDone, selection.js's bulkToggleDone). A recurring task
+// checked off moves to "Terminés" showing its next occurrence straight away
+// (buildNextDueBadge) — the server computes the same next_due_date once the
+// PATCH lands (see applyRecurrenceLifecycle); un-checking it cancels that
+// occurrence.
+function setItemDoneOptimistic(item, done) {
+  item.done = done;
+  if (item.recurrence_rule) item.next_due_date = done ? computeNextDueDate(item) : null;
+}
+
+// The date a recurring item's badge announces: its own due date while
+// active, the pending next occurrence while it sits in "Terminés". null for
+// a non-recurring item, or a done one whose series has ended.
+function upcomingDueDate(item) {
+  if (!item.recurrence_rule) return null;
+  if (!item.done) return item.due_date || null;
+  return item.next_due_date || computeNextDueDate(item);
+}
+
+// buildNextDueBadge is the "🔁 Échéance suivante : dim. 11 oct." line shown
+// under a recurring item's title, active or done — never on an item without
+// a recurrence rule. An active recurring item with no due date yet shows its
+// cadence instead ("🔁 Chaque semaine"), and a done one whose series has
+// ended shows nothing. Rose while the item is active and overdue. With
+// `interactive`, it is a button opening the edit modal on the due date —
+// the quick way to reschedule; in multi-select mode it is plain text, so a
+// tap still toggles the row's selection.
+function buildNextDueBadge(item, { interactive = true } = {}) {
+  const frequency = recurrenceBadgeLabel(item.recurrence_rule);
+  if (!frequency) return null;
+  const due = upcomingDueDate(item);
+  if (!due && item.done) return null;
+
+  const dateLabel = due ? formatDueLabel(due, item.due_time) : null;
+  const overdue = !item.done && due && due < TrakkaRecurrence.localDateISO();
+  const badge = document.createElement(interactive ? 'button' : 'span');
+  if (interactive) badge.type = 'button';
+  const palette = overdue
+    ? 'bg-rose-500/10 text-rose-600 dark:text-rose-300'
+    : 'bg-sky-500/10 text-sky-700 dark:text-sky-300';
+  // Wraps rather than truncates: on a phone-width task row the title column
+  // is often narrower than "Échéance suivante : jeu. 15 oct. à 18:00", and
+  // the date is the part that matters. rounded-lg (not -full) keeps a
+  // two-line badge looking deliberate.
+  badge.className = `item-next-due flex min-h-[24px] max-w-full items-start gap-1 self-start rounded-lg px-2 py-0.5 text-left text-xs font-medium leading-5 ${palette}${interactive ? ' hover:bg-sky-500/20' : ''}`;
+  badge.title = frequency;
+  badge.setAttribute(
+    'aria-label',
+    dateLabel ? t('items.nextDueBadgeAriaLabel', { frequency, date: dateLabel }) : t('items.recurrenceBadgeAriaLabel', { frequency })
+  );
+  const icon = document.createElement('span');
+  icon.setAttribute('aria-hidden', 'true');
+  icon.textContent = '🔁';
+  const text = document.createElement('span');
+  text.textContent = dateLabel ? t('items.nextDueBadge', { date: dateLabel }) : frequency;
+  badge.append(icon, text);
+  if (interactive) badge.addEventListener('click', () => openEditItemModal(item, { focus: 'due-date' }));
+  return badge;
+}
+
+// Server item responses drop empty optional fields (Go's omitempty), so a
+// plain Object.assign would keep a local value the server just cleared —
+// next_due_date once a recurring task is un-checked, due_time once removed.
+// These are nulled first whenever `updated` is a real item (an offline
+// {queued: true} placeholder carries no id and is merged as-is).
+const CLEARABLE_ITEM_FIELDS = [
+  'due_date', 'due_time', 'next_due_date', 'notification_sent_at',
+  'recurrence_rule', 'recurrence_end_date', 'reminder_offset_days', 'reminder_time',
+];
+function mergeServerItem(item, updated) {
+  if (updated && updated.id !== undefined) {
+    for (const key of CLEARABLE_ITEM_FIELDS) {
+      if (!(key in updated)) item[key] = null;
+    }
+  }
+  Object.assign(item, updated);
 }
 
 // Mirrors internal/handlers.priceAlertCondition exactly: whether item's own
@@ -1765,9 +2070,22 @@ function buildItemActionsMeta(item) {
     fragment.appendChild(buildMetaRow('📅', monthLabel(item.target_month, 'long')));
   }
 
+  if (item.due_date) {
+    fragment.appendChild(buildMetaRow('📅', t('items.dueMeta', { date: formatDueLabel(item.due_date, item.due_time) })));
+  }
+
   const recurrenceLabel = recurrenceBadgeLabel(item.recurrence_rule);
   if (recurrenceLabel) {
-    fragment.appendChild(buildMetaRow('🔄', recurrenceLabel));
+    fragment.appendChild(buildMetaRow('🔁', recurrenceLabel));
+    // A done recurring item's due date above is the occurrence just
+    // completed — say when the next one comes back.
+    const next = item.done ? upcomingDueDate(item) : null;
+    if (next) fragment.appendChild(buildMetaRow('⏭️', t('items.nextDueBadge', { date: formatDueLabel(next, item.due_time) })));
+  }
+
+  if (item.notification_sent_at && !item.done) {
+    const when = new Intl.DateTimeFormat(intlLocale(), { dateStyle: 'short', timeStyle: 'short' }).format(new Date(item.notification_sent_at));
+    fragment.appendChild(buildMetaRow('🔔', t('items.reminderSentMeta', { when })));
   }
 
   if (item.alert_on_price_drop && item.target_price != null) {
@@ -2010,7 +2328,19 @@ function buildItemRow(item, { showCheckbox = true, index, showQuantity = true, s
   // form, still used as a compact read-only summary in urgent.js/planning.js.
   title.textContent = !showQuantity && item.quantity > 1 ? `${item.title} × ${item.quantity}` : item.title;
   if (!selecting) title.addEventListener('click', () => openItemActionsSheet(item));
-  rowTop.appendChild(title);
+  // A recurring item's "🔁 Échéance suivante" badge sits under the title
+  // (see buildNextDueBadge), so the two share a small column that takes the
+  // title's place — and its flex-1/min-w-0 sizing — in rowTop. Items without
+  // a recurrence rule keep the bare title, exactly as before.
+  const nextDueBadge = buildNextDueBadge(item, { interactive: !selecting });
+  if (nextDueBadge) {
+    const titleBlock = document.createElement('div');
+    titleBlock.className = 'flex min-w-0 flex-1 flex-col gap-1';
+    titleBlock.append(title, nextDueBadge);
+    rowTop.appendChild(titleBlock);
+  } else {
+    rowTop.appendChild(title);
+  }
 
   // Compact view's whole point is a single line with nothing but checkbox +
   // title + a label indicator + actions — see buildItemRow's header comment
@@ -2226,6 +2556,8 @@ function renderItems() {
   listEls.itemsHeading.textContent = `${listIcon(list)} ${list.name} (${typeLabel(list.type)})`;
   applyListTypeVisibility(list.type);
   updateReminderCustomFieldsVisibility(listEls.itemReminder, listEls.itemReminderCustomFields);
+  updateRecurrenceSummary(listEls.itemRecurrence, listEls.itemRecurrenceSummary, listEls.itemRecurrenceSummaryLabel);
+  updateQuickAddSchedulePill();
   updateSortButtonHighlight(list.id);
   updateFilterButtonHighlight(list.id);
 
@@ -2747,9 +3079,10 @@ function toggleDone(item) {
 
   const pending = pendingToggles.get(item);
   const committedDone = pending ? pending.committedDone : item.done;
+  const committedNextDueDate = pending ? pending.committedNextDueDate : (item.next_due_date ?? null);
   if (pending) pending.dismiss();
 
-  item.done = !item.done;
+  setItemDoneOptimistic(item, !item.done);
   renderItems();
   // notifyItemsChanged (app.js) is the "event bus" side of live dashboard
   // reactivity: it snapshots this list's items (including this optimistic
@@ -2775,6 +3108,7 @@ function toggleDone(item) {
     onUndo: () => {
       pendingToggles.delete(item);
       item.done = committedDone;
+      item.next_due_date = committedNextDueDate;
       renderItems();
       notifyItemsChanged(listId, list.items);
     },
@@ -2782,9 +3116,10 @@ function toggleDone(item) {
       pendingToggles.delete(item);
       try {
         const updated = await apiRequest(`/items/${item.id}`, { method: 'PATCH', body: JSON.stringify({ done: newDone }) });
-        Object.assign(item, updated);
+        mergeServerItem(item, updated);
       } catch (err) {
         item.done = committedDone;
+        item.next_due_date = committedNextDueDate;
         if (!isNetworkError(err)) showError(err.message);
       } finally {
         // The real PATCH has now either landed or failed, so the server (or
@@ -2816,7 +3151,7 @@ function toggleDone(item) {
     },
   });
 
-  pendingToggles.set(item, { dismiss: controller.dismiss, committedDone });
+  pendingToggles.set(item, { dismiss: controller.dismiss, committedDone, committedNextDueDate });
 }
 
 // Deletion is deferred behind a 5s undo grace period: the item disappears
@@ -2956,8 +3291,13 @@ listEls.createItemForm.addEventListener('submit', async (event) => {
   }
   if (visibility.targetMonth) targetMonth = listEls.itemTargetMonth.value;
 
-  const recurrenceRule = visibility.recurrence ? listEls.itemRecurrence.value : '';
+  const recurrenceRule = visibility.recurrence
+    ? recurrenceSelectionToRule(listEls.itemRecurrence)
+    : '';
   const dueDate = visibility.dueDate ? listEls.itemDueDate.value : '';
+  // A time only means something next to a date (the server refuses one on
+  // its own).
+  const dueTime = dueDate ? listEls.itemDueTime.value : '';
   const isUrgent = visibility.urgent ? listEls.itemUrgent.checked : false;
 
   const payload = { list_id: state.currentListId, title, quantity };
@@ -2977,6 +3317,7 @@ listEls.createItemForm.addEventListener('submit', async (event) => {
   let reminder = {};
   if (dueDate) {
     payload.due_date = dueDate;
+    if (dueTime) payload.due_time = dueTime;
     // reminderSelectionToPayload is defined above (shared with the edit-item
     // modal) — the reminder select is meaningless without a due date, so it
     // is only read (and only affects anything server-side) when one was
@@ -3002,7 +3343,9 @@ listEls.createItemForm.addEventListener('submit', async (event) => {
     target_month: targetMonth || null,
     recurrence_rule: recurrenceRule || null,
     due_date: dueDate || null,
+    due_time: dueTime || null,
     reminder_enabled: reminder.reminder_enabled ?? true,
+    reminder_at_due_time: reminder.reminder_at_due_time ?? false,
     reminder_offset_days: reminder.reminder_offset_days ?? null,
     reminder_time: reminder.reminder_time ?? null,
     is_urgent: isUrgent,
@@ -3018,6 +3361,9 @@ listEls.createItemForm.addEventListener('submit', async (event) => {
   listEls.createItemForm.reset();
   listEls.itemQuantity.value = '1';
   updateReminderCustomFieldsVisibility(listEls.itemReminder, listEls.itemReminderCustomFields);
+  setRecurrenceSelection(listEls.itemRecurrence, '');
+  updateRecurrenceSummary(listEls.itemRecurrence, listEls.itemRecurrenceSummary, listEls.itemRecurrenceSummaryLabel);
+  updateQuickAddSchedulePill();
   setQuickAddAdvancedExpanded(false);
   listEls.itemTitle.focus();
 
@@ -3092,7 +3438,10 @@ function renderEditItemLabelsPreview(item) {
   }
 }
 
-function openEditItemModal(item) {
+// opts.focus = 'due-date' opens the modal on the due date instead of the
+// title — the shortcut a recurring item's "Échéance suivante" badge takes
+// (see buildNextDueBadge).
+function openEditItemModal(item, { focus } = {}) {
   editingItem = item;
   listEls.editItemTitle.value = item.title;
   listEls.editItemUrl.value = item.url || '';
@@ -3100,8 +3449,10 @@ function openEditItemModal(item) {
   listEls.editItemPriceAutoBadge.hidden = !item.price_auto;
   listEls.editItemTargetPrice.value = item.target_price != null ? item.target_price : '';
   listEls.editItemTargetMonth.value = item.target_month || '';
-  listEls.editItemRecurrence.value = item.recurrence_rule || '';
+  setRecurrenceSelection(listEls.editItemRecurrence, item.recurrence_rule);
+  updateRecurrenceSummary(listEls.editItemRecurrence, listEls.editItemRecurrenceSummary, listEls.editItemRecurrenceSummaryLabel);
   listEls.editItemDueDate.value = item.due_date || '';
+  listEls.editItemDueTime.value = item.due_time || '';
   const reminderSelection = reminderItemToSelection(item);
   listEls.editItemReminder.value = reminderSelection.preset;
   listEls.editItemReminderOffset.value = reminderSelection.offsetDays;
@@ -3111,7 +3462,12 @@ function openEditItemModal(item) {
   renderEditItemLabelsPreview(item);
   listEls.editItemModal.hidden = false;
   document.body.classList.add('overflow-hidden');
-  listEls.editItemTitle.focus();
+  if (focus === 'due-date' && !listEls.editItemDueDate.closest('[data-item-field]').hidden) {
+    listEls.editItemDueDate.focus();
+    listEls.editItemDueDate.scrollIntoView({ block: 'center' });
+  } else {
+    listEls.editItemTitle.focus();
+  }
 }
 
 // Closes the edit modal first, then opens the label management sheet for
@@ -3565,9 +3921,13 @@ listEls.editItemForm.addEventListener('submit', async (event) => {
     }
   }
   if (visibility.targetMonth) payload.target_month = listEls.editItemTargetMonth.value;
-  if (visibility.recurrence) payload.recurrence_rule = listEls.editItemRecurrence.value;
+  if (visibility.recurrence) {
+    payload.recurrence_rule = recurrenceSelectionToRule(listEls.editItemRecurrence);
+  }
   if (visibility.dueDate) {
     payload.due_date = listEls.editItemDueDate.value;
+    // Cleared along with the date: the server refuses a time on its own.
+    payload.due_time = payload.due_date ? listEls.editItemDueTime.value : '';
     Object.assign(payload, reminderSelectionToPayload(listEls.editItemReminder, listEls.editItemReminderOffset, listEls.editItemReminderTime));
   }
 
@@ -3581,7 +3941,10 @@ listEls.editItemForm.addEventListener('submit', async (event) => {
     target_month: item.target_month,
     recurrence_rule: item.recurrence_rule,
     due_date: item.due_date,
+    due_time: item.due_time,
+    next_due_date: item.next_due_date,
     reminder_enabled: item.reminder_enabled,
+    reminder_at_due_time: item.reminder_at_due_time,
     reminder_offset_days: item.reminder_offset_days,
     reminder_time: item.reminder_time,
     is_urgent: item.is_urgent,
@@ -3594,7 +3957,9 @@ listEls.editItemForm.addEventListener('submit', async (event) => {
   if ('target_month' in payload) item.target_month = payload.target_month || null;
   if ('recurrence_rule' in payload) item.recurrence_rule = payload.recurrence_rule || null;
   if ('due_date' in payload) item.due_date = payload.due_date || null;
+  if ('due_time' in payload) item.due_time = payload.due_time || null;
   if ('reminder_enabled' in payload) item.reminder_enabled = payload.reminder_enabled;
+  if (payload.reminder_at_due_time != null) item.reminder_at_due_time = payload.reminder_at_due_time;
   if ('reminder_offset_days' in payload) item.reminder_offset_days = payload.reminder_offset_days;
   if ('reminder_time' in payload) item.reminder_time = payload.reminder_time || null;
   item.is_urgent = payload.is_urgent;
@@ -3603,7 +3968,7 @@ listEls.editItemForm.addEventListener('submit', async (event) => {
 
   try {
     const updated = await apiRequest(`/items/${item.id}`, { method: 'PATCH', body: JSON.stringify(payload) });
-    Object.assign(item, updated);
+    mergeServerItem(item, updated);
     item.priceScrapePending = updated.price_status === 'pending';
     if (item.priceScrapePending) scheduleAutoPriceRefresh(item);
     notifyPriceAlertIfTriggered(updated);

@@ -2,6 +2,9 @@ package validate
 
 import "testing"
 
+// TestRecurrence covers the validate-level contract: empty means "not
+// recurring", anything else comes back in canonical RRULE form or is
+// rejected. The full grammar is tested in internal/recurrence.
 func TestRecurrence(t *testing.T) {
 	cases := []struct {
 		name    string
@@ -11,15 +14,14 @@ func TestRecurrence(t *testing.T) {
 	}{
 		{"empty is valid (not recurring)", "", "", false},
 		{"whitespace-only is valid", "   ", "", false},
-		{"daily", "DAILY", "DAILY", false},
-		{"weekly", "WEEKLY", "WEEKLY", false},
-		{"monthly", "MONTHLY", "MONTHLY", false},
-		{"yearly", "YEARLY", "YEARLY", false},
-		{"normalizes case", "weekly", "WEEKLY", false},
-		{"trims whitespace", "  DAILY  ", "DAILY", false},
-		{"every-x-days", "EVERY_X_DAYS:3", "EVERY_X_DAYS:3", false},
+		{"canonical rrule", "FREQ=WEEKLY;BYDAY=MO,WE,FR", "FREQ=WEEKLY;BYDAY=MO,WE,FR", false},
+		{"normalizes an rrule", "freq=weekly;byday=fr,mo;interval=2", "FREQ=WEEKLY;INTERVAL=2;BYDAY=MO,FR", false},
+		{"legacy fixed cadence", "weekly", "FREQ=WEEKLY", false},
+		{"legacy every-x-days", "EVERY_X_DAYS:3", "FREQ=DAILY;INTERVAL=3", false},
+		{"legacy every-x-days in weeks", "EVERY_X_DAYS:14", "FREQ=WEEKLY;INTERVAL=2", false},
+		{"legacy every-x-months", "EVERY_X_MONTHS:3", "FREQ=MONTHLY;INTERVAL=3", false},
 		{"rejects every-x-days with zero", "EVERY_X_DAYS:0", "", true},
-		{"rejects every-x-days without a number", "EVERY_X_DAYS:", "", true},
+		{"rejects BYDAY on a monthly rule", "FREQ=MONTHLY;BYDAY=MO", "", true},
 		{"rejects unknown rule", "FORTNIGHTLY", "", true},
 	}
 
@@ -39,17 +41,5 @@ func TestRecurrence(t *testing.T) {
 				t.Fatalf("Recurrence(%q) = %q, want %q", tc.raw, got, tc.want)
 			}
 		})
-	}
-}
-
-func TestEveryXDaysInterval(t *testing.T) {
-	if n, ok := EveryXDaysInterval("EVERY_X_DAYS:5"); !ok || n != 5 {
-		t.Fatalf("EveryXDaysInterval(EVERY_X_DAYS:5) = (%d, %v), want (5, true)", n, ok)
-	}
-	if _, ok := EveryXDaysInterval("DAILY"); ok {
-		t.Fatal("expected ok=false for a fixed cadence")
-	}
-	if _, ok := EveryXDaysInterval(""); ok {
-		t.Fatal("expected ok=false for an empty rule")
 	}
 }

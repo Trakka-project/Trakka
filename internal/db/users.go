@@ -53,23 +53,41 @@ func (d *DB) CreateUser(ctx context.Context, email string, passwordHash, oidcSub
 	return d.GetUser(ctx, id)
 }
 
+// userSelectColumns is the column list scanUser expects, in order: every
+// public models.User field.
+const userSelectColumns = `id, email, display_name, created_at, is_admin, keep_last_page, language,
+		 reminder_default_offset_days, reminder_default_time, reminder_default_at_due_time`
+
+// userCredentialColumns is userSelectColumns plus the credentials
+// getUserWithCredentials scans into models.UserWithCredentials.
+const userCredentialColumns = userSelectColumns + `, password_hash, oidc_subject, oidc_issuer`
+
+// scanUser scans one row of userSelectColumns into u, followed by extra
+// destinations for a query that selects more columns after them.
+func scanUser(row rowScanner, u *models.User, extra ...any) error {
+	var isAdmin, keepLastPage, atDueTime int
+	dest := append([]any{&u.ID, &u.Email, &u.DisplayName, &u.CreatedAt, &isAdmin, &keepLastPage, &u.Language,
+		&u.ReminderDefaultOffsetDays, &u.ReminderDefaultTime, &atDueTime}, extra...)
+	if err := row.Scan(dest...); err != nil {
+		return err
+	}
+	u.IsAdmin = isAdmin != 0
+	u.KeepLastPage = keepLastPage != 0
+	u.ReminderDefaultAtDueTime = atDueTime != 0
+	return nil
+}
+
 // GetUser fetches a single user's public fields by id. Returns ErrNotFound
 // if no such user exists.
 func (d *DB) GetUser(ctx context.Context, id int64) (*models.User, error) {
 	u := &models.User{}
-	var isAdmin, keepLastPage int
-	err := d.conn.QueryRowContext(ctx,
-		`SELECT id, email, display_name, created_at, is_admin, keep_last_page, language, reminder_default_offset_days, reminder_default_time
-		 FROM users WHERE id = ?`, id,
-	).Scan(&u.ID, &u.Email, &u.DisplayName, &u.CreatedAt, &isAdmin, &keepLastPage, &u.Language, &u.ReminderDefaultOffsetDays, &u.ReminderDefaultTime)
+	err := scanUser(d.conn.QueryRowContext(ctx, `SELECT `+userSelectColumns+` FROM users WHERE id = ?`, id), u)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrNotFound
 	}
 	if err != nil {
 		return nil, fmt.Errorf("querying user %d: %w", id, err)
 	}
-	u.IsAdmin = isAdmin != 0
-	u.KeepLastPage = keepLastPage != 0
 	return u, nil
 }
 
@@ -114,17 +132,17 @@ func (d *DB) UpdateUserLanguage(ctx context.Context, id int64, lang string) (*mo
 }
 
 // UpdateUserReminderDefaults sets the caller's own default due-date-reminder
-// timing (see models.User.ReminderDefaultOffsetDays/ReminderDefaultTime),
-// applied to any item whose own reminder is left as "use the default" (see
-// internal/handlers' reminder-resolution logic in items.go). offsetDays and
-// timeOfDay must already be validated by the caller (offsetDays >= 0,
-// timeOfDay via internal/validate.TimeOfDay) — this method doesn't
-// re-validate, mirroring UpdateUserLanguage's own division of
-// responsibility. Returns ErrNotFound if no such user exists.
-func (d *DB) UpdateUserReminderDefaults(ctx context.Context, id int64, offsetDays int, timeOfDay string) (*models.User, error) {
+// timing (see models.User.ReminderDefaultOffsetDays/ReminderDefaultTime/
+// ReminderDefaultAtDueTime), applied to any item whose own reminder is left
+// as "use the default" (see internal/handlers' reminder-resolution logic in
+// items.go). offsetDays and timeOfDay must already be validated by the
+// caller (offsetDays >= 0, timeOfDay via internal/validate.TimeOfDay) —
+// this method doesn't re-validate, mirroring UpdateUserLanguage's own
+// division of responsibility. Returns ErrNotFound if no such user exists.
+func (d *DB) UpdateUserReminderDefaults(ctx context.Context, id int64, offsetDays int, timeOfDay string, atDueTime bool) (*models.User, error) {
 	res, err := d.conn.ExecContext(ctx,
-		`UPDATE users SET reminder_default_offset_days = ?, reminder_default_time = ? WHERE id = ?`,
-		offsetDays, timeOfDay, id)
+		`UPDATE users SET reminder_default_offset_days = ?, reminder_default_time = ?, reminder_default_at_due_time = ? WHERE id = ?`,
+		offsetDays, timeOfDay, boolToInt(atDueTime), id)
 	if err != nil {
 		return nil, fmt.Errorf("updating user %d reminder defaults: %w", id, err)
 	}
@@ -142,17 +160,13 @@ func (d *DB) UpdateUserReminderDefaults(ctx context.Context, id int64, offsetDay
 // email, compared case-insensitively. Returns ErrNotFound if no such user
 // exists.
 func (d *DB) GetUserByEmail(ctx context.Context, email string) (*models.UserWithCredentials, error) {
-	return d.getUserWithCredentials(ctx,
-		`SELECT id, email, display_name, created_at, is_admin, keep_last_page, language, reminder_default_offset_days, reminder_default_time, password_hash, oidc_subject, oidc_issuer
-		 FROM users WHERE email = ?`, email)
+	return d.getUserWithCredentials(ctx, `SELECT `+userCredentialColumns+` FROM users WHERE email = ?`, email)
 }
 
 // GetUserByOIDCSubject fetches a user (with credentials) by their OIDC
 // identity (issuer + subject). Returns ErrNotFound if no such user exists.
 func (d *DB) GetUserByOIDCSubject(ctx context.Context, issuer, subject string) (*models.UserWithCredentials, error) {
-	return d.getUserWithCredentials(ctx,
-		`SELECT id, email, display_name, created_at, is_admin, keep_last_page, language, reminder_default_offset_days, reminder_default_time, password_hash, oidc_subject, oidc_issuer
-		 FROM users WHERE oidc_issuer = ? AND oidc_subject = ?`, issuer, subject)
+	return d.getUserWithCredentials(ctx, `SELECT `+userCredentialColumns+` FROM users WHERE oidc_issuer = ? AND oidc_subject = ?`, issuer, subject)
 }
 
 // ListAllUsers returns every account on the instance, ordered by id — for
@@ -162,8 +176,7 @@ func (d *DB) GetUserByOIDCSubject(ctx context.Context, issuer, subject string) (
 // self-hosted households/groups, not a multi-tenant SaaS with thousands of
 // accounts, so a single unpaginated query stays proportionate.
 func (d *DB) ListAllUsers(ctx context.Context) ([]*models.User, error) {
-	rows, err := d.conn.QueryContext(ctx,
-		`SELECT id, email, display_name, created_at, is_admin, keep_last_page, language, reminder_default_offset_days, reminder_default_time FROM users ORDER BY id ASC`)
+	rows, err := d.conn.QueryContext(ctx, `SELECT `+userSelectColumns+` FROM users ORDER BY id ASC`)
 	if err != nil {
 		return nil, fmt.Errorf("querying all users: %w", err)
 	}
@@ -172,12 +185,9 @@ func (d *DB) ListAllUsers(ctx context.Context) ([]*models.User, error) {
 	users := []*models.User{}
 	for rows.Next() {
 		u := &models.User{}
-		var isAdmin, keepLastPage int
-		if err := rows.Scan(&u.ID, &u.Email, &u.DisplayName, &u.CreatedAt, &isAdmin, &keepLastPage, &u.Language, &u.ReminderDefaultOffsetDays, &u.ReminderDefaultTime); err != nil {
+		if err := scanUser(rows, u); err != nil {
 			return nil, fmt.Errorf("scanning user row: %w", err)
 		}
-		u.IsAdmin = isAdmin != 0
-		u.KeepLastPage = keepLastPage != 0
 		users = append(users, u)
 	}
 	if err := rows.Err(); err != nil {
@@ -258,18 +268,16 @@ func (d *DB) DeleteUser(ctx context.Context, id int64) error {
 	return nil
 }
 
+// getUserWithCredentials runs query, which selects userCredentialColumns,
+// and scans its one row.
 func (d *DB) getUserWithCredentials(ctx context.Context, query string, args ...any) (*models.UserWithCredentials, error) {
 	u := &models.UserWithCredentials{}
-	var isAdmin, keepLastPage int
-	err := d.conn.QueryRowContext(ctx, query, args...).Scan(
-		&u.ID, &u.Email, &u.DisplayName, &u.CreatedAt, &isAdmin, &keepLastPage, &u.Language, &u.ReminderDefaultOffsetDays, &u.ReminderDefaultTime, &u.PasswordHash, &u.OIDCSubject, &u.OIDCIssuer)
+	err := scanUser(d.conn.QueryRowContext(ctx, query, args...), &u.User, &u.PasswordHash, &u.OIDCSubject, &u.OIDCIssuer)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrNotFound
 	}
 	if err != nil {
 		return nil, fmt.Errorf("querying user: %w", err)
 	}
-	u.IsAdmin = isAdmin != 0
-	u.KeepLastPage = keepLastPage != 0
 	return u, nil
 }
