@@ -228,7 +228,6 @@
       "nameLabel": "Name",
       "namePlaceholder": "E.g. Weekly groceries",
       "iconLabel": "Icon (emoji, optional)",
-      "iconPlaceholder": "🛒",
       "typeLabel": "Type",
       "typeGroceries": "Groceries",
       "typeShopping": "One-off Purchases",
@@ -287,6 +286,9 @@
       "delete": "Delete item"
     },
     "listActions": {
+      "edit": "Edit list",
+      "share": "Share list",
+      "delete": "Delete list",
       "pin": "Pin to dashboard",
       "unpin": "Unpin from dashboard",
       "pinSpace": "Pin the space to my dashboard",
@@ -597,5 +599,38 @@
     "itemMarkedDone": "\"{title}\" marked as done",
     "itemMarkedUndone": "\"{title}\" marked as not done",
     "categoryDeleted": "Space \"{name}\" deleted"
+  },
+  "emojiPicker": {
+    "title": "Choose an emoji",
+    "open": "Choose an emoji",
+    "clear": "Remove icon",
+    "searchLabel": "Search emoji",
+    "searchPlaceholder": "Search emoji…",
+    "skinTone": "Skin tone",
+    "tones": {
+      "default": "Default",
+      "light": "Light skin tone",
+      "mediumLight": "Medium-light skin tone",
+      "medium": "Medium skin tone",
+      "mediumDark": "Medium-dark skin tone",
+      "dark": "Dark skin tone"
+    },
+    "categoriesLabel": "Emoji categories",
+    "categories": {
+      "recent": "Recent",
+      "smileys": "Smileys & emotion",
+      "people": "People & body",
+      "nature": "Animals & nature",
+      "food": "Food & drink",
+      "travel": "Travel & places",
+      "activities": "Activities",
+      "objects": "Objects",
+      "symbols": "Symbols",
+      "flags": "Flags"
+    },
+    "results": "Results",
+    "loading": "Loading emoji…",
+    "loadError": "Couldn't load the emoji list. You can still paste any emoji straight into the Icon field.",
+    "noResults": "No emoji matches “{query}”."
   }
 }

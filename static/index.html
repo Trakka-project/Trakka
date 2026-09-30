@@ -607,14 +607,25 @@
 
         <div>
           <label for="list-icon" data-i18n="modals.newList.iconLabel" class="mb-1 block text-sm font-medium text-slate-600 dark:text-slate-300">Icône (emoji, optionnel)</label>
-          <div class="flex flex-wrap items-center gap-2">
-            <input type="text" id="list-icon" maxlength="8" data-i18n-placeholder="modals.newList.iconPlaceholder" placeholder="🛒"
-                   class="w-20 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-3 text-center text-lg text-slate-900 dark:text-slate-100 placeholder:text-slate-500 focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500/30">
-            <button type="button" data-list-icon-preset="🛒" aria-label="🛒" class="flex h-10 w-10 items-center justify-center rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-lg hover:bg-slate-200 dark:hover:bg-slate-800">🛒</button>
-            <button type="button" data-list-icon-preset="🖥️" aria-label="🖥️" class="flex h-10 w-10 items-center justify-center rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-lg hover:bg-slate-200 dark:hover:bg-slate-800">🖥️</button>
-            <button type="button" data-list-icon-preset="📦" aria-label="📦" class="flex h-10 w-10 items-center justify-center rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-lg hover:bg-slate-200 dark:hover:bg-slate-800">📦</button>
-            <button type="button" data-list-icon-preset="✅" aria-label="✅" class="flex h-10 w-10 items-center justify-center rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-lg hover:bg-slate-200 dark:hover:bg-slate-800">✅</button>
-            <button type="button" data-list-icon-preset="📝" aria-label="📝" class="flex h-10 w-10 items-center justify-center rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-lg hover:bg-slate-200 dark:hover:bg-slate-800">📝</button>
+          <!-- The field doubles as the current-icon preview and as free input
+               (paste any emoji, ZWJ sequence or skin-tone variant). maxlength
+               counts UTF-16 units, so 32 always fits the server's 32-rune
+               limit (validate.MaxIconLen) while leaving room for the longest
+               emoji sequences (~15 units). Its placeholder shows the selected
+               type's default icon — what an empty field falls back to (set in
+               app.js's setListTypeSelection). -->
+          <div class="flex items-stretch gap-2">
+            <input type="text" id="list-icon" maxlength="32" autocomplete="off" spellcheck="false" placeholder="🛒"
+                   class="w-16 shrink-0 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-2 py-3 text-center text-lg text-slate-900 dark:text-slate-100 placeholder:text-slate-500 focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500/30">
+            <button type="button" id="list-icon-picker-button" aria-haspopup="dialog" aria-controls="emoji-picker-sheet"
+                    class="flex min-w-0 flex-1 items-center justify-center gap-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 text-sm font-medium text-slate-700 dark:text-slate-200 hover:bg-slate-200 dark:hover:bg-slate-800">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="h-5 w-5 shrink-0" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M8 14s1.5 2 4 2 4-2 4-2M9 9h.01M15 9h.01"/></svg>
+              <span data-i18n="emojiPicker.open" class="min-w-0 text-center leading-tight">Choisir un émoji</span>
+            </button>
+            <button type="button" id="list-icon-clear-button" hidden data-i18n-aria-label="emojiPicker.clear" aria-label="Retirer l'icône"
+                    class="flex w-11 shrink-0 items-center justify-center rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-500 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-800 hover:text-slate-900 dark:hover:text-slate-200">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" class="h-5 w-5" aria-hidden="true"><path d="M18 6L6 18M6 6l12 12"/></svg>
+            </button>
           </div>
         </div>
 
@@ -716,6 +727,72 @@
           <button type="submit" id="category-submit-button" data-i18n="modals.newCategory.submitCreate" class="flex-1 rounded-xl bg-sky-500 px-4 py-3 text-base font-semibold text-white transition hover:bg-sky-400 active:scale-[0.98]">Créer l'espace</button>
         </div>
       </form>
+    </div>
+  </div>
+
+  <!-- Emoji picker (static/js/emoji-picker.js), opened from the new/edit
+       list modal's "Choisir un émoji" button — z-50 so it stacks above that
+       z-40 modal. Search field, skin-tone choice and category tabs are static
+       here; the grids inside #emoji-picker-scroller are built on first open
+       from static/emoji/{fr,en}.json. The panel's height is capped in
+       base.css against the dynamic viewport, and only the scroller scrolls,
+       so the sheet never runs past a phone's screen. -->
+  <div id="emoji-picker-sheet" hidden class="fixed inset-0 z-50 flex items-end justify-center bg-slate-950/30 dark:bg-slate-950/70 p-0 sm:items-center sm:p-4">
+    <div id="emoji-picker-panel" role="dialog" aria-modal="true" aria-labelledby="emoji-picker-title" tabindex="-1"
+         class="flex w-full min-w-0 flex-col overflow-hidden rounded-t-2xl bg-slate-100 dark:bg-slate-800 shadow-xl focus:outline-none sm:max-w-md sm:rounded-2xl">
+      <div class="flex items-center justify-between gap-3 px-4 pt-4">
+        <h2 id="emoji-picker-title" data-i18n="emojiPicker.title" class="min-w-0 flex-1 truncate text-lg font-semibold">Choisir un émoji</h2>
+        <button type="button" id="emoji-picker-close-button" data-i18n-aria-label="modals.close" aria-label="Fermer"
+                class="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-slate-500 dark:text-slate-400 hover:bg-slate-300 dark:hover:bg-slate-700 hover:text-slate-900 dark:hover:text-slate-200">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" class="h-5 w-5" aria-hidden="true"><path d="M18 6L6 18M6 6l12 12"/></svg>
+        </button>
+      </div>
+
+      <div class="flex items-center gap-2 px-4 pt-3">
+        <div class="relative min-w-0 flex-1">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" class="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>
+          <input type="search" id="emoji-picker-search" autocomplete="off" spellcheck="false" enterkeyhint="search"
+                 data-i18n-placeholder="emojiPicker.searchPlaceholder" placeholder="Rechercher un émoji…"
+                 data-i18n-aria-label="emojiPicker.searchLabel" aria-label="Rechercher un émoji"
+                 class="w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 py-2.5 pl-9 pr-3 text-sm text-slate-900 dark:text-slate-100 placeholder:text-slate-500 focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500/30">
+        </div>
+        <button type="button" id="emoji-picker-tone-button" aria-expanded="false" aria-controls="emoji-picker-tones"
+                data-i18n-aria-label="emojiPicker.skinTone" aria-label="Teint de peau"
+                class="emoji-picker-glyph flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-xl hover:bg-slate-200 dark:hover:bg-slate-800">✋</button>
+      </div>
+
+      <div id="emoji-picker-tones" hidden role="group" data-i18n-aria-label="emojiPicker.skinTone" aria-label="Teint de peau"
+           class="flex flex-wrap justify-end gap-1 px-4 pt-2">
+        <button type="button" data-emoji-tone="0" aria-pressed="true" data-i18n-aria-label="emojiPicker.tones.default" aria-label="Par défaut" class="emoji-picker-glyph emoji-picker-tone">✋</button>
+        <button type="button" data-emoji-tone="1" aria-pressed="false" data-i18n-aria-label="emojiPicker.tones.light" aria-label="Peau claire" class="emoji-picker-glyph emoji-picker-tone">✋🏻</button>
+        <button type="button" data-emoji-tone="2" aria-pressed="false" data-i18n-aria-label="emojiPicker.tones.mediumLight" aria-label="Peau moyennement claire" class="emoji-picker-glyph emoji-picker-tone">✋🏼</button>
+        <button type="button" data-emoji-tone="3" aria-pressed="false" data-i18n-aria-label="emojiPicker.tones.medium" aria-label="Peau légèrement mate" class="emoji-picker-glyph emoji-picker-tone">✋🏽</button>
+        <button type="button" data-emoji-tone="4" aria-pressed="false" data-i18n-aria-label="emojiPicker.tones.mediumDark" aria-label="Peau mate" class="emoji-picker-glyph emoji-picker-tone">✋🏾</button>
+        <button type="button" data-emoji-tone="5" aria-pressed="false" data-i18n-aria-label="emojiPicker.tones.dark" aria-label="Peau foncée" class="emoji-picker-glyph emoji-picker-tone">✋🏿</button>
+      </div>
+
+      <nav id="emoji-picker-categories" data-i18n-aria-label="emojiPicker.categoriesLabel" aria-label="Catégories d'émojis"
+           class="mt-2 flex border-b border-slate-200 dark:border-slate-700 px-2">
+        <button type="button" data-emoji-category="recent" hidden data-i18n-aria-label="emojiPicker.categories.recent" aria-label="Récents" class="emoji-picker-glyph emoji-picker-tab border-transparent opacity-50">🕘</button>
+        <button type="button" data-emoji-category="smileys" data-i18n-aria-label="emojiPicker.categories.smileys" aria-label="Smileys et émotions" class="emoji-picker-glyph emoji-picker-tab border-transparent opacity-50">😀</button>
+        <button type="button" data-emoji-category="people" data-i18n-aria-label="emojiPicker.categories.people" aria-label="Personnes et corps" class="emoji-picker-glyph emoji-picker-tab border-transparent opacity-50">👋</button>
+        <button type="button" data-emoji-category="nature" data-i18n-aria-label="emojiPicker.categories.nature" aria-label="Animaux et nature" class="emoji-picker-glyph emoji-picker-tab border-transparent opacity-50">🐻</button>
+        <button type="button" data-emoji-category="food" data-i18n-aria-label="emojiPicker.categories.food" aria-label="Nourriture et boissons" class="emoji-picker-glyph emoji-picker-tab border-transparent opacity-50">🍔</button>
+        <button type="button" data-emoji-category="travel" data-i18n-aria-label="emojiPicker.categories.travel" aria-label="Voyages et lieux" class="emoji-picker-glyph emoji-picker-tab border-transparent opacity-50">✈️</button>
+        <button type="button" data-emoji-category="activities" data-i18n-aria-label="emojiPicker.categories.activities" aria-label="Activités" class="emoji-picker-glyph emoji-picker-tab border-transparent opacity-50">⚽</button>
+        <button type="button" data-emoji-category="objects" data-i18n-aria-label="emojiPicker.categories.objects" aria-label="Objets" class="emoji-picker-glyph emoji-picker-tab border-transparent opacity-50">💡</button>
+        <button type="button" data-emoji-category="symbols" data-i18n-aria-label="emojiPicker.categories.symbols" aria-label="Symboles" class="emoji-picker-glyph emoji-picker-tab border-transparent opacity-50">🔣</button>
+        <button type="button" data-emoji-category="flags" data-i18n-aria-label="emojiPicker.categories.flags" aria-label="Drapeaux" class="emoji-picker-glyph emoji-picker-tab border-transparent opacity-50">🏁</button>
+      </nav>
+
+      <div id="emoji-picker-scroller" class="relative min-h-0 flex-1 overflow-y-auto overscroll-contain px-2">
+        <p id="emoji-picker-status" role="status" hidden class="px-2 py-8 text-center text-sm text-slate-500 dark:text-slate-400"></p>
+        <section id="emoji-picker-results" hidden>
+          <h3 id="emoji-picker-results-heading" data-i18n="emojiPicker.results" class="sticky top-0 z-10 bg-slate-100 dark:bg-slate-800 px-1 pb-1 pt-3 text-xs font-semibold text-slate-500 dark:text-slate-400">Résultats</h3>
+          <div id="emoji-picker-results-grid" class="emoji-picker-grid" role="group" aria-labelledby="emoji-picker-results-heading"></div>
+        </section>
+        <div id="emoji-picker-sections"></div>
+      </div>
     </div>
   </div>
 
@@ -1688,14 +1765,15 @@
     </div>
   </div>
 
-  <!-- Shared-list card actions bottom sheet: opened by a tap on a
-       directly-shared list card's [⋮] kebab button (buildListCard in app.js)
-       as the mobile replacement for the 📌 pin/unpin button shown directly
-       on the card on larger screens (see .item-card__actions/.item-card__kebab
-       in base.css for the same hidden md:flex / flex md:hidden pattern
-       applied here). Only offers the pin/unpin toggle since that's the only
-       action a shared list's card exposes at all (managing/editing/deleting
-       it requires actual House membership — see buildListCard's
+  <!-- List card actions bottom sheet: opened by a tap on a shared list
+       card's [⋮] kebab button (buildListCard in app.js) as the mobile
+       replacement for the 📌 pin/unpin button shown directly on the card on
+       larger screens (see .item-card__actions/.item-card__kebab in base.css
+       for the same hidden md:flex / flex md:hidden pattern applied here),
+       and by a long press on any list card on a touch device. Mirrors the
+       card's own buttons: edit/share/delete for a list of the caller's own
+       House, only the pin/unpin toggle for a shared one (managing/editing/
+       deleting it requires actual House membership — see buildListCard's
        access_source branch). Populated per-list by
        openListCardActionsSheet right before it's shown. -->
   <div id="list-card-actions-sheet" hidden class="fixed inset-0 z-40 flex items-end justify-center bg-slate-950/30 dark:bg-slate-950/70 p-0 sm:items-center sm:p-4">
@@ -1708,6 +1786,21 @@
         </button>
       </div>
       <div class="flex flex-col gap-1">
+        <button type="button" id="list-card-actions-edit-button"
+                class="flex items-center gap-3 rounded-xl px-3 py-3 text-left text-base font-medium text-slate-900 dark:text-slate-100 hover:bg-slate-200 dark:hover:bg-slate-700">
+          <span aria-hidden="true">✏️</span>
+          <span data-i18n="modals.listActions.edit">Modifier la liste</span>
+        </button>
+        <button type="button" id="list-card-actions-share-button"
+                class="flex items-center gap-3 rounded-xl px-3 py-3 text-left text-base font-medium text-slate-900 dark:text-slate-100 hover:bg-slate-200 dark:hover:bg-slate-700">
+          <span aria-hidden="true">👥</span>
+          <span data-i18n="modals.listActions.share">Partager la liste</span>
+        </button>
+        <button type="button" id="list-card-actions-delete-button"
+                class="flex items-center gap-3 rounded-xl px-3 py-3 text-left text-base font-medium text-rose-600 dark:text-rose-400 hover:bg-rose-500/10">
+          <span aria-hidden="true">🗑️</span>
+          <span data-i18n="modals.listActions.delete">Supprimer la liste</span>
+        </button>
         <button type="button" id="list-card-actions-pin-button"
                 class="flex items-center gap-3 rounded-xl px-3 py-3 text-left text-base font-medium text-slate-900 dark:text-slate-100 hover:bg-slate-200 dark:hover:bg-slate-700">
           <span id="list-card-actions-pin-icon" aria-hidden="true">📌</span>
@@ -1773,6 +1866,7 @@
   <script src="/js/i18n.js" defer></script>
   <script src="/js/db.js" defer></script>
   <script src="/js/undo.js" defer></script>
+  <script src="/js/emoji-picker.js" defer></script>
   <script src="/js/app.js" defer></script>
   <script src="/js/list_view.js" defer></script>
   <script src="/js/gestures.js" defer></script>
