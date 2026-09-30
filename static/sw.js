@@ -8,8 +8,8 @@ importScripts('/js/db.js', '/js/recurrence.js');
 
 // Bump both on any change to APP_SHELL's contents so activate()
 // evicts the old cache instead of serving stale assets forever.
-const SHELL_CACHE = 'trakka-shell-v111';
-const RUNTIME_CACHE = 'trakka-runtime-v111';
+const SHELL_CACHE = 'trakka-shell-v112';
+const RUNTIME_CACHE = 'trakka-runtime-v112';
 const KNOWN_CACHES = [SHELL_CACHE, RUNTIME_CACHE];
 
 const APP_SHELL = [
@@ -128,11 +128,18 @@ self.addEventListener('message', (event) => {
 // (internal/handlers/push.go), encrypted per RFC 8291 — decryption itself is
 // handled entirely by the browser/OS push stack before this event ever
 // fires; by the time 'push' runs, event.data is already the plaintext JSON
-// pushPayload {title, body, url, tag?} the Go backend sent. Every push this app
-// sends is a real, user-visible notification (never a data-only "silent
-// push" with no UI, which browsers restrict/penalize) — `silent: true` on
-// the Notification itself is what satisfies the "sans son, discrète" intent
-// instead: no sound/vibration, but still shown. A payload's own `tag` (one
+// pushPayload {title, body, url, tag?, vibrate?} the Go backend sent. Every
+// push this app sends is a real, user-visible notification (never a
+// data-only "silent push" with no UI, which browsers restrict/penalize) —
+// `silent: true` on the Notification itself is what satisfies the "sans son,
+// discrète" intent instead: no sound/vibration, but still shown. The one
+// exception is `vibrate`: the backend only includes it when the recipient
+// turned on "Activer les vibrations des notifications" in Paramètres
+// (users.vibrate_on_notification — read server-side, since a service worker
+// has no access to localStorage), and the spec forbids combining it with
+// `silent: true` (showNotification throws a TypeError), so such a
+// notification is shown non-silent, which also lets the OS play its own
+// notification sound per the device's settings. A payload's own `tag` (one
 // per item for due reminders) wins over the per-URL default, so a newer
 // notification replaces an older one for the same thing without hiding a
 // reminder for a different task of the same list.
@@ -145,16 +152,22 @@ self.addEventListener('push', (event) => {
   }
   const title = data.title || 'Trakka';
   const url = data.url || '/';
-  event.waitUntil(
-    self.registration.showNotification(title, {
-      body: data.body || '',
-      icon: '/icons/trakka-icon-192.png',
-      badge: '/icons/trakka-maskable-192.png',
-      silent: true,
-      tag: data.tag || 'trakka-' + url,
-      data: { url },
-    })
-  );
+  const vibrate = Array.isArray(data.vibrate)
+    ? data.vibrate.filter((ms) => Number.isInteger(ms) && ms >= 0)
+    : [];
+  const options = {
+    body: data.body || '',
+    icon: '/icons/trakka-icon-192.png',
+    badge: '/icons/trakka-maskable-192.png',
+    silent: true,
+    tag: data.tag || 'trakka-' + url,
+    data: { url },
+  };
+  if (vibrate.length > 0) {
+    options.silent = false;
+    options.vibrate = vibrate;
+  }
+  event.waitUntil(self.registration.showNotification(title, options));
 });
 
 // Clicking the notification focuses an already-open tab (and tells it,

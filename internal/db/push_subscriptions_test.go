@@ -111,3 +111,36 @@ func TestDeletePushSubscriptionByID(t *testing.T) {
 		t.Fatalf("expected no subscriptions left, got %+v", subs)
 	}
 }
+
+// TestListPushSubscriptionsCarriesVibratePreference covers the users JOIN
+// in ListPushSubscriptionsForUsers: each subscription reports its own
+// owner's vibrate_on_notification, which defaults to on.
+func TestListPushSubscriptionsCarriesVibratePreference(t *testing.T) {
+	ctx := context.Background()
+	d := openTestDB(t)
+	vibrating := mustCreateUserWithEmail(t, ctx, d, "vibrate@example.com")
+	quiet := mustCreateUserWithEmail(t, ctx, d, "quiet@example.com")
+
+	if _, err := d.CreatePushSubscription(ctx, vibrating, "https://push.example.com/v", "p", "a", ""); err != nil {
+		t.Fatalf("CreatePushSubscription: %v", err)
+	}
+	if _, err := d.CreatePushSubscription(ctx, quiet, "https://push.example.com/q", "p", "a", ""); err != nil {
+		t.Fatalf("CreatePushSubscription: %v", err)
+	}
+	if _, err := d.UpdateUserVibrateOnNotification(ctx, quiet, false); err != nil {
+		t.Fatalf("UpdateUserVibrateOnNotification: %v", err)
+	}
+
+	subs, err := d.ListPushSubscriptionsForUsers(ctx, []int64{vibrating, quiet})
+	if err != nil {
+		t.Fatalf("ListPushSubscriptionsForUsers: %v", err)
+	}
+	if len(subs) != 2 {
+		t.Fatalf("expected 2 subscriptions, got %d", len(subs))
+	}
+	for _, s := range subs {
+		if want := s.UserID == vibrating; s.Vibrate != want {
+			t.Fatalf("subscription of user %d: Vibrate = %v, want %v", s.UserID, s.Vibrate, want)
+		}
+	}
+}

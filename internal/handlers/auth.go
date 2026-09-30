@@ -444,6 +444,8 @@ func (app *Application) materializeInvitations(r *http.Request, user *models.Use
 // models.User.ReminderDefaultAtDueTime) belongs to the same setting: it may
 // only come with that pair, and the pair on its own means false, so a
 // client that predates the preset still saves a plain offset default.
+// vibrate_on_notification (see models.User.VibrateOnNotification) is a
+// plain on/off like keep_last_page.
 func (app *Application) handleMeUpdate(w http.ResponseWriter, r *http.Request) {
 	var in struct {
 		KeepLastPage              *bool   `json:"keep_last_page"`
@@ -451,6 +453,7 @@ func (app *Application) handleMeUpdate(w http.ResponseWriter, r *http.Request) {
 		ReminderDefaultOffsetDays *int    `json:"reminder_default_offset_days"`
 		ReminderDefaultTime       *string `json:"reminder_default_time"`
 		ReminderDefaultAtDueTime  *bool   `json:"reminder_default_at_due_time"`
+		VibrateOnNotification     *bool   `json:"vibrate_on_notification"`
 	}
 	if !decodeJSON(w, r, &in) {
 		return
@@ -503,6 +506,18 @@ func (app *Application) handleMeUpdate(w http.ResponseWriter, r *http.Request) {
 
 	if in.KeepLastPage != nil {
 		updated, err := app.DB.UpdateUserKeepLastPage(r.Context(), user.ID, *in.KeepLastPage)
+		if errors.Is(err, db.ErrNotFound) {
+			writeError(w, http.StatusNotFound, "user not found")
+			return
+		} else if err != nil {
+			app.serverError(w, r, err)
+			return
+		}
+		user = updated
+	}
+
+	if in.VibrateOnNotification != nil {
+		updated, err := app.DB.UpdateUserVibrateOnNotification(r.Context(), user.ID, *in.VibrateOnNotification)
 		if errors.Is(err, db.ErrNotFound) {
 			writeError(w, http.StatusNotFound, "user not found")
 			return

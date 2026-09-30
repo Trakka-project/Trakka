@@ -56,7 +56,8 @@ func (d *DB) CreateUser(ctx context.Context, email string, passwordHash, oidcSub
 // userSelectColumns is the column list scanUser expects, in order: every
 // public models.User field.
 const userSelectColumns = `id, email, display_name, created_at, is_admin, keep_last_page, language,
-		 reminder_default_offset_days, reminder_default_time, reminder_default_at_due_time`
+		 reminder_default_offset_days, reminder_default_time, reminder_default_at_due_time,
+		 vibrate_on_notification`
 
 // userCredentialColumns is userSelectColumns plus the credentials
 // getUserWithCredentials scans into models.UserWithCredentials.
@@ -65,15 +66,16 @@ const userCredentialColumns = userSelectColumns + `, password_hash, oidc_subject
 // scanUser scans one row of userSelectColumns into u, followed by extra
 // destinations for a query that selects more columns after them.
 func scanUser(row rowScanner, u *models.User, extra ...any) error {
-	var isAdmin, keepLastPage, atDueTime int
+	var isAdmin, keepLastPage, atDueTime, vibrate int
 	dest := append([]any{&u.ID, &u.Email, &u.DisplayName, &u.CreatedAt, &isAdmin, &keepLastPage, &u.Language,
-		&u.ReminderDefaultOffsetDays, &u.ReminderDefaultTime, &atDueTime}, extra...)
+		&u.ReminderDefaultOffsetDays, &u.ReminderDefaultTime, &atDueTime, &vibrate}, extra...)
 	if err := row.Scan(dest...); err != nil {
 		return err
 	}
 	u.IsAdmin = isAdmin != 0
 	u.KeepLastPage = keepLastPage != 0
 	u.ReminderDefaultAtDueTime = atDueTime != 0
+	u.VibrateOnNotification = vibrate != 0
 	return nil
 }
 
@@ -103,6 +105,25 @@ func (d *DB) UpdateUserKeepLastPage(ctx context.Context, id int64, keepLastPage 
 	affected, err := res.RowsAffected()
 	if err != nil {
 		return nil, fmt.Errorf("reading rows affected updating user %d: %w", id, err)
+	}
+	if affected == 0 {
+		return nil, ErrNotFound
+	}
+	return d.GetUser(ctx, id)
+}
+
+// UpdateUserVibrateOnNotification sets whether the user's Web Push
+// notifications vibrate the device (see models.User.VibrateOnNotification).
+// Returns ErrNotFound if no such user exists.
+func (d *DB) UpdateUserVibrateOnNotification(ctx context.Context, id int64, vibrate bool) (*models.User, error) {
+	res, err := d.conn.ExecContext(ctx,
+		`UPDATE users SET vibrate_on_notification = ? WHERE id = ?`, boolToInt(vibrate), id)
+	if err != nil {
+		return nil, fmt.Errorf("updating user %d vibrate_on_notification: %w", id, err)
+	}
+	affected, err := res.RowsAffected()
+	if err != nil {
+		return nil, fmt.Errorf("reading rows affected updating user %d vibrate_on_notification: %w", id, err)
 	}
 	if affected == 0 {
 		return nil, ErrNotFound

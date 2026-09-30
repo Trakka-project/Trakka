@@ -52,7 +52,7 @@ curl -b cookies.txt http://localhost:8080/api/v1/me
 Returns the authenticated user. `401 {"error": "authentication required"}` if the session cookie is missing, invalid, or expired.
 
 ```json
-{ "id": 1, "email": "alice@example.com", "display_name": "Alice", "is_admin": false, "created_at": "...", "keep_last_page": true, "language": "en", "reminder_default_offset_days": 0, "reminder_default_time": "09:00", "reminder_default_at_due_time": false }
+{ "id": 1, "email": "alice@example.com", "display_name": "Alice", "is_admin": false, "created_at": "...", "keep_last_page": true, "language": "en", "reminder_default_offset_days": 0, "reminder_default_time": "09:00", "reminder_default_at_due_time": false, "vibrate_on_notification": true }
 ```
 
 `is_admin` grants access to the [Admin](#admin-settings) endpoints below. The very first account ever created on an instance (local or OIDC-provisioned) becomes an admin automatically — see `internal/db.CreateUser` in [CLAUDE.md](../CLAUDE.md) — and any existing admin can grant or revoke it for any other account via [`PATCH /api/v1/admin/users/{id}`](#patch-apiv1adminusersid).
@@ -63,9 +63,11 @@ Returns the authenticated user. `401 {"error": "authentication required"}` if th
 
 `reminder_default_offset_days`/`reminder_default_time` (`integer` ≥ 0, `string` `HH:MM` 24h) are this account's default for "when should I be reminded before a task's due date" — defaulting to `0`/`"09:00"` ("le jour même à 09h00") for a brand new account. The settings UI ("Notifications de tâches") names the offset presets by offset alone, with the time freely editable: `0` is "Le jour même", `1` is "La veille", anything else is "Personnalisé". `reminder_default_at_due_time` (`bool`, default `false`) is the fourth preset, "À l'heure exacte de l'échéance": a task left on the default then reminds at its own `due_time`, and the offset/time pair becomes the fallback for a task that has no due time. See [Reminders](#reminders) under Items for how a task's own reminder either overrides these or resolves from them.
 
+`vibrate_on_notification` (`bool`, defaults to `true`) controls whether this account's [Web Push](#push-notifications) notifications vibrate the device. The server applies it per recipient when it sends a push: the payload carries `"vibrate": [200, 100, 200]` when it is on and no `vibrate` key when it is off, and the service worker shows a payload without one as a silent notification.
+
 ### `PATCH /api/v1/me`
 
-Partial update of the caller's own profile preferences — `keep_last_page`, `language`, and/or `reminder_default_offset_days`/`reminder_default_time` — following the same "absent = untouched" convention as `PATCH /api/v1/items/{id}`; any subset may be present in one request. Returns the updated user (same shape as `GET /api/v1/me`). `language` must be `"fr"` or `"en"`, or the request is rejected with `400`. `reminder_default_offset_days`/`reminder_default_time` must be given together (sending only one is rejected with `400`, since the pair is meaningless half-updated); `reminder_default_offset_days` must be ≥ 0 and `reminder_default_time` must be a real `HH:MM` time, else `400`. `reminder_default_at_due_time` may only be sent with that pair (`400` otherwise), and the pair sent without it saves `false` — so a client unaware of the at-due-time preset still saves a plain offset default.
+Partial update of the caller's own profile preferences — `keep_last_page`, `language`, `vibrate_on_notification`, and/or `reminder_default_offset_days`/`reminder_default_time` — following the same "absent = untouched" convention as `PATCH /api/v1/items/{id}`; any subset may be present in one request. Returns the updated user (same shape as `GET /api/v1/me`). `language` must be `"fr"` or `"en"`, or the request is rejected with `400`. `reminder_default_offset_days`/`reminder_default_time` must be given together (sending only one is rejected with `400`, since the pair is meaningless half-updated); `reminder_default_offset_days` must be ≥ 0 and `reminder_default_time` must be a real `HH:MM` time, else `400`. `reminder_default_at_due_time` may only be sent with that pair (`400` otherwise), and the pair sent without it saves `false` — so a client unaware of the at-due-time preset still saves a plain offset default.
 
 ```bash
 curl -b cookies.txt -X PATCH http://localhost:8080/api/v1/me \

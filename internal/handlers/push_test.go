@@ -266,3 +266,33 @@ func TestSendToUsersDisabledIsNoop(t *testing.T) {
 	// push isn't configured at all, even though a subscription exists.
 	app.sendToUsers(context.Background(), []int64{user.ID}, pushPayload{Title: "t", Body: "b", URL: "/"})
 }
+
+// TestMarshalPushBodies checks the two payload variants sendToUsers picks
+// between per subscription: the quiet one has no "vibrate" key at all
+// (static/sw.js then shows the notification as silent), the vibrating one
+// carries notificationVibratePattern, and both keep every other field.
+func TestMarshalPushBodies(t *testing.T) {
+	quiet, vibrating, err := marshalPushBodies(pushPayload{Title: "t", Body: "b", URL: "/", Tag: "x"})
+	if err != nil {
+		t.Fatalf("marshalPushBodies: %v", err)
+	}
+
+	var q map[string]any
+	if err := json.Unmarshal(quiet, &q); err != nil {
+		t.Fatalf("decoding quiet body: %v", err)
+	}
+	if _, ok := q["vibrate"]; ok {
+		t.Fatalf("quiet body must not carry a vibrate key: %s", quiet)
+	}
+
+	var v pushPayload
+	if err := json.Unmarshal(vibrating, &v); err != nil {
+		t.Fatalf("decoding vibrating body: %v", err)
+	}
+	if len(v.Vibrate) != 3 || v.Vibrate[0] != 200 || v.Vibrate[1] != 100 || v.Vibrate[2] != 200 {
+		t.Fatalf("unexpected vibrate pattern: %v", v.Vibrate)
+	}
+	if v.Title != "t" || v.Body != "b" || v.URL != "/" || v.Tag != "x" || q["tag"] != "x" {
+		t.Fatalf("variants lost other fields: quiet=%s vibrating=%s", quiet, vibrating)
+	}
+}
