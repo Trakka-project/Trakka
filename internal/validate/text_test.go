@@ -14,14 +14,14 @@ func TestTextKeepsComplexEmoji(t *testing.T) {
 		emoji string
 	}{
 		{"skin tone modifier", "\U0001F44D\U0001F3FD"},
-		{"ZWJ family", "\U0001F468‍\U0001F469‍\U0001F467‍\U0001F466"},
-		{"ZWJ with two skin tones", "\U0001F469\U0001F3FB‍❤️‍\U0001F48B‍\U0001F468\U0001F3FC"},
-		{"toned ZWJ profession", "\U0001F9D1\U0001F3FE‍\U0001F4BB"},
-		{"VS16 + ZWJ flag", "\U0001F3F3️‍\U0001F308"},
+		{"ZWJ family", "\U0001F468\u200d\U0001F469\u200d\U0001F467\u200d\U0001F466"},
+		{"ZWJ with two skin tones", "\U0001F469\U0001F3FB\u200d❤\ufe0f\u200d\U0001F48B\u200d\U0001F468\U0001F3FC"},
+		{"toned ZWJ profession", "\U0001F9D1\U0001F3FE\u200d\U0001F4BB"},
+		{"VS16 + ZWJ flag", "\U0001F3F3\ufe0f\u200d\U0001F308"},
 		{"tag sequence flag", "\U0001F3F4\U000E0067\U000E0062\U000E0065\U000E006E\U000E0067\U000E007F"},
-		{"keycap", "1️⃣"},
+		{"keycap", "1\ufe0f\u20e3"},
 		{"regional indicator flag", "\U0001F1EB\U0001F1F7"},
-		{"Emoji 15.1 ZWJ", "\U0001F642‍↔️"},
+		{"Emoji 15.1 ZWJ", "\U0001F642\u200d↔\ufe0f"},
 		{"Emoji 17", "\U0001FAEA"},
 	}
 	for _, tc := range cases {

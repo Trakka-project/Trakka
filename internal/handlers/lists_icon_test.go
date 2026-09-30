@@ -26,7 +26,7 @@ func TestListIconRoundTripsComplexEmoji(t *testing.T) {
 		t.Fatalf("creating house: %v", err)
 	}
 
-	const created = "\U0001F469\U0001F3FB‍❤️‍\U0001F48B‍\U0001F468\U0001F3FC"
+	const created = "\U0001F469\U0001F3FB\u200d❤\ufe0f\u200d\U0001F48B\u200d\U0001F468\U0001F3FC"
 	const updated = "\U0001F3F4\U000E0067\U000E0062\U000E0065\U000E006E\U000E0067\U000E007F"
 
 	body, err := json.Marshal(map[string]any{"name": "Courses", "type": "shopping", "icon": created, "house_id": house.ID})
