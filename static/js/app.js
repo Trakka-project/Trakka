@@ -178,7 +178,7 @@ async function handleDeepLinkOrRestore() {
   const listId = Number(listIdRaw);
 
   if (listIdRaw !== null && Number.isInteger(listId) && listId > 0) {
-    history.replaceState(null, '', window.location.pathname);
+    history.replaceState(history.state, '', window.location.pathname);
     // silent: a deleted/no-longer-accessible list must fail quietly back to
     // the dashboard rather than greeting a notification tap with an error
     // banner — same reasoning restoreLastView's own selectList call uses.

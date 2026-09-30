@@ -63,27 +63,44 @@ const EDGE_BACK_MAIN_PULL_PX = 28; // how far <main> nudges right at full progre
 // modal close all of them independently without any shared registry.
 const OVERLAY_SELECTOR = '[id$="-modal"]:not([hidden]), [id$="-sheet"]:not([hidden])';
 
-function closeTopOverlay() {
-  const overlays = document.querySelectorAll(OVERLAY_SELECTOR);
-  if (overlays.length === 0) return false;
-  overlays.forEach((overlay) => {
-    overlay.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, view: window }));
+// Open overlays in the order they were opened, topmost last. Stacked
+// overlays (the emoji picker above the list modal) don't reveal their
+// z-order in the DOM, so refreshOpenOverlays() keeps this in sync with the
+// DOM instead: overlays that closed are dropped, newly opened ones are
+// appended. It runs from the history MutationObserver (section 3)
+// on every `hidden` change, and again right before it's read.
+let openOverlays = [];
+
+function refreshOpenOverlays() {
+  const open = Array.from(document.querySelectorAll(OVERLAY_SELECTOR));
+  openOverlays = openOverlays.filter((el) => open.includes(el));
+  open.forEach((el) => {
+    if (!openOverlays.includes(el)) openOverlays.push(el);
   });
-  return true;
 }
 
-// Closes whatever's "on top" right now: an open modal/sheet first, else the
-// list detail view back to the dashboard (via a real .click() on the header
-// back button, reusing its existing handler in list_view.js rather than
-// duplicating the showDashboard() call here) — the same two things the
-// header's back button and a modal's own backdrop click already do
-// individually. A no-op at the dashboard root, same as pressing Escape there
-// today.
-function goBack() {
-  if (closeTopOverlay()) return;
+function isListViewOpen() {
   const itemsSection = document.getElementById('items-section');
+  return !!itemsSection && !itemsSection.hidden;
+}
+
+// Closes whatever's "on top" right now: the most recently opened
+// modal/sheet first, else the list detail view back to the dashboard (via a
+// real .click() on the header back button, reusing its existing handler in
+// list_view.js rather than duplicating the showDashboard() call here) — the
+// same two things the header's back button and a modal's own backdrop click
+// already do individually. One level per call, so backing out of the emoji
+// picker returns to the list modal underneath it. A no-op at the dashboard
+// root, same as pressing Escape there today.
+function goBack() {
+  refreshOpenOverlays();
+  const top = openOverlays[openOverlays.length - 1];
+  if (top) {
+    top.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, view: window }));
+    return;
+  }
   const backButton = document.getElementById('back-button');
-  if (itemsSection && !itemsSection.hidden && backButton) backButton.click();
+  if (isListViewOpen() && backButton) backButton.click();
 }
 
 // A small pill that slides in from the left edge as the gesture progresses —
@@ -258,7 +275,7 @@ if (IS_TOUCH_DEVICE) {
       resetEdgeBackFeedback();
       if (triggered) {
         gestureVibrate(15);
-        goBack();
+        requestBack();
       }
       axisLocked = null;
       lastDx = 0;
@@ -477,3 +494,145 @@ function attachItemSwipeGestures(li, item, { canToggleDone }) {
   foreground.addEventListener('touchend', finish, { passive: true });
   foreground.addEventListener('touchcancel', finish, { passive: true });
 }
+
+// ---------------------------------------------------------------------------
+// 3. System back (one history entry per open level)
+// ---------------------------------------------------------------------------
+//
+// Android's back action (the gesture-navigation edge swipe or the back
+// button) pops a browser history entry. Trakka is a single-document SPA that
+// never navigates, so in an installed PWA there is nothing to pop and the
+// system closes the app, even with a modal or a list open. Every open level
+// (the list detail view, then each overlay stacked above it) therefore gets
+// its own same-URL history entry, whose state records its depth
+// (`trakkaDepth`); the entry the page loaded on is anchored at depth 0.
+// System back pops one entry, and the `popstate` listener closes levels
+// (goBack) until the UI is no deeper than the entry it landed on. Closing a
+// level any other way (✕, Cancel, Escape, the header back button) drops the
+// entries above it with history.go(-n), so no orphaned entry is left for a
+// later back press to hit with nothing to close.
+//
+// Chrome's history manipulation intervention (see
+// docs/history_manipulation_intervention.md in Chromium) shapes all of this:
+// - A pushState made without a user activation marks *every* entry of the
+//   document as skipped by the back button, so the next back leaves the
+//   app. The page's first entries therefore wait for its first interaction
+//   (a list reopened at boot by restoreLastView gets its entry on the first
+//   tap).
+// - After a back/forward, an earlier activation no longer counts for new
+//   entries until the next one. So nothing is ever pushed in response to a
+//   back, which is why there is one entry per level rather than a single
+//   guard re-pushed after each back (the first version of this fix, which
+//   let the second back press close the app). `activationHonored` tracks
+//   this; a push it blocks waits for the next activation.
+// - Playwright's page.goBack() is not subject to the intervention; only the
+//   browser's own back action is (Alt+Left in a real Chrome window).
+//
+// No open/close function needs to know about any of this: a
+// MutationObserver on the overlays' and #items-section's `hidden` attribute
+// resyncs the history after every change, so an overlay added later is
+// covered as long as it follows OVERLAY_SELECTOR's id convention.
+
+const HISTORY_DEPTH_KEY = 'trakkaDepth';
+
+// Set while a history.go() issued by syncHistory is still in flight:
+// history.state only changes once the traversal lands.
+let historyTraversalPending = false;
+let activationHonored = !navigator.userActivation || navigator.userActivation.hasBeenActive;
+let dropEntriesTimer = null;
+
+function historyDepth() {
+  const current = history.state;
+  return current && Number.isInteger(current[HISTORY_DEPTH_KEY]) ? current[HISTORY_DEPTH_KEY] : 0;
+}
+
+function uiDepth() {
+  refreshOpenOverlays();
+  return openOverlays.length + (isListViewOpen() ? 1 : 0);
+}
+
+function syncHistory() {
+  if (historyTraversalPending) return; // resynced by the popstate listener
+  const want = uiDepth();
+  const have = historyDepth();
+  if (want > have && activationHonored) {
+    for (let depth = have + 1; depth <= want; depth += 1) {
+      history.pushState({ [HISTORY_DEPTH_KEY]: depth }, '');
+    }
+  } else if (want < have && dropEntriesTimer === null) {
+    // Deferred to a task of its own, so a close followed by an open split
+    // across microtasks (an `await` between the two) reuses the entry
+    // instead of dropping it and then needing a push after a traversal.
+    dropEntriesTimer = setTimeout(dropExtraEntries, 0);
+  }
+}
+
+function dropExtraEntries() {
+  dropEntriesTimer = null;
+  if (historyTraversalPending) return;
+  const extra = historyDepth() - uiDepth();
+  if (extra <= 0) return;
+  historyTraversalPending = true;
+  history.go(-extra);
+}
+
+// The in-app edge swipe (section 1) goes through the same history step as
+// the system back, so both close exactly one level and the history stays in
+// step. When the two are out of step (the first entry still waiting for an
+// interaction), it closes directly and syncHistory catches up.
+function requestBack() {
+  const depth = historyDepth();
+  if (!historyTraversalPending && depth > 0 && depth === uiDepth()) {
+    history.back();
+    return;
+  }
+  goBack();
+}
+
+(function initHistory() {
+  // Anchor the entry the page loaded on at depth 0. After a reload, the
+  // entries below it belong to the previous document (going back to one
+  // loads the page again, it doesn't fire popstate), so depth is never
+  // counted from them.
+  history.replaceState({ ...(history.state || {}), [HISTORY_DEPTH_KEY]: 0 }, '');
+
+  const observer = new MutationObserver(syncHistory);
+  document.querySelectorAll('[id$="-modal"], [id$="-sheet"], #items-section').forEach((el) => {
+    observer.observe(el, { attributes: true, attributeFilter: ['hidden'] });
+  });
+
+  window.addEventListener('popstate', () => {
+    activationHonored = false;
+    if (historyTraversalPending) {
+      historyTraversalPending = false;
+    } else {
+      // A back (or forward) by the user: close levels until the UI is no
+      // deeper than the entry it landed on. Usually one level; more only if
+      // the browser skipped entries. Stops if an overlay won't close.
+      const target = historyDepth();
+      let depth = uiDepth();
+      while (depth > target) {
+        goBack();
+        const next = uiDepth();
+        if (next >= depth) break;
+        depth = next;
+      }
+    }
+    syncHistory();
+  });
+
+  // The activation-triggering input events. Capture phase, so the flag is
+  // set before the tap's own click handler opens anything.
+  // navigator.userActivation.isActive filters out the ones that didn't
+  // activate (a touchend ending a scroll).
+  const onActivation = (event) => {
+    if (event.type === 'keydown' && event.key === 'Escape') return;
+    if (event.type === 'pointerdown' && event.pointerType !== 'mouse') return;
+    if (navigator.userActivation && !navigator.userActivation.isActive) return;
+    activationHonored = true;
+    syncHistory();
+  };
+  ['keydown', 'mousedown', 'pointerdown', 'pointerup', 'touchend'].forEach((type) => {
+    window.addEventListener(type, onActivation, { capture: true, passive: true });
+  });
+})();
