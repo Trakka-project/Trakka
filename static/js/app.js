@@ -2364,4 +2364,10 @@ if (logoutForm) {
 
 init();
 updateNetworkStatus();
+// i18n.js's very first loadLang() deliberately doesn't fire
+// trakka:lang-changed, so if the /healthz check above resolves before the
+// locale file does, the label would keep the French bootstrap copy ("En
+// ligne") until the next NETWORK_STATUS_POLL_MS tick. Re-run it once the
+// real translations are in.
+if (window.TrakkaI18n) window.TrakkaI18n.ready.then(updateNetworkStatus, () => {});
 registerServiceWorker();

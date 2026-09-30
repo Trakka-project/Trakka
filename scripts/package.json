@@ -1,0 +1,12 @@
+{
+  "name": "trakka-scripts",
+  "private": true,
+  "description": "Maintainer tooling for Trakka (not part of the shipped app). See scripts/README.md.",
+  "type": "module",
+  "scripts": {
+    "showcase": "node generate-showcase-images.js"
+  },
+  "devDependencies": {
+    "playwright": "1.62.1"
+  }
+}
