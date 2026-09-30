@@ -118,6 +118,10 @@ function enterSelectionMode(initialItem = null) {
 
 function hideSelectionChrome() {
   selectionEls.bar.hidden = true;
+  // Reset rather than left stale for the next entry, which repaints both
+  // (updateBulkActionsBar) before the bar is shown again.
+  selectionEls.count.textContent = '';
+  selectionEls.total.hidden = true;
   listEls.createItemFormAnchor.hidden = false;
   listEls.itemsSection.classList.remove('is-selecting');
   selectionEls.toastContainer.style.bottom = '';
@@ -163,8 +167,18 @@ function syncSelectionWithRender(active, done) {
   // drops out of the selection, so a bulk action can only ever reach rows
   // the user can actually see selected.
   const rendered = new Set([...renderedActiveKeys, ...renderedDoneKeys]);
+  const hadSelection = selectedItemIds.size > 0;
   for (const key of selectedItemIds) {
     if (!rendered.has(key)) selectedItemIds.delete(key);
+  }
+  // Pruning just emptied a selection the user had made — leave the mode,
+  // same as deselecting the last row by hand (setSelected below). This pass
+  // already drew the rows in their selection shape, so redraw them once
+  // more: selectionMode is false by then, so that pass lands in the early
+  // return above instead of coming back here.
+  if (hadSelection && selectedItemIds.size === 0) {
+    exitSelectionMode();
+    return;
   }
   selectionEls.bar.hidden = false;
   listEls.createItemFormAnchor.hidden = true;
@@ -259,9 +273,17 @@ function decorateSelectableRow(li, item) {
   }
   li.classList.add('cursor-pointer');
 
+  // Deselecting the last selected row leaves the mode altogether rather
+  // than parking the bar on "Aucune sélection". Entering through the
+  // "Sélectionner" button still starts from an empty selection — only a
+  // selection that *becomes* empty exits.
   function setSelected(selected) {
     if (selected) selectedItemIds.add(selectionKey(item));
     else selectedItemIds.delete(selectionKey(item));
+    if (selectedItemIds.size === 0) {
+      exitSelectionMode();
+      return;
+    }
     paintRowSelection(li, checkbox, selected);
     updateBulkActionsBar();
   }
@@ -278,16 +300,16 @@ function decorateSelectableRow(li, item) {
 // ---------------------------------------------------------------------------
 
 // Selects every row currently on screen, or — once they're all selected —
-// clears the whole selection (including any done rows selected before
-// #done-section was collapsed).
+// "Tout désélectionner" clears the whole selection (including any done rows
+// selected before #done-section was collapsed) and leaves the mode.
 function toggleSelectAll() {
   const visibleKeys = visibleSelectableKeys();
   const allSelected = selectedItemIds.size > 0 && visibleKeys.every((key) => selectedItemIds.has(key));
   if (allSelected) {
-    selectedItemIds.clear();
-  } else {
-    for (const key of visibleKeys) selectedItemIds.add(key);
+    exitSelectionMode();
+    return;
   }
+  for (const key of visibleKeys) selectedItemIds.add(key);
   renderItems();
 }
 
