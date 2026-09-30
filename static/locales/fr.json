@@ -575,6 +575,8 @@
       "saved": "Préférences enregistrées.",
       "pushToggleLabel": "Activer les notifications push",
       "pushToggleHint": "Recevez une notification lors des modifications sur une liste partagée et pour les rappels de vos tâches.",
+      "vibrateLabel": "Activer les vibrations des notifications",
+      "vibrateHint": "Une courte double vibration à la réception d'une notification (le son éventuel dépend des réglages de votre téléphone). Désactivé, les notifications arrivent sans son ni vibration. Sans effet sur iPhone et iPad.",
       "pushUnsupported": "Les notifications push ne sont pas prises en charge par ce navigateur.",
       "pushNotConfigured": "Les notifications push ne sont pas configurées sur cette instance.",
       "pushPermissionDenied": "Autorisation refusée. Modifiez les autorisations de ce site dans les paramètres de votre navigateur pour réactiver.",

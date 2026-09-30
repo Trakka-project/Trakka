@@ -38,6 +38,7 @@ const userSettingsEls = {
   languageSelect: document.getElementById('user-settings-language'),
   form: document.getElementById('user-settings-form'),
   keepLastPage: document.getElementById('user-settings-keep-last-page'),
+  vibrate: document.getElementById('user-settings-vibrate'),
   reminderPreset: document.getElementById('user-settings-reminder-preset'),
   reminderOffset: document.getElementById('user-settings-reminder-offset'),
   reminderOffsetSuffix: document.getElementById('user-settings-reminder-offset-suffix'),
@@ -62,6 +63,11 @@ function openUserSettingsModal() {
   // server value, falling back to the localStorage mirror if /me hasn't
   // resolved yet (e.g. opened while offline).
   userSettingsEls.keepLastPage.checked = isKeepLastPageEnabled();
+  // vibrate_on_notification only matters server-side (internal/handlers'
+  // sendToUsers decides per device whether a push carries a vibration
+  // pattern), so there's no localStorage mirror: before /me resolves this
+  // shows the column's own default, on.
+  userSettingsEls.vibrate.checked = state.currentUser ? state.currentUser.vibrate_on_notification !== false : true;
   // state.currentUser's own reminder_default_offset_days/_time/_at_due_time
   // (from GET/PATCH /api/v1/me) drive the preset select (see
   // reminderDefaultsToPreset), falling back to the "Le jour même" defaults
@@ -178,6 +184,7 @@ userSettingsEls.form.addEventListener('submit', async (event) => {
   userSettingsEls.status.hidden = true;
 
   const keepLastPage = userSettingsEls.keepLastPage.checked;
+  const vibrateOnNotification = userSettingsEls.vibrate.checked;
   // Read straight from the offset/time inputs' current values, not the
   // preset select — "Personnalisé" has no other source, and for
   // "same_day"/"day_before" the change listener above already filled them
@@ -192,6 +199,7 @@ userSettingsEls.form.addEventListener('submit', async (event) => {
       method: 'PATCH',
       body: JSON.stringify({
         keep_last_page: keepLastPage,
+        vibrate_on_notification: vibrateOnNotification,
         reminder_default_offset_days: reminderDefaultOffsetDays,
         reminder_default_time: reminderDefaultTime,
         reminder_default_at_due_time: reminderDefaultAtDueTime,

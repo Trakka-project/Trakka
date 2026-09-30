@@ -81,9 +81,9 @@ func TestPrepareRestoreFileMigratesOlderSchema(t *testing.T) {
 		t.Fatalf("SnapshotTo: %v", err)
 	}
 	// Simulate a backup from before migration 20 by undoing migrations 20,
-	// 21 and 23 (backup_runs, the task-scheduling columns and index, the
-	// due-reminder index; 22 only rewrites rows) and rewinding user_version
-	// on the staged copy.
+	// 21, 23 and 24 (backup_runs, the task-scheduling columns and index, the
+	// due-reminder index, the notification-vibration column; 22 only
+	// rewrites rows) and rewinding user_version on the staged copy.
 	old, err := Open(snap, logger)
 	if err != nil {
 		t.Fatalf("opening snapshot: %v", err)
@@ -97,6 +97,7 @@ func TestPrepareRestoreFileMigratesOlderSchema(t *testing.T) {
 		`ALTER TABLE items DROP COLUMN notification_sent_at`,
 		`ALTER TABLE items DROP COLUMN reminder_at_due_time`,
 		`ALTER TABLE users DROP COLUMN reminder_default_at_due_time`,
+		`ALTER TABLE users DROP COLUMN vibrate_on_notification`,
 	} {
 		if _, err := old.conn.Exec(stmt); err != nil {
 			t.Fatalf("%s: %v", stmt, err)

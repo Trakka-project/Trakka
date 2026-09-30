@@ -176,7 +176,7 @@ func (app *Application) handlePushTest(w http.ResponseWriter, r *http.Request) {
 // ---------------------------------------------------------------------------
 
 // pushPayload is the JSON body every notification this app sends carries —
-// static/sw.js's 'push' listener reads exactly these three fields to call
+// static/sw.js's 'push' listener reads these fields to call
 // self.registration.showNotification. URL is where notificationclick
 // navigates to (a deep link of the shape /?list={id} — see
 // handleDeepLinkOrRestore in static/js/app.js).
@@ -190,6 +190,32 @@ type pushPayload struct {
 	// one tag per item, so two tasks of the same list never hide each
 	// other's reminder.
 	Tag string `json:"tag,omitempty"`
+	// Vibrate is the vibration pattern (alternating vibrate/pause
+	// milliseconds, as the Notification API's own `vibrate` option takes
+	// it). Never set by callers: sendToUsers fills in
+	// notificationVibratePattern for the subscriptions whose owner has
+	// models.User.VibrateOnNotification enabled, and leaves it out for the
+	// rest, which static/sw.js then shows as silent.
+	Vibrate []int `json:"vibrate,omitempty"`
+}
+
+// notificationVibratePattern is a short double buzz: 200ms on, 100ms off,
+// 200ms on.
+var notificationVibratePattern = []int{200, 100, 200}
+
+// marshalPushBodies returns payload's JSON twice: without a vibration
+// pattern (quiet) and with notificationVibratePattern (vibrating), so
+// sendToUsers marshals once per notification rather than once per device.
+func marshalPushBodies(payload pushPayload) (quiet, vibrating []byte, err error) {
+	payload.Vibrate = nil
+	if quiet, err = json.Marshal(payload); err != nil {
+		return nil, nil, err
+	}
+	payload.Vibrate = notificationVibratePattern
+	if vibrating, err = json.Marshal(payload); err != nil {
+		return nil, nil, err
+	}
+	return quiet, vibrating, nil
 }
 
 // sendToUsers delivers payload to every subscription belonging to any of
@@ -203,11 +229,13 @@ type pushPayload struct {
 // action look like it failed. A subscription the push service reports as
 // permanently gone (webpush.ErrSubscriptionGone — 404/410) is deleted so
 // future notifications stop trying it; any other failure is just logged.
+// Each subscription gets the quiet or the vibrating body per its owner's
+// preference (see marshalPushBodies).
 func (app *Application) sendToUsers(ctx context.Context, userIDs []int64, payload pushPayload) {
 	if !app.Config.PushEnabled() || len(userIDs) == 0 {
 		return
 	}
-	body, err := json.Marshal(payload)
+	quietBody, vibratingBody, err := marshalPushBodies(payload)
 	if err != nil {
 		app.Logger.Error("marshaling push payload", "error", err)
 		return
@@ -226,6 +254,10 @@ func (app *Application) sendToUsers(ctx context.Context, userIDs []int64, payloa
 		wg.Add(1)
 		go func(sub *models.PushSubscription) { // #nosec G118 -- the context.Background() inside is deliberately given its own subscriptionCleanupTimeout rather than reusing ctx, which may already be at or past its own pushSendTimeout deadline by the time this cleanup runs; see the subscriptionCleanupTimeout doc comment
 			defer wg.Done()
+			body := quietBody
+			if sub.Vibrate {
+				body = vibratingBody
+			}
 			err := webpush.Send(ctx, webpush.Subscription{Endpoint: sub.Endpoint, P256dh: sub.P256dh, Auth: sub.Auth}, keys, app.Config.VAPIDSubject, body)
 			if errors.Is(err, webpush.ErrSubscriptionGone) {
 				delCtx, delCancel := context.WithTimeout(context.Background(), subscriptionCleanupTimeout)

@@ -310,6 +310,12 @@ type User struct {
 	// a task that has no due time. Settable via PATCH /api/v1/me together
 	// with the other two.
 	ReminderDefaultAtDueTime bool `json:"reminder_default_at_due_time"`
+	// VibrateOnNotification controls whether this account's Web Push
+	// notifications vibrate the device: internal/handlers.sendToUsers only
+	// adds a `vibrate` pattern to the payload when it is set, and
+	// static/sw.js shows a notification without one as silent. Settable via
+	// PATCH /api/v1/me.
+	VibrateOnNotification bool `json:"vibrate_on_notification"`
 }
 
 // UserWithCredentials is returned by db lookups used for authentication
@@ -550,6 +556,11 @@ type PushSubscription struct {
 	Auth      string `json:"-"`
 	UserAgent string `json:"-"`
 	CreatedAt string `json:"created_at"`
+	// Vibrate is the owning user's User.VibrateOnNotification, filled in
+	// only by internal/db.ListPushSubscriptionsForUsers (the one read
+	// internal/handlers.sendToUsers delivers from), so each device gets the
+	// payload variant its owner asked for. Never serialized.
+	Vibrate bool `json:"-"`
 }
 
 // BackupRun is one finished encrypted-backup attempt (see internal/backup),

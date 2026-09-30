@@ -132,3 +132,36 @@ func TestHandleMeUpdateReminderAtDueTime(t *testing.T) {
 		t.Fatalf("expected 400 without the offset/time pair, got %d", rec.Code)
 	}
 }
+
+// TestHandleMeUpdateVibrateOnNotification covers PATCH /api/v1/me's
+// vibrate_on_notification field: on by default, persisted when turned off,
+// and left untouched by a PATCH that doesn't mention it.
+func TestHandleMeUpdateVibrateOnNotification(t *testing.T) {
+	app := newTestApplication(t)
+	user := mustCreateTestUser(t, app, "vibrate@example.com")
+	if !user.VibrateOnNotification {
+		t.Fatalf("expected vibrate_on_notification to default to true")
+	}
+
+	patch := func(body string) {
+		t.Helper()
+		req := httptest.NewRequest(http.MethodPatch, "/api/v1/me", strings.NewReader(body))
+		req = req.WithContext(context.WithValue(req.Context(), userContextKey, user))
+		rec := httptest.NewRecorder()
+		app.handleMeUpdate(rec, req)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("handleMeUpdate(%s): %d %s", body, rec.Code, rec.Body.String())
+		}
+	}
+
+	patch(`{"vibrate_on_notification":false}`)
+	patch(`{"keep_last_page":false}`)
+
+	reloaded, err := app.DB.GetUser(context.Background(), user.ID)
+	if err != nil {
+		t.Fatalf("reloading user: %v", err)
+	}
+	if reloaded.VibrateOnNotification {
+		t.Fatalf("expected vibrate_on_notification to persist as false")
+	}
+}

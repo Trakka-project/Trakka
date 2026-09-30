@@ -77,6 +77,8 @@ func (d *DB) DeletePushSubscriptionByID(ctx context.Context, id int64) error {
 // id still passes through as a bound parameter — the standard Go idiom for
 // a variable-length IN clause, not a departure from this package's
 // "parameters only, never concatenate a value into the SQL text" rule.
+// Joins users so each subscription also carries its owner's
+// vibrate_on_notification preference (models.PushSubscription.Vibrate).
 func (d *DB) ListPushSubscriptionsForUsers(ctx context.Context, userIDs []int64) ([]*models.PushSubscription, error) {
 	if len(userIDs) == 0 {
 		return []*models.PushSubscription{}, nil
@@ -88,7 +90,8 @@ func (d *DB) ListPushSubscriptionsForUsers(ctx context.Context, userIDs []int64)
 		args[i] = id
 	}
 	query := fmt.Sprintf( // #nosec G201 -- only the placeholder count (a structural detail derived from len(userIDs)) is interpolated; every actual id is still bound as a query parameter below, never concatenated into the SQL text
-		`SELECT id, user_id, endpoint, p256dh, auth, user_agent, created_at FROM push_subscriptions WHERE user_id IN (%s)`,
+		`SELECT s.id, s.user_id, s.endpoint, s.p256dh, s.auth, s.user_agent, s.created_at, u.vibrate_on_notification
+		 FROM push_subscriptions s JOIN users u ON u.id = s.user_id WHERE s.user_id IN (%s)`,
 		strings.Join(placeholders, ","),
 	)
 	rows, err := d.conn.QueryContext(ctx, query, args...)
@@ -99,10 +102,12 @@ func (d *DB) ListPushSubscriptionsForUsers(ctx context.Context, userIDs []int64)
 
 	subs := []*models.PushSubscription{}
 	for rows.Next() {
-		s, err := scanPushSubscription(rows)
-		if err != nil {
+		s := &models.PushSubscription{}
+		var vibrate int
+		if err := rows.Scan(&s.ID, &s.UserID, &s.Endpoint, &s.P256dh, &s.Auth, &s.UserAgent, &s.CreatedAt, &vibrate); err != nil {
 			return nil, fmt.Errorf("scanning push subscription row: %w", err)
 		}
+		s.Vibrate = vibrate != 0
 		subs = append(subs, s)
 	}
 	if err := rows.Err(); err != nil {
