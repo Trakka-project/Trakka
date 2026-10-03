@@ -1256,13 +1256,17 @@
             <input type="checkbox" id="user-settings-push-toggle"
                    class="mt-0.5 h-4 w-4 shrink-0 rounded border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 text-sky-500 focus:ring-sky-500/40">
             <span>
-              <span class="block" data-i18n="modals.userSettings.pushToggleLabel">Activer les notifications push</span>
-              <span class="mt-0.5 block text-xs font-normal text-slate-500 dark:text-slate-400" data-i18n="modals.userSettings.pushToggleHint">Recevez une notification lors des modifications sur une liste partagée et pour les rappels de vos tâches.</span>
+              <span id="user-settings-push-label" class="block" data-i18n="modals.userSettings.pushToggleLabel">Activer les notifications push</span>
+              <span id="user-settings-push-hint" class="mt-0.5 block text-xs font-normal text-slate-500 dark:text-slate-400" data-i18n="modals.userSettings.pushToggleHint">Recevez une notification lors des modifications sur une liste partagée et pour les rappels de vos tâches.</span>
+              <!-- Inside the Android app, the same switch turns on reminders scheduled on the
+                   phone instead (local-reminders.js): push.js swaps these texts in. -->
+              <span id="user-settings-local-reminders-label" class="block" data-i18n="modals.userSettings.localRemindersLabel" hidden>Rappels locaux (mode hors-ligne supporté)</span>
+              <span id="user-settings-local-reminders-hint" class="mt-0.5 block text-xs font-normal text-slate-500 dark:text-slate-400" data-i18n="modals.userSettings.localRemindersHint" hidden>Les rappels de vos tâches sont programmés sur ce téléphone : ils arrivent à l'heure, même sans réseau. Les modifications des listes partagées ne sont pas notifiées dans l'application.</span>
             </span>
           </label>
           <p id="user-settings-push-status" class="text-xs text-slate-500 dark:text-slate-400" role="status" hidden></p>
 
-          <label class="flex cursor-pointer items-start gap-3 border-t border-slate-200 dark:border-slate-700 pt-3 text-sm font-medium text-slate-600 dark:text-slate-300">
+          <label id="user-settings-vibrate-row" class="flex cursor-pointer items-start gap-3 border-t border-slate-200 dark:border-slate-700 pt-3 text-sm font-medium text-slate-600 dark:text-slate-300">
             <input type="checkbox" id="user-settings-vibrate" checked
                    class="mt-0.5 h-4 w-4 shrink-0 rounded border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 text-sky-500 focus:ring-sky-500/40">
             <span>
@@ -1304,6 +1308,21 @@
         <span aria-hidden="true">📱</span>
         <span data-i18n="modals.userSettings.installHelpButton">Comment installer l'application sur mon téléphone ?</span>
       </button>
+
+      <!-- Only shown inside the Android app (android/, docs/MOBILE_BUILD.md), whose native
+           TrakkaApp plugin settings.js finds on this page: see refreshAndroidAppSection. -->
+      <section id="user-settings-android-app" hidden aria-labelledby="user-settings-android-app-title"
+               class="mt-4 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-4 py-3">
+        <h3 id="user-settings-android-app-title" class="text-sm font-medium text-slate-600 dark:text-slate-300" data-i18n="modals.userSettings.androidAppTitle">Serveur de l'application</h3>
+        <p class="mt-0.5 text-xs font-normal text-slate-500 dark:text-slate-400" data-i18n="modals.userSettings.androidAppHint">L'application Android est connectée à ce serveur Trakka.</p>
+        <p id="user-settings-android-app-server" class="mt-2 break-all text-sm font-medium text-slate-900 dark:text-slate-100"></p>
+        <p id="user-settings-android-app-version" class="mt-0.5 text-xs font-normal text-slate-500 dark:text-slate-400"></p>
+        <button type="button" id="user-settings-android-app-change-button"
+                class="mt-2 flex w-full items-center justify-center gap-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-100 dark:bg-slate-800 px-4 py-2.5 text-sm font-medium text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700">
+          <span aria-hidden="true">🔁</span>
+          <span data-i18n="modals.userSettings.androidAppChangeServer">Changer de serveur</span>
+        </button>
+      </section>
 
       <div class="mt-4 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-4 py-3">
         <p class="text-sm font-medium text-slate-600 dark:text-slate-300" data-i18n="modals.userSettings.updateSectionTitle">Mises à jour</p>
@@ -2045,6 +2064,7 @@
   <script src="/js/notifications.js" defer></script>
   <script src="/js/settings.js" defer></script>
   <script src="/js/push.js" defer></script>
+  <script src="/js/local-reminders.js" defer></script>
   <script src="/js/install-help.js" defer></script>
   <script src="/js/admin.js" defer></script>
 </body>

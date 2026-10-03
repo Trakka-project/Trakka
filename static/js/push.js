@@ -17,7 +17,42 @@
 const pushEls = {
   toggle: document.getElementById('user-settings-push-toggle'),
   status: document.getElementById('user-settings-push-status'),
+  vibrateRow: document.getElementById('user-settings-vibrate-row'),
+  pushLabel: document.getElementById('user-settings-push-label'),
+  pushHint: document.getElementById('user-settings-push-hint'),
+  localLabel: document.getElementById('user-settings-local-reminders-label'),
+  localHint: document.getElementById('user-settings-local-reminders-hint'),
 };
+
+// Inside the Android app with Capacitor's LocalNotifications plugin, the
+// switch turns on reminders scheduled on the phone (local-reminders.js)
+// instead of Web Push, which the app's WebView lacks. Everywhere else,
+// localNotificationsPlugin() is null and this file behaves as before.
+function usesLocalReminders() {
+  return typeof localNotificationsPlugin === 'function' && !!localNotificationsPlugin();
+}
+
+function showLocalRemindersTexts(local) {
+  if (!pushEls.localLabel) return;
+  pushEls.pushLabel.hidden = local;
+  pushEls.pushHint.hidden = local;
+  pushEls.localLabel.hidden = !local;
+  pushEls.localHint.hidden = !local;
+}
+
+// The switch's state for local reminders: on when turned on here and still
+// allowed by Android (the user can revoke the permission in its settings at
+// any time). The vibration setting stays shown: it picks the channel the
+// reminders are posted on (see ReminderChannels.java).
+async function refreshLocalRemindersToggleUI() {
+  const permission = await localRemindersPermission();
+  pushEls.toggle.disabled = false;
+  pushEls.toggle.checked = isLocalRemindersEnabled() && permission === 'granted';
+  if (isLocalRemindersEnabled() && permission !== 'granted') {
+    pushEls.status.textContent = t('modals.userSettings.localRemindersPermissionDenied');
+    pushEls.status.hidden = false;
+  }
+}
 
 function isPushSupported() {
   return 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window;
@@ -65,16 +100,35 @@ async function getExistingPushSubscription() {
 // instance, permission previously denied (which only the user can undo, via
 // their own browser's site settings — this app can't re-prompt), or the
 // ordinary on/off state of an actual browser subscription.
+//
+// The vibration setting only shapes push notifications, so it is hidden where
+// this device can't get any (unsupported, or push not configured on the
+// instance). Hidden, its checkbox keeps the account's value, which saving the
+// form sends back unchanged: it still applies to the user's other devices.
 async function refreshPushToggleUI() {
   if (!pushEls.toggle) return;
   pushEls.status.hidden = true;
   pushEls.status.textContent = '';
+  if (pushEls.vibrateRow) pushEls.vibrateRow.hidden = false;
+
+  const local = usesLocalReminders();
+  showLocalRemindersTexts(local);
+  if (local) {
+    await refreshLocalRemindersToggleUI();
+    return;
+  }
 
   if (!isPushSupported()) {
     pushEls.toggle.checked = false;
     pushEls.toggle.disabled = true;
-    pushEls.status.textContent = t('modals.userSettings.pushUnsupported');
+    // Android's WebView, which the Android app (android/) shows Trakka in,
+    // has no Web Push: tell the user where reminders do work rather than
+    // blaming "this browser" they never chose (androidAppPlugin: settings.js).
+    pushEls.status.textContent = t(androidAppPlugin()
+      ? 'modals.userSettings.pushUnsupportedAndroidApp'
+      : 'modals.userSettings.pushUnsupported');
     pushEls.status.hidden = false;
+    if (pushEls.vibrateRow) pushEls.vibrateRow.hidden = true;
     return;
   }
 
@@ -89,6 +143,7 @@ async function refreshPushToggleUI() {
     pushEls.toggle.disabled = true;
     pushEls.status.textContent = t('modals.userSettings.pushNotConfigured');
     pushEls.status.hidden = false;
+    if (pushEls.vibrateRow) pushEls.vibrateRow.hidden = true;
     return;
   }
 
@@ -162,7 +217,13 @@ if (pushEls.toggle) {
     const wantEnabled = pushEls.toggle.checked;
     pushEls.toggle.disabled = true;
     try {
-      if (wantEnabled) {
+      if (usesLocalReminders()) {
+        if (!wantEnabled) {
+          await disableLocalReminders();
+        } else if (!(await enableLocalReminders())) {
+          throw new Error(t('modals.userSettings.localRemindersPermissionDenied'));
+        }
+      } else if (wantEnabled) {
         await enablePush();
       } else {
         await disablePush();

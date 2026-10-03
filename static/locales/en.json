@@ -578,6 +578,10 @@
       "vibrateLabel": "Enable notification vibrations",
       "vibrateHint": "A short double vibration when a notification arrives (any sound depends on your phone's settings). When off, notifications arrive with no sound or vibration. No effect on iPhone and iPad.",
       "pushUnsupported": "Push notifications aren't supported by this browser.",
+      "pushUnsupportedAndroidApp": "Push notifications aren't supported in the mobile app yet. Use the PWA in your browser to get reminders.",
+      "localRemindersLabel": "Local reminders (works offline)",
+      "localRemindersHint": "Your task reminders are scheduled on this phone: they arrive on time, even without a network. Changes to shared lists aren't notified in the app.",
+      "localRemindersPermissionDenied": "Trakka's notifications are blocked on this phone: allow them in the app's Android settings, then try again.",
       "pushNotConfigured": "Push notifications aren't configured on this instance.",
       "pushPermissionDenied": "Permission denied. Change this site's permissions in your browser settings to re-enable.",
       "installHelpButton": "How do I install the app on my phone?",
@@ -588,7 +592,11 @@
       "updateCheckButton": "Check for updates",
       "updateCheckUpToDate": "Trakka is already up to date.",
       "updateCheckUnsupported": "Checking for updates isn't supported by this browser.",
-      "updateCheckError": "Couldn't check for updates right now."
+      "updateCheckError": "Couldn't check for updates right now.",
+      "androidAppTitle": "App server",
+      "androidAppHint": "The Android app is connected to this Trakka server.",
+      "androidAppVersion": "Android app {version}",
+      "androidAppChangeServer": "Change server"
     },
     "installHelp": {
       "title": "Install Trakka on your phone",

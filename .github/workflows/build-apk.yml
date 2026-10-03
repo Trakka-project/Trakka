@@ -1,0 +1,180 @@
+name: Android APK
+
+# Builds the Android app (android/, docs/MOBILE_BUILD.md) with the same
+# `make build-apk-capacitor` as on a workstation, signs it with the release
+# key kept in this repository's secrets, and attaches it to the GitHub
+# release, where README.md and docs/INSTALLATION.md link to it
+# (releases/latest/download/trakka.apk).
+
+# ---------------------------------------------------------------------------
+# Triggers
+# ---------------------------------------------------------------------------
+# - Publishing a GitHub release (made from a vX.Y.Z tag, like every Trakka
+#   release): the APK, its SHA-256 and a build provenance attestation are
+#   attached to it. The trigger is the release rather than the tag push, since
+#   the assets need the release to exist.
+# - Running it by hand (Actions → Android APK → Run workflow): from a vX.Y.Z
+#   tag ("Use workflow from" → Tags), it rebuilds and re-attaches that
+#   release's APK, for instance after fixing the secrets; from a branch, it
+#   builds a development APK, kept as a workflow artifact for 14 days.
+# There is deliberately no pull_request trigger: the signing key never meets
+# pull request code.
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+
+# One build per tag or branch at a time, never cancelled halfway through an
+# upload. A re-run replaces the release's assets (--clobber).
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+# Same supply-chain rules as ci.yml: no permission by default, granted back
+# per job, and every action pinned to a full commit SHA (the `# vX.Y.Z`
+# comment is for humans only). See .claude/ci-security.md.
+permissions: read-all
+
+jobs:
+  apk:
+    name: Build, sign & attach the APK
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    permissions:
+      contents: write # attach the APK to the release (gh release upload)
+      id-token: write # mint the Sigstore/SLSA provenance attestation
+      attestations: write # store that attestation
+    # An explicit `bash` runs with -eo pipefail (the implicit default has no
+    # pipefail), so that `make ... | tee` fails when make does.
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Release tag and app version
+        id: version
+        # github.ref is refs/tags/<tag> for a release, or the ref chosen for a
+        # manual run. It reaches the script through env, never interpolated
+        # into it.
+        env:
+          REF: ${{ github.ref }}
+          SHA: ${{ github.sha }}
+        run: |
+          if [[ "$REF" =~ ^refs/tags/(v([0-9]+)\.([0-9]+)\.([0-9]+)(-[0-9A-Za-z.-]+)?)$ ]]; then
+            tag="${BASH_REMATCH[1]}"
+            major="${BASH_REMATCH[2]}" minor="${BASH_REMATCH[3]}" patch="${BASH_REMATCH[4]}"
+            if (( 10#$minor > 999 || 10#$patch > 999 )); then
+              echo "::error::Minor and patch versions above 999 do not fit the version code scheme."
+              exit 1
+            fi
+            # Android only installs an APK over the app if its version code is
+            # not lower: derived from the tag, it grows with every release
+            # (v1.3.0 gives 1003000; a v1.3.0-rc.1 gets the same code, so the
+            # final v1.3.0 still installs over it).
+            {
+              echo "tag=$tag"
+              echo "version_name=${tag#v}"
+              echo "version_code=$(( 10#$major * 1000000 + 10#$minor * 1000 + 10#$patch ))"
+            } >> "$GITHUB_OUTPUT"
+          elif [[ "$REF" == refs/tags/* ]]; then
+            echo "::error::Release tags must look like vX.Y.Z (optionally followed by -suffix)."
+            exit 1
+          else
+            # A development build, from a branch: version code 1, the lowest,
+            # so that any release installs over it.
+            {
+              echo "tag="
+              echo "version_name=dev-${SHA:0:7}"
+              echo "version_code=1"
+            } >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install the signing key
+        # From the repository secrets described in docs/MOBILE_BUILD.md
+        # ("Releases built by GitHub Actions"). ANDROID_KEY_PASSWORD may be
+        # left unset for a key made by `make apk-keystore`, whose key password
+        # is the keystore's. The build container only mounts android/, and the
+        # key is deleted again in the last step.
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+        run: |
+          for secret in ANDROID_KEYSTORE_BASE64 ANDROID_KEYSTORE_PASSWORD; do
+            if [ -z "${!secret}" ]; then
+              echo "::error::The $secret secret is not set: see docs/MOBILE_BUILD.md, \"Releases built by GitHub Actions\"."
+              exit 1
+            fi
+          done
+          umask 077
+          mkdir -p android/signing
+          printf '%s' "$ANDROID_KEYSTORE_BASE64" | base64 --decode > android/signing/trakka.keystore
+          if [ ! -s android/signing/trakka.keystore ]; then
+            echo "::error::ANDROID_KEYSTORE_BASE64 does not decode to a keystore."
+            exit 1
+          fi
+
+      - name: Build the APK
+        # Docker rather than the Makefile's default Podman: both are installed
+        # on GitHub's Ubuntu runners, Docker is the one they are built around.
+        env:
+          CONTAINER_ENGINE: docker
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ vars.ANDROID_KEY_ALIAS }}
+          ANDROID_VERSION_CODE: ${{ steps.version.outputs.version_code }}
+          ANDROID_VERSION_NAME: ${{ steps.version.outputs.version_name }}
+        run: make build-apk-capacitor 2>&1 | tee "$RUNNER_TEMP/build-apk.log"
+
+      - name: Checksum
+        working-directory: android/out
+        run: sha256sum trakka.apk | tee trakka.apk.sha256
+
+      - name: Attest build provenance (SLSA)
+        if: steps.version.outputs.tag != ''
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: android/out/trakka.apk
+
+      - name: Attach the APK to the release
+        if: steps.version.outputs.tag != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.version.outputs.tag }}
+        run: gh release upload "$TAG" android/out/trakka.apk android/out/trakka.apk.sha256 --clobber --repo "$GITHUB_REPOSITORY"
+
+      - name: Keep the development APK as a workflow artifact
+        if: steps.version.outputs.tag == ''
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: trakka-apk-${{ steps.version.outputs.version_name }}
+          path: |
+            android/out/trakka.apk
+            android/out/trakka.apk.sha256
+          retention-days: 14
+          if-no-files-found: error
+
+      - name: Summary
+        # The build log's own summary (package, version, permissions, signing
+        # certificate) and the checksum, on the run's page.
+        env:
+          TAG: ${{ steps.version.outputs.tag }}
+        run: |
+          {
+            if [ -n "$TAG" ]; then
+              echo "### trakka.apk attached to release $TAG"
+            else
+              echo "### Development APK (workflow artifact)"
+            fi
+            echo '```'
+            grep -E '^  (package|permissions|signed by) ' "$RUNNER_TEMP/build-apk.log"
+            echo "  sha256       $(cut -d' ' -f1 android/out/trakka.apk.sha256)"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Remove the signing key
+        if: always()
+        run: rm -f android/signing/trakka.keystore

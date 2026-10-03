@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Behind the WebView until a page paints: white, or Trakka's dark background at night
+         (values-night), matching its default "auto" theme. -->
+    <color name="app_background">#FFFFFFFF</color>
+    <!-- static/manifest.json's background_color, as on the PWA's own splash screen. -->
+    <color name="splash_background">#FF0F172A</color>
+    <color name="shortcut_background">#FF6366F1</color>
+</resources>

@@ -29,8 +29,9 @@ These are classic server-rendered, form-POST endpoints (not JSON) — `/auth/log
 | `/auth/login` | `POST` | Form fields: `email`, `password`, `csrf_token`. On success, sets the session cookie and redirects to `/`; on failure, redirects to `/auth/login?error=invalid_credentials` (or `?error=csrf_failed` if `csrf_token` is missing or doesn't match the `trakka_csrf` cookie). |
 | `/auth/register` | `POST` | Form fields: `email`, `password`, `password_confirm`, `display_name`, `csrf_token`. Creates the account, a personal house ("Ma Maison") owned by the new user, a session, then redirects to `/`. `email_taken` on a duplicate email; `registration_closed` (both here and on `GET /auth/login?mode=register`) if an admin has closed registration via [Admin settings](#admin-settings); `csrf_failed` under the same condition as `/auth/login` above. |
 | `/auth/logout` | `POST` | Revokes the session and redirects to `/auth/login`. |
-| `/auth/oidc/login` | `GET` | Redirects to the configured OIDC provider. `404` if OIDC isn't configured. |
-| `/auth/oidc/callback` | `GET` | The provider's redirect target. Verifies the id_token, provisions the account on first login (with a personal house, same as local registration), sets the session cookie, redirects to `/`. |
+| `/auth/oidc/login` | `GET` | Redirects to the configured OIDC provider. `404` if OIDC isn't configured. Optional `app_challenge`: see [Sign-in from the Android app](#sso-sign-in-from-the-android-app) (`400` if malformed). |
+| `/auth/oidc/callback` | `GET` | The provider's redirect target. Verifies the id_token, provisions the account on first login (with a personal house, same as local registration), sets the session cookie, redirects to `/`. For a flow started with `app_challenge`, sets no cookie and redirects to the Android app instead (below). |
+| `/auth/oidc/app-session` | `POST` | Form fields: `code`, `verifier`. Redeems the Android app's handoff code (below): sets the session cookie and redirects to `/`, or redirects to `/auth/login?error=oidc_failed`. `404` if OIDC isn't configured. |
 
 A first-time OIDC login is rejected (`?error=email_taken`) if the claimed email already belongs to a different account (local, or a different OIDC issuer) — accounts are never silently auto-linked by email, since an OIDC provider's email claim isn't guaranteed to be verified.
 
@@ -46,6 +47,16 @@ curl -b cookies.txt -c cookies.txt -X POST http://localhost:8080/auth/login \
   -d "email=alice@example.com&password=secret1234&csrf_token=${CSRF_TOKEN}"
 curl -b cookies.txt http://localhost:8080/api/v1/me
 ```
+
+### SSO sign-in from the Android app
+
+The Android app ([MOBILE_BUILD.md](MOBILE_BUILD.md#sso-oidc-passkeys-and-security-keys)) runs the OIDC flow in the phone's browser, where the provider can use WebAuthn (passkeys, security keys), which the app's WebView cannot. The provider's redirect URI stays `/auth/oidc/callback`: nothing changes on the provider's side.
+
+1. The app picks a random `verifier` and opens `GET /auth/oidc/login?app_challenge=<challenge>` in a Custom Tab, where `challenge` is the unpadded base64url SHA-256 of the verifier (PKCE's S256, RFC 7636).
+2. On success, `/auth/oidc/callback` answers `302` to `io.github.trakka-project.app://sso?code=<code>` (`Cache-Control: no-store`), with a single-use code valid for 2 minutes and kept in the server's memory; on failure, to `io.github.trakka-project.app://sso?error=<code>`, with the same error codes as `/auth/login?error=`.
+3. The app's WebView posts `code` and `verifier` to `/auth/oidc/app-session`. The code is consumed by the first attempt, right or wrong.
+
+Another app registering the same URL scheme can receive the code but cannot redeem it without the verifier. `/auth/oidc/app-session` goes through the same cross-site write check (`Origin`/`Sec-Fetch-Site`) as every other `POST`, so a site cannot make a visitor's browser redeem a code and verifier it obtained for its own account.
 
 ### `GET /api/v1/me`
 
@@ -660,6 +671,20 @@ curl -X POST -b cookies.txt http://localhost:8080/api/v1/push/test
 ```
 
 `200 {"sent_to_subscriptions": N}` on success (delivery itself is still best-effort — a `200` means the attempt was made to `N` subscriptions, not that a device necessarily displayed it). `503` if push isn't configured on this instance; `404` if the calling user has no push subscription registered at all (enable the toggle in Paramètres first).
+
+### `GET /api/v1/reminders/upcoming`
+
+The calling user's task reminders still to come, for the Android app, which schedules them on the phone as local notifications because its WebView has no Web Push ([MOBILE_BUILD.md](MOBILE_BUILD.md#task-reminders-local-notifications)). Independent of push: works without VAPID keys.
+
+Returns the reminders the push scan would send this user: those of every not-done task with an active reminder on a list the user can access (House membership, list share, or Space share), plus the next occurrence of each checked-off recurring task (`next_due_date`), since that task only comes back at its reminder moment at the latest. `remind_at` (UTC) is computed exactly as for the push ([Reminders](#reminders)), in the instance's `APP_TIMEZONE`; `title`, `body` and `url` are the push's. Only reminders in the next 60 days, at most 200, earliest first; past ones are left out.
+
+```json
+{
+  "reminders": [
+    { "item_id": 12, "list_id": 3, "title": "Arroser", "body": "🔔 Échéance demain — Corvées", "url": "/?list=3", "remind_at": "2026-10-05T07:00:00Z" }
+  ]
+}
+```
 
 ## Admin settings
 

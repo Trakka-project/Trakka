@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name" translatable="false">Trakka</string>
+    <string name="title_activity_main" translatable="false">Trakka</string>
+    <string name="package_name" translatable="false">io.github.trakka_project.app</string>
+    <string name="custom_url_scheme" translatable="false">io.github.trakka_project.app</string>
+    <string name="shortcut_change_server_short">Change server</string>
+    <string name="shortcut_change_server_long">Change Trakka server</string>
+    <string name="qr_scan_hint">Point the camera at the QR code of your Trakka server</string>
+    <string name="qr_scan_close">Close</string>
+    <string name="channel_reminders">Task reminders</string>
+    <string name="channel_reminders_description">Reminders of your tasks\' due dates, with a short double vibration</string>
+    <string name="channel_reminders_quiet">Task reminders (silent)</string>
+    <string name="channel_reminders_quiet_description">Reminders of your tasks\' due dates, without sound or vibration</string>
+</resources>

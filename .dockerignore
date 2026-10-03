@@ -12,3 +12,7 @@ vendor/
 # Maintainer tooling and docs images — never COPY'd by the Dockerfile
 scripts/
 docs/
+# Android app tooling (docs/MOBILE_BUILD.md), signing key included — never
+# part of the server image
+android/
+Makefile

@@ -67,6 +67,11 @@ type Application struct {
 	authIPLimiterVal     *rateLimiter
 	authEmailLimiterOnce sync.Once
 	authEmailLimiterVal  *rateLimiter
+
+	// Handoff codes of SSO sign-ins started by the Android app (see
+	// oidc_app.go), lazily built for the same reason.
+	appHandoffsOnce sync.Once
+	appHandoffsVal  *appHandoffStore
 }
 
 // authIPLimiter is the per-client-IP authentication attempt bucket.
@@ -111,6 +116,7 @@ func (app *Application) Routes() http.Handler {
 	mux.HandleFunc("POST /auth/logout", app.handleLogout)
 	mux.HandleFunc("GET /auth/oidc/login", app.handleOIDCLogin)
 	mux.HandleFunc("GET /auth/oidc/callback", app.handleOIDCCallback)
+	mux.HandleFunc("POST /auth/oidc/app-session", app.handleOIDCAppSession)
 
 	apiMux := http.NewServeMux()
 	apiMux.HandleFunc("GET /api/v1/me", app.handleMe)
@@ -162,6 +168,7 @@ func (app *Application) Routes() http.Handler {
 	apiMux.HandleFunc("PATCH /api/v1/items/{id}", app.handleItemsPatch)
 	apiMux.HandleFunc("DELETE /api/v1/items/{id}", app.handleItemsDelete)
 	apiMux.HandleFunc("POST /api/v1/items/{id}/price-check", app.handleItemsPriceCheck)
+	apiMux.HandleFunc("GET /api/v1/reminders/upcoming", app.handleRemindersUpcoming)
 
 	apiMux.HandleFunc("GET /api/v1/price-alerts", app.handlePriceAlertsIndex)
 	apiMux.HandleFunc("PATCH /api/v1/price-alerts/{id}", app.handlePriceAlertsUpdate)

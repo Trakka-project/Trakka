@@ -452,6 +452,13 @@ async function apiRequest(path, options = {}) {
     throw err;
   }
 
+  // Keeps the Android app's task reminders, scheduled on the phone, in step
+  // with this change right away, offline included (local-reminders.js; a
+  // no-op outside the app).
+  if (method !== 'GET' && typeof noteLocalReminderWrite === 'function') {
+    noteLocalReminderWrite(method, path, options.body);
+  }
+
   // This response came from the service worker's offline queue (queued,
   // edited-in-place, or cancelled — see sw.js's queueOfflineWrite/
   // resolveAgainstPendingCreate, which set this header on every response
@@ -2337,6 +2344,10 @@ async function init() {
   // run last, once everything either might need (the dashboard, the
   // current house, custom categories for the "Espaces" tab) is ready.
   await handleDeepLinkOrRestore();
+  // Inside the Android app only (local-reminders.js): schedules the task
+  // reminders on the phone, and opens a tapped reminder's list — last, so
+  // that tap is never undone by the restore just above.
+  if (typeof startLocalReminders === 'function') startLocalReminders();
 }
 
 // Re-render everything that embeds translated strings inside JS-generated

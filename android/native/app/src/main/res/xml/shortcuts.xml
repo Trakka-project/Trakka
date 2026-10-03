@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Long press on the launcher icon: always reaches the connect screen, even when the configured
+     server's pages are broken or come from a Trakka without the in-app "Changer de serveur". -->
+<shortcuts xmlns:android="http://schemas.android.com/apk/res/android">
+    <shortcut
+        android:shortcutId="change_server"
+        android:enabled="true"
+        android:icon="@drawable/ic_shortcut_change_server"
+        android:shortcutShortLabel="@string/shortcut_change_server_short"
+        android:shortcutLongLabel="@string/shortcut_change_server_long">
+        <intent
+            android:action="android.intent.action.VIEW"
+            android:targetClass="io.github.trakka_project.app.ChangeServerActivity"
+            android:targetPackage="io.github.trakka_project.app" />
+    </shortcut>
+</shortcuts>

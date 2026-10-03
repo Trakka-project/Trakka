@@ -172,6 +172,8 @@ podman-compose --profile calendar up -d
 
 It listens on `5232` and persists its data/config in the `radicale_data` and `radicale_config` named volumes, on the same `trakka_net` bridge network as `trakka`. This is intended as an optional companion for calendar-based sync of task lists — Trakka's own API does not talk to Radicale directly; wiring that integration up (e.g. exporting to-do lists as `.ics`/CalDAV) is a separate, not-yet-implemented piece of work.
 
+**The image starts with authentication disabled** (`[auth] type = none`) and `compose.yml` publishes `5232` on all interfaces, so turn on `htpasswd` auth before exposing it. [docs/RADICALE_INTEGRATION.md](RADICALE_INTEGRATION.md) walks through that, plus connecting CalDAV clients (Thunderbird, Apple, DAVx⁵) and subscribing from Nextcloud.
+
 ## Networking
 
 Both services sit on a single explicit bridge network, `trakka_net`, defined in `compose.yml`. This keeps them addressable by service name (`trakka`, `radicale`) for any future inter-service calls, without exposing anything beyond the ports explicitly published (`8080` for Trakka, `5232` for Radicale).
@@ -203,3 +205,9 @@ All three are named Docker/Podman volumes (not bind mounts), which sidesteps hos
 ## PWA / offline support
 
 See [docs/PWA.md](PWA.md) for how `static/sw.js`, `static/js/db.js`, and `static/manifest.json` make Trakka installable and usable offline on iOS, iPadOS, and Android — including the HTTPS requirement above, and how offline-created data gets reconciled once the network returns.
+
+## Android app (APK)
+
+Android users can also get a real app: `make build-apk-capacitor` builds a signed APK (a [Capacitor](https://capacitorjs.com/) shell, in a container needing no Android tooling on the host) that works with any Trakka server. The user connects it to an instance by typing its address or scanning a QR code containing it, and can switch instances later. Full guide: [docs/MOBILE_BUILD.md](MOBILE_BUILD.md).
+
+Nothing changes on the server, and there is nothing to set up for the app beyond what a phone needs anyway: Trakka served over HTTPS, with a certificate the phone trusts (from a public authority, or from a private one installed on the phone, which the app accepts). The app refuses plain HTTP. One limitation for now: push notifications don't reach the app, since Android's WebView has no Web Push; see [MOBILE_BUILD.md](MOBILE_BUILD.md#notifications).

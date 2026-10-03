@@ -24,6 +24,10 @@ docker compose --profile calendar up -d   # Trakka + Radicale (CalDAV sync)
 podman-compose up -d                      # same compose.yml works unchanged
 ```
 
+```bash
+make build-apk-capacitor   # optional Android APK (Capacitor), built in a container (docs/MOBILE_BUILD.md)
+```
+
 `go test ./...` applies to whatever packages currently have tests (no custom test runner or build tag scheme). See [.claude/ci-security.md](.claude/ci-security.md) for the full local-check recipe (linters, `govulncheck`, `gosec`, `gitleaks`, Trivy) that mirrors CI.
 
 ## Where to look
@@ -33,15 +37,17 @@ podman-compose up -d                      # same compose.yml works unchanged
 | Package layout/import boundaries, `internal/config`, DB driver/connection pool/migration engine, Go & dependency version pinning, `cmd/server` (healthcheck/shutdown/logging), Dockerfile/`compose.yml` | [.claude/architecture.md](.claude/architecture.md) |
 | `internal/handlers`, `internal/db`, `internal/auth`, `internal/scraper`, `internal/webpush`, `internal/backup` — API/RBAC/sharing/pinning/recurring-items/price-lookup/push-notification/encrypted-WebDAV-backup design — and the **full** non-negotiable security rules | [.claude/backend.md](.claude/backend.md) |
 | `static/js/*.js`, `static/sw.js`, `static/css/*.css`, `templates/login.html` — PWA/offline mechanism, i18n, theming, mobile layout rules | [.claude/frontend-pwa.md](.claude/frontend-pwa.md) |
-| `.github/workflows/ci.yml`, `.golangci.yml`, gosec/gitleaks/Trivy findings & exemptions, `.github/` templates | [.claude/ci-security.md](.claude/ci-security.md) |
+| `.github/workflows/ci.yml` and `build-apk.yml` (Android release APK), `.golangci.yml`, gosec/gitleaks/Trivy findings & exemptions, `.github/` templates | [.claude/ci-security.md](.claude/ci-security.md) |
 | "What's built, what's verified, what's left", session handoff, the copy-paste prompt for a new session | [.claude/status.md](.claude/status.md) |
 | REST endpoint reference | [docs/API.md](docs/API.md) |
 | DB schema & migrations | [docs/DATABASE.md](docs/DATABASE.md) |
 | Offline/service-worker mechanism (deep dive) | [docs/PWA.md](docs/PWA.md) |
 | Production deployment | [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) |
+| Radicale CalDAV sidecar (securing it, clients, Nextcloud subscription) | [docs/RADICALE_INTEGRATION.md](docs/RADICALE_INTEGRATION.md) |
 | Local dev setup, pre-commit hooks | [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) |
 | Past security audit | [docs/AUDIT.md](docs/AUDIT.md) |
 | End-user PWA install steps | [docs/INSTALLATION.md](docs/INSTALLATION.md) |
+| `android/`, root `Makefile` — the Android app (Capacitor shell connecting to any Trakka server: connect screen, `TrakkaApp` native plugin, QR scanner, containerized build, signing key) | [docs/MOBILE_BUILD.md](docs/MOBILE_BUILD.md) |
 
 ## Non-negotiable security rules
 

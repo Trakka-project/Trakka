@@ -17,6 +17,8 @@ Four jobs, the last depending on the first three (`needs: [lint, test, security-
 
 Both Trivy scans and gosec are hard gates (`exit-code: "1"` on any unfixed `CRITICAL`/`HIGH` finding) — they still upload whatever SARIF they produced first (`if: always()` on the upload step), so a failing run still shows its findings in the Security tab rather than only in the job log. All four SARIF-upload steps additionally check `hashFiles('<report>.sarif') != ''` before uploading and carry `continue-on-error: true`, so a scan tool that crashes before writing a report (e.g. Trivy failing to pull its vulnerability DB) fails cleanly instead of cascading into a second, unrelated-looking "Path does not exist" error in the next step — see the "Fix: gosec findings... plus SARIF-upload robustness" entry in [status.md](status.md) for the incident that prompted this.
 
+**The Trivy filesystem scan covers every lockfile in the repository**, not just `go.sum` (`scan-ref: .`): today also `android/package-lock.json` (the Capacitor packages of the Android app, [docs/MOBILE_BUILD.md](../docs/MOBILE_BUILD.md)) and `scripts/package-lock.json` (Playwright). When Capacitor was added (2026-10-03) its lockfile had only three moderate advisories (`uuid` through `xcode`, which the Capacitor CLI uses for iOS projects only), below the gate, and a local run of the same scan found no fixable HIGH/CRITICAL. A Capacitor upgrade is the usual way to clear one if it appears; don't skip `android/` in the scan. The Android builder image (`android/Dockerfile`) is not built or scanned in CI.
+
 ### Permissions model
 
 The workflow denies everything by default (`permissions: read-all` at the top level) and each job then declares only what it actually needs, narrowing below even that default:
@@ -27,8 +29,9 @@ The workflow denies everything by default (`permissions: read-all` at the top le
 | `test` | `contents: read` | same |
 | `security-scan` | `contents: read`, `security-events: write`, `actions: read` | the second grant is for uploading SARIF; the third is required by `upload-sarif` itself to look up the current workflow run (only actually enforced on a private repo, but harmless to grant regardless) |
 | `build-scan-push` | `contents: read`, `packages: write`, `security-events: write`, `actions: read`, `id-token: write`, `attestations: write` | pushing to GHCR, uploading the image-scan SARIF, minting the provenance attestation, and (same as `security-scan`) letting `upload-sarif` read the current workflow run each need their own scope |
+| `apk` (`build-apk.yml`) | `contents: write`, `id-token: write`, `attestations: write` | attaching the APK to the GitHub release (`gh release upload`), and minting and storing its provenance attestation |
 
-No job gets `write` access it doesn't use — in particular, only `build-scan-push` can ever push anything, and only on a non-PR event.
+No job gets `write` access it doesn't use — in particular, only `build-scan-push` (to GHCR) and `build-apk.yml`'s `apk` (release assets) can ever write anything, and neither runs on a pull request.
 
 **Gotcha discovered the hard way**: `github/codeql-action/upload-sarif` calls the GitHub REST API to look up the current workflow run (used to correlate the SARIF upload with it) — this needs `actions: read`, which is *not* covered by `security-events: write`. On this originally-private repo, omitting it made every `upload-sarif` step fail with `Error: Resource not accessible by integration - .../actions/workflow-runs#get-a-workflow-run`, and because the *next* step in `security-scan` (`Trivy filesystem scan`) had no `if: always()`, that failure skipped it too — so the following `Upload Trivy filesystem SARIF` step (which *does* have `if: always()`) then failed a second, different way: `Error: Path does not exist: trivy-fs-results.sarif`, because the scan that would have produced it never ran. Both symptoms had the single root cause above. Any job that calls `upload-sarif` needs `actions: read` alongside `security-events: write`, even though GitHub's own quickstart examples often show only the latter.
 
@@ -41,6 +44,16 @@ uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 ```
 
 To find the SHA for a tag: `git ls-remote --tags https://github.com/<owner>/<repo>.git <tag>` locally, or `gh api repos/<owner>/<repo>/tags` (the *tags* endpoint, not `git/refs/tags`, which can return the wrong SHA for an annotated tag — the tags endpoint always returns the dereferenced commit; this actually happened while pinning this workflow: `golangci-lint-action`, `trivy-action`, and `codeql-action`'s tags are annotated, and `git/refs/tags` returned each tag object's own SHA rather than the commit it points to). The GitHub web UI's release page also shows the tag, which you can resolve the same way. Never trust a SHA pasted from anywhere you can't independently re-derive.
+
+### Android release workflow (`build-apk.yml`)
+
+A second workflow builds the Android app ([docs/MOBILE_BUILD.md](../docs/MOBILE_BUILD.md#releases-built-by-github-actions)) and attaches `trakka.apk`, its `.sha256` and a provenance attestation to the GitHub release. It runs on `release: published` and `workflow_dispatch` only, never on `pull_request`, because it handles the signing key:
+
+- **Secrets**: `ANDROID_KEYSTORE_BASE64`, `ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_PASSWORD` (optional for a `make apk-keystore` key), plus the optional repository variable `ANDROID_KEY_ALIAS`. The keystore is decoded under `umask 077` into `android/signing/`, the only directory the build container mounts, and deleted by an `if: always()` step; the passwords reach Gradle as environment variables, never as command-line arguments (see `android/native/app/build.gradle`).
+- **The tag becomes the app's version** (`v1.3.0` → name `1.3.0`, code `1003000`): it reaches the script only through `env:` and must match `vX.Y.Z[-suffix]`. Keep it that way: never interpolate `${{ github.event.* }}` or other attacker-influenced values into a `run:` script.
+- **Pins**: the same `actions/checkout` and `actions/attest-build-provenance` SHAs as `ci.yml`, plus `actions/upload-artifact` for development builds. Release assets go through the runner's preinstalled `gh` CLI rather than a third-party release action.
+- **`defaults.run.shell: bash`** on the job: an explicit `bash` runs with `-eo pipefail`, GitHub's implicit default has no `pipefail`, and without it `make build-apk-capacitor | tee ...` would turn a failed build into a passing step.
+- **Linting**: `podman run --rm -v "$PWD:/repo:ro" -w /repo docker.io/rhysd/actionlint:latest` checks both workflows (shellcheck included); it reported nothing on either when this workflow was added (actionlint 1.7.12).
 
 ### Running the same checks locally
 
