@@ -292,6 +292,15 @@ func (app *Application) handleOIDCLogin(w http.ResponseWriter, r *http.Request) 
 	}
 
 	flow := url.Values{"state": {state}, "nonce": {nonce}, "verifier": {verifier}}
+	// Set by the Android app, which runs this flow in the phone's browser and
+	// takes the session back into its WebView: see oidc_app.go.
+	if appChallenge := r.URL.Query().Get("app_challenge"); appChallenge != "" {
+		if !validAppChallenge(appChallenge) {
+			http.Error(w, "invalid app_challenge", http.StatusBadRequest)
+			return
+		}
+		flow.Set("app_challenge", appChallenge)
+	}
 	http.SetCookie(w, &http.Cookie{ // #nosec G124 -- Secure is set from CookieSecure (SESSION_COOKIE_SECURE), gosec only recognizes a literal `true`
 		Name:     oidcFlowCookieName,
 		Value:    flow.Encode(),
@@ -325,18 +334,30 @@ func (app *Application) handleOIDCCallback(w http.ResponseWriter, r *http.Reques
 		MaxAge:   -1,
 	})
 
-	fail := func(code string) { http.Redirect(w, r, "/auth/login?error="+code, http.StatusFound) }
-
-	if r.URL.Query().Get("error") != "" {
-		fail("oidc_failed")
-		return
+	// Set once the flow cookie is read: a sign-in started by the Android app
+	// returns to it, failures included (see oidc_app.go).
+	appChallenge := ""
+	fail := func(code string) {
+		if appChallenge != "" {
+			appSSOReturn(w, r, url.Values{"error": {code}})
+			return
+		}
+		http.Redirect(w, r, "/auth/login?error="+code, http.StatusFound)
 	}
+
 	if cookieErr != nil {
 		fail("oidc_failed")
 		return
 	}
 	flow, err := url.ParseQuery(flowCookie.Value)
 	if err != nil {
+		fail("oidc_failed")
+		return
+	}
+	if validAppChallenge(flow.Get("app_challenge")) {
+		appChallenge = flow.Get("app_challenge")
+	}
+	if r.URL.Query().Get("error") != "" {
 		fail("oidc_failed")
 		return
 	}
@@ -381,6 +402,10 @@ func (app *Application) handleOIDCCallback(w http.ResponseWriter, r *http.Reques
 	// the first time may already have invitations waiting for its address.
 	app.materializeInvitations(r, user)
 
+	if appChallenge != "" {
+		app.handOffToApp(w, r, user.ID, appChallenge)
+		return
+	}
 	app.finishLogin(w, r, user.ID)
 }
 

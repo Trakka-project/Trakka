@@ -7,7 +7,7 @@ This page covers what the app does, building it, and installing it, including on
 ## How the app works
 
 - **Connecting.** A connect screen, bundled in the app, takes the server's address (`trakka.example.com`, `https://trakka.home.lan:8443`...) or scans a QR code containing it, and lists the servers used recently. Before switching, the app checks that the address answers over HTTPS with a certificate the phone trusts, and that it is Trakka; otherwise it says what is wrong ("Server not found", "certificate not trusted", "does not look like Trakka", with a way to connect anyway, for a server behind a sign-in portal).
-- **Using Trakka.** The app then loads the server's pages straight from the server, as a browser would, with their own security headers, full screen and with no address bar, whatever the server. Sign-ins through SSO (OIDC) or an authentication proxy stay in the app; a link to another site, such as a product page, opens in the browser. Android's back button closes Trakka's dialogs, then leaves the app.
+- **Using Trakka.** The app then loads the server's pages straight from the server, as a browser would, with their own security headers, full screen and with no address bar, whatever the server. Trakka's SSO button signs in through the phone's browser and comes back to the app ([SSO](#sso-oidc-passkeys-and-security-keys)); an authentication proxy's portal stays in the app; a link to another site, such as a product page, opens in the browser. Android's back button closes Trakka's dialogs, then leaves the app.
 - **Changing server.** In Trakka's Paramètres, the "Serveur de l'application" section shows the server and offers "Changer de serveur", which opens the connect screen ("Annuler" goes back). A long press on the app icon offers "Changer de serveur" too, which works even when the server's pages are broken or come from a Trakka older than this section. When the server cannot be opened, the app shows the connect screen with the reason and a "Réessayer" button. Each server keeps its own session: switching back to a server you used finds you signed in.
 
 ## What works, and what doesn't yet
@@ -21,8 +21,30 @@ This page covers what the app does, building it, and installing it, including on
 | **Push notifications** | **Not yet.** Android's WebView has neither Web Push nor the Notifications API, so "Activer les notifications push" reports that push isn't supported. See [Notifications](#notifications) |
 | File downloads | No: the WebView ignores them. The admin console's "Télécharger la clé" (backups) has to be done from a browser |
 | Camera, microphone, location for web pages | Never: the app refuses them, the camera is only for its own QR code scanner |
+| SSO (OIDC) with passkeys or security keys | Yes, through the browser: see [SSO](#sso-oidc-passkeys-and-security-keys). Needs a Trakka server at least as recent as the app |
+| WebAuthn on an authentication proxy's portal | No: the portal shows in the app's WebView, where WebAuthn is unavailable. See [SSO](#sso-oidc-passkeys-and-security-keys) |
 
-The app's WebView is Android System WebView: on GrapheneOS, Vanadium's. It shares nothing with the browser: you sign in once in the app.
+The app's WebView is Android System WebView: on GrapheneOS, Vanadium's. It shares nothing with the browser: you sign in once in the app (an SSO sign-in goes through the browser, but the Trakka session it opens is the app's).
+
+## SSO (OIDC), passkeys and security keys
+
+An identity provider such as Authentik, Keycloak or Authelia may ask for a passkey, a fingerprint or a security key, through the browser's WebAuthn API. Android's WebView, which shows Trakka in the app, cannot do that for them: it only runs WebAuthn for sites tied to the app by [Digital Asset Links](https://developer.android.com/training/app-links/verify-android-applinks) (an `assetlinks.json` naming the app's signing key on each provider's domain) or for apps registered as browsers. An app meant for any self-hosted server, signed with each builder's own key, can be neither. In the WebView, the provider fails: Authentik says "Error creating credential".
+
+So Trakka's "Se connecter avec …" button, in the app, runs the sign-in in the phone's browser instead, in a Custom Tab (the browser's own tab, shown over the app; Vanadium on GrapheneOS), where WebAuthn works as on any website and where you may already be signed in to the provider:
+
+1. Tapping the button opens the server's `/auth/oidc/login` in a Custom Tab. You sign in to the provider there, passkey included.
+2. Trakka then sends the browser back to the app (`io.github.trakka-project.app://sso`), with a single-use code. Android closes the tab and returns to the app.
+3. The app redeems the code from its WebView, which opens your Trakka session in the app. The browser holds no Trakka session.
+
+The code alone is worth nothing: redeeming it also takes a secret the app keeps (the PKCE principle), so another app declaring the same link cannot use it. The flow is described in [API.md](API.md#sso-sign-in-from-the-android-app).
+
+What it takes:
+
+- **Nothing on the provider's side.** Its redirect URI stays `https://<trakka>/auth/oidc/callback`: the browser, not the app, follows it.
+- **Nothing on the server's side but its version.** The single Trakka container handles it; the code waits in its memory for up to 2 minutes. A Trakka server older than this feature has no browser sign-in: its button runs the sign-in in the app's WebView as before, which works with providers that don't ask for WebAuthn.
+- **A browser on the phone.** Without one, the button falls back to the WebView. A browser without Custom Tabs opens the page as a normal tab, and the sign-in still comes back to the app.
+
+**Authentication proxies** (Authentik's or Authelia's forward auth in front of Trakka) are not covered: their portal stands in front of every Trakka page, so there is no Trakka page to hand the sign-in to the browser, and its session cookie would stay in the browser anyway. Their portal shows in the app's WebView, where WebAuthn fails. Give such a portal a sign-in method other than WebAuthn for the app (password plus TOTP, for instance), or protect Trakka with its own OIDC sign-in rather than with the proxy.
 
 ## Notifications
 
@@ -131,6 +153,8 @@ Download `trakka.apk` on the phone from the [latest release](https://github.com/
 
 Open the app, give it your server's address or scan its QR code, then sign in to Trakka as usual.
 
+To check a new APK on a phone or an emulator before handing it out, follow the checklist in [TESTING_APK.md](TESTING_APK.md).
+
 ### A QR code for your server
 
 Any QR code containing the server's address works, for instance printed for the family. From a terminal:
@@ -160,6 +184,8 @@ New Trakka versions need no new APK: the app always shows the server's current T
 | The app opens on the connect screen with "Could not open…" | The server is down or unreachable: "Try again" once it is back |
 | A page is broken and Paramètres can't be reached | Long press on the app icon → "Change server" |
 | "App not installed" when updating | The new APK isn't signed with the key of the installed app: use the original key, or uninstall the app first |
+| "Error creating credential" (Authentik), or another WebAuthn error, on the provider's page inside the app | The sign-in runs in the WebView: the server predates the browser sign-in (update Trakka), or the provider is an authentication proxy's portal. See [SSO](#sso-oidc-passkeys-and-security-keys) |
+| After an SSO sign-in, the browser stays open instead of returning to the app, or Trakka's sign-in page shows "La connexion via le fournisseur externe a échoué" | The sign-in took longer than 10 minutes, or the app was reinstalled during it: tap the button again. If the browser asks which app to open the link with, pick Trakka |
 | Trakka says push notifications aren't supported | Expected for now: see [Notifications](#notifications) |
 | The "Android APK" workflow stops on a missing secret | The repository secrets aren't set up: see [Setting up the secrets](#setting-up-the-secrets), then run the workflow by hand from the release's tag |
 | The workflow fails at "Attach the APK to the release" | It was run by hand from a tag that has no GitHub release yet: publish the release, which runs the workflow by itself |
@@ -170,7 +196,8 @@ New Trakka versions need no new APK: the app always shows the server's current T
 
 - **HTTPS only.** Clear-text traffic is refused (`res/xml/network_security_config.xml`). Trusted certificates: the system's, and those the user installed.
 - **The server's headers apply.** The app loads Trakka's pages straight from the server, Content-Security-Policy included. Capacitor would proxy them, dropping those headers, on a WebView too old to inject its bridge otherwise; the app refuses to run on such a WebView instead.
-- **What the server's pages can do.** As in any Capacitor app, the pages of the configured server, and only them, reach the app's native bridge: Capacitor's own plugins, and the app's `TrakkaApp`, of which they may only read the server's address and open the connect screen. Switching to another server, scanning or listing servers is refused unless the connect screen is showing, so a page cannot send the app elsewhere. Camera, microphone and location requests from pages are refused. Identity-provider pages reached by a redirect get no bridge. Connect the app only to servers you trust as much as an installed app.
+- **What the server's pages can do.** As in any Capacitor app, the pages of the configured server, and only them, reach the app's native bridge: Capacitor's own plugins, and the app's `TrakkaApp`, of which they may only read the server's address, open the connect screen, and start an SSO sign-in in the browser on that same server. Switching to another server, scanning or listing servers is refused unless the connect screen is showing, so a page cannot send the app elsewhere. Camera, microphone and location requests from pages are refused. Identity-provider pages reached by a redirect get no bridge. Connect the app only to servers you trust as much as an installed app.
+- **SSO through the browser.** The deep link that ends a sign-in carries a code that only opens a session together with a verifier the app keeps in its private storage, and that the server forgets after one attempt or 2 minutes. The app ignores such a link unless it started a sign-in on the server it shows, less than 10 minutes earlier.
 - **No backups** of the app's data, whose WebView cookies hold session tokens (`allowBackup="false"`, `res/xml/data_extraction_rules.xml`).
 - **No Google services.** The app contains no Google Play services, Firebase, or analytics; its QR code scanner is CameraX with ZXing, decoding on the device.
 
@@ -181,4 +208,4 @@ New Trakka versions need no new APK: the app always shows the server's current T
 - **Upgrading Capacitor**: change the three exact versions in `android/package.json`, run `npm install` in `android/`, check the Android Gradle Plugin, SDK and JDK versions the new release expects against `android/native/variables.gradle`, `android/native/build.gradle` and the versions pinned in [android/Dockerfile](../android/Dockerfile), then build. The SDK in the builder image is read-only, so a missing package fails the build instead of being downloaded during it.
 - **The lockfile is part of CI's checks**: Trivy's filesystem scan fails on any fixable HIGH or CRITICAL advisory in `android/package-lock.json` ([.claude/ci-security.md](../.claude/ci-security.md)).
 - **The Android command-line tools stay at 21.0, on purpose**: they only install the SDK packages while the image builds. From 22.0 on they bring Google's "Android CLI", which the `sdkmanager` of 23.0 delegates to; it downloads a runtime of its own and uploads usage metrics by default.
-- **Status**: built and verified end to end on an Android 16 emulator (AOSP image, no Google services, WebView 133): the connect screen and each of its errors, the switch to a real Trakka over HTTPS through a user-installed authority, signing in, the Paramètres section, changing server and coming back, the launcher shortcut, the QR code scanner (camera permission refused and granted, the decoding itself checked separately), an SSO-style redirect staying in the app and an external link opening the browser, the back button, light and dark, French and English, and the native bridge refusing a server page's attempts to switch servers. Not yet tried on a real GrapheneOS phone: scanning a printed code with a real camera, and Vanadium's current WebView, which lays the page out under the status bar (the emulator's older WebView pads it instead).
+- **Status**: built and verified end to end on an Android 16 emulator (AOSP image, no Google services, WebView 133): the connect screen and each of its errors, the switch to a real Trakka over HTTPS through a user-installed authority, signing in, the Paramètres section, changing server and coming back, the launcher shortcut, the QR code scanner (camera permission refused and granted, the decoding itself checked separately), an SSO-style redirect staying in the app and an external link opening the browser, the back button, light and dark, French and English, and the native bridge refusing a server page's attempts to switch servers. Not yet tried on a real GrapheneOS phone: scanning a printed code with a real camera, and Vanadium's current WebView, which lays the page out under the status bar (the emulator's older WebView pads it instead). [TESTING_APK.md](TESTING_APK.md) is the checklist for that pass. The SSO sign-in through the browser was added later, and checked on a GrapheneOS phone against Authentik.

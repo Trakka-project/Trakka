@@ -1,6 +1,7 @@
 package io.github.trakka_project.app;
 
 import android.app.Activity;
+import android.content.ActivityNotFoundException;
 import android.content.Intent;
 import android.content.pm.PackageInfo;
 import androidx.activity.result.ActivityResult;
@@ -19,8 +20,9 @@ import java.util.concurrent.Executors;
 
 /**
  * The app's own native API, which pages reach as {@code window.Capacitor.Plugins.TrakkaApp}: the
- * connect screen (android/www) drives it, and Trakka's settings (static/js/settings.js) use
- * {@code getServer} and {@code changeServer}. Whatever can point the app to another server is
+ * connect screen (android/www) drives it, Trakka's settings (static/js/settings.js) use
+ * {@code getServer} and {@code changeServer}, and its sign-in page (static/js/login.js)
+ * {@code signInWithBrowser}. Whatever can point the app to another server is
  * refused while a server's pages are shown, so no page can send the app elsewhere: only the user
  * can, from the connect screen.
  */
@@ -95,6 +97,26 @@ public class TrakkaAppPlugin extends Plugin {
         result.put("server", store.current());
         result.put("appVersion", activity().appVersion());
         call.resolve(result);
+    }
+
+    /**
+     * Runs the server's SSO sign-in in the phone's browser, where an identity provider can ask for
+     * a passkey or a security key (see {@link BrowserSignIn}); MainActivity takes the session back.
+     * For Trakka's sign-in page (static/js/login.js), which falls back to the WebView on rejection.
+     */
+    @PluginMethod
+    public void signInWithBrowser(PluginCall call) {
+        String server = activity().server();
+        if (server == null) {
+            call.unavailable("Only available on a server's pages");
+            return;
+        }
+        try {
+            getActivity().startActivity(BrowserSignIn.browserIntent(new BrowserSignIn(getContext()).start(server)));
+            call.resolve();
+        } catch (ActivityNotFoundException e) {
+            call.reject("No browser to sign in with", "no_browser");
+        }
     }
 
     /** Opens the connect screen, from which "Annuler" comes back to the current server. */

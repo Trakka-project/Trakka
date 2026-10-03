@@ -54,6 +54,7 @@ public class MainActivity extends BridgeActivity {
     private static final long SPLASH_MAX_MS = 2500;
 
     private ServerStore store;
+    private BrowserSignIn browserSignIn;
     /** Origin of the Trakka server this activity shows; null on the connect screen. */
     @Nullable
     private String server;
@@ -64,6 +65,7 @@ public class MainActivity extends BridgeActivity {
     protected void onCreate(Bundle savedInstanceState) {
         SplashScreen.installSplashScreen(this).setKeepOnScreenCondition(() -> !firstPagePainted);
         store = new ServerStore(this);
+        browserSignIn = new BrowserSignIn(this);
         server = store.changeRequested() || pendingError != null ? null : store.current();
         if (server != null && !WebViewFeature.isFeatureSupported(WebViewFeature.DOCUMENT_START_SCRIPT)) {
             // Without it, Capacitor would proxy the server's pages to insert its bridge, and drop
@@ -96,6 +98,8 @@ public class MainActivity extends BridgeActivity {
         );
         webView.postDelayed(() -> firstPagePainted = true, SPLASH_MAX_MS);
         getOnBackPressedDispatcher().addCallback(this, new BackCallback());
+        // Android may have stopped the app while an SSO sign-in went on in the browser.
+        handleSignInReturn(getIntent());
     }
 
     @Override
@@ -115,6 +119,7 @@ public class MainActivity extends BridgeActivity {
     @Override
     protected void onNewIntent(Intent intent) {
         super.onNewIntent(intent);
+        handleSignInReturn(intent);
         // The launcher shortcut (ChangeServerActivity) asked for the connect screen.
         if (server != null && store.changeRequested()) {
             restart();
@@ -123,6 +128,12 @@ public class MainActivity extends BridgeActivity {
 
     boolean isConnectScreen() {
         return server == null;
+    }
+
+    /** Origin of the Trakka server shown; null on the connect screen. */
+    @Nullable
+    String server() {
+        return server;
     }
 
     /** True when the connect screen was opened from a working server, which it can go back to. */
@@ -142,6 +153,32 @@ public class MainActivity extends BridgeActivity {
                 recreate();
             }
         });
+    }
+
+    /**
+     * The end of an SSO sign-in run in the browser (TrakkaAppPlugin#signInWithBrowser), which
+     * Android brings back here: the WebView then opens the session it hands over.
+     */
+    private void handleSignInReturn(@Nullable Intent intent) {
+        Uri url = intent == null ? null : intent.getData();
+        if (!BrowserSignIn.isReturn(url)) {
+            return;
+        }
+        // Once only: a recreated activity is given the same intent again.
+        setIntent(new Intent(intent).setData(null));
+        if (server == null || bridge == null) {
+            return;
+        }
+        BrowserSignIn.Next next = browserSignIn.finish(url, server);
+        if (next == null) {
+            return;
+        }
+        WebView webView = bridge.getWebView();
+        if (next.postData != null) {
+            webView.postUrl(next.url, next.postData);
+        } else {
+            webView.loadUrl(next.url);
+        }
     }
 
     private void showLoadError(Uri url, String reason, int status) {
