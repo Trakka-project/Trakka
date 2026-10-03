@@ -1256,8 +1256,12 @@
             <input type="checkbox" id="user-settings-push-toggle"
                    class="mt-0.5 h-4 w-4 shrink-0 rounded border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 text-sky-500 focus:ring-sky-500/40">
             <span>
-              <span class="block" data-i18n="modals.userSettings.pushToggleLabel">Activer les notifications push</span>
-              <span class="mt-0.5 block text-xs font-normal text-slate-500 dark:text-slate-400" data-i18n="modals.userSettings.pushToggleHint">Recevez une notification lors des modifications sur une liste partagée et pour les rappels de vos tâches.</span>
+              <span id="user-settings-push-label" class="block" data-i18n="modals.userSettings.pushToggleLabel">Activer les notifications push</span>
+              <span id="user-settings-push-hint" class="mt-0.5 block text-xs font-normal text-slate-500 dark:text-slate-400" data-i18n="modals.userSettings.pushToggleHint">Recevez une notification lors des modifications sur une liste partagée et pour les rappels de vos tâches.</span>
+              <!-- Inside the Android app, the same switch turns on reminders scheduled on the
+                   phone instead (local-reminders.js): push.js swaps these texts in. -->
+              <span id="user-settings-local-reminders-label" class="block" data-i18n="modals.userSettings.localRemindersLabel" hidden>Rappels locaux (mode hors-ligne supporté)</span>
+              <span id="user-settings-local-reminders-hint" class="mt-0.5 block text-xs font-normal text-slate-500 dark:text-slate-400" data-i18n="modals.userSettings.localRemindersHint" hidden>Les rappels de vos tâches sont programmés sur ce téléphone : ils arrivent à l'heure, même sans réseau. Les modifications des listes partagées ne sont pas notifiées dans l'application.</span>
             </span>
           </label>
           <p id="user-settings-push-status" class="text-xs text-slate-500 dark:text-slate-400" role="status" hidden></p>
@@ -2060,6 +2064,7 @@
   <script src="/js/notifications.js" defer></script>
   <script src="/js/settings.js" defer></script>
   <script src="/js/push.js" defer></script>
+  <script src="/js/local-reminders.js" defer></script>
   <script src="/js/install-help.js" defer></script>
   <script src="/js/admin.js" defer></script>
 </body>

@@ -168,6 +168,7 @@ func (app *Application) Routes() http.Handler {
 	apiMux.HandleFunc("PATCH /api/v1/items/{id}", app.handleItemsPatch)
 	apiMux.HandleFunc("DELETE /api/v1/items/{id}", app.handleItemsDelete)
 	apiMux.HandleFunc("POST /api/v1/items/{id}/price-check", app.handleItemsPriceCheck)
+	apiMux.HandleFunc("GET /api/v1/reminders/upcoming", app.handleRemindersUpcoming)
 
 	apiMux.HandleFunc("GET /api/v1/price-alerts", app.handlePriceAlertsIndex)
 	apiMux.HandleFunc("PATCH /api/v1/price-alerts/{id}", app.handlePriceAlertsUpdate)

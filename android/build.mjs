@@ -38,6 +38,8 @@ const REQUIRED_PERMISSIONS = [
   'android.permission.CAMERA',
   'android.permission.VIBRATE',
   'android.permission.POST_NOTIFICATIONS',
+  'android.permission.USE_EXACT_ALARM',
+  'android.permission.RECEIVE_BOOT_COMPLETED',
 ];
 
 const USAGE = `Usage: node build.mjs <command>

@@ -12,6 +12,10 @@
     "appendUserAgent": "TrakkaAndroid"
   },
   "plugins": {
+    "LocalNotifications": {
+      "smallIcon": "ic_stat_trakka",
+      "iconColor": "#6366F1"
+    },
     "SystemBars": {
       "insetsHandling": "css",
       "initialViewportFitValueHint": "cover"

@@ -9,7 +9,9 @@
   const link = document.getElementById('oidc-login-link');
   const plugins = window.Capacitor && window.Capacitor.Plugins;
   const plugin = plugins && plugins.TrakkaApp;
-  if (!link || !plugin) return;
+  // The bridge exposes exactly the methods the app's native plugin has: an older app has no
+  // signInWithBrowser at all, and calling it would throw before the fallback below could run.
+  if (!link || !plugin || typeof plugin.signInWithBrowser !== 'function') return;
 
   link.addEventListener('click', (event) => {
     event.preventDefault();

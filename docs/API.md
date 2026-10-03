@@ -672,6 +672,20 @@ curl -X POST -b cookies.txt http://localhost:8080/api/v1/push/test
 
 `200 {"sent_to_subscriptions": N}` on success (delivery itself is still best-effort — a `200` means the attempt was made to `N` subscriptions, not that a device necessarily displayed it). `503` if push isn't configured on this instance; `404` if the calling user has no push subscription registered at all (enable the toggle in Paramètres first).
 
+### `GET /api/v1/reminders/upcoming`
+
+The calling user's task reminders still to come, for the Android app, which schedules them on the phone as local notifications because its WebView has no Web Push ([MOBILE_BUILD.md](MOBILE_BUILD.md#task-reminders-local-notifications)). Independent of push: works without VAPID keys.
+
+Returns the reminders the push scan would send this user: those of every not-done task with an active reminder on a list the user can access (House membership, list share, or Space share), plus the next occurrence of each checked-off recurring task (`next_due_date`), since that task only comes back at its reminder moment at the latest. `remind_at` (UTC) is computed exactly as for the push ([Reminders](#reminders)), in the instance's `APP_TIMEZONE`; `title`, `body` and `url` are the push's. Only reminders in the next 60 days, at most 200, earliest first; past ones are left out.
+
+```json
+{
+  "reminders": [
+    { "item_id": 12, "list_id": 3, "title": "Arroser", "body": "🔔 Échéance demain — Corvées", "url": "/?list=3", "remind_at": "2026-10-05T07:00:00Z" }
+  ]
+}
+```
+
 ## Admin settings
 
 Every endpoint below is gated behind `models.User.IsAdmin` (`403 {"error": "admin access required"}` for anyone else) rather than house membership — these are system-wide, not scoped to a house. The frontend surfaces all of them as a "Console d'Administration" panel, reachable from a button inside the ordinary "Paramètres" modal (`#user-settings-modal`) that's only shown to admins (`static/js/admin.js`) — there is no separate header-level admin button; see CLAUDE.md's session-handoff log for the navigation restructuring session that moved it there.

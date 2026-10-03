@@ -43,6 +43,7 @@ make build-apk-capacitor   # optional Android APK (Capacitor), built in a contai
 | DB schema & migrations | [docs/DATABASE.md](docs/DATABASE.md) |
 | Offline/service-worker mechanism (deep dive) | [docs/PWA.md](docs/PWA.md) |
 | Production deployment | [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) |
+| Radicale CalDAV sidecar (securing it, clients, Nextcloud subscription) | [docs/RADICALE_INTEGRATION.md](docs/RADICALE_INTEGRATION.md) |
 | Local dev setup, pre-commit hooks | [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) |
 | Past security audit | [docs/AUDIT.md](docs/AUDIT.md) |
 | End-user PWA install steps | [docs/INSTALLATION.md](docs/INSTALLATION.md) |

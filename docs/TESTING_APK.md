@@ -25,7 +25,7 @@ adb shell pm clear io.github.trakka_project.app
 
 - [ ] `adb install -r android/out/trakka.apk` prints `Success`. Alternatively, copy the APK to the phone, open it from the Files app, allow that app to install unknown apps, then revoke that permission (Settings → Apps → Special app access → Install unknown apps).
 - [ ] The launcher shows **Trakka** with its icon.
-- [ ] First launch: a splash screen with the Trakka icon, then the connect screen ("Connect the app"). **No permission dialog appears**: Network is granted at install, the camera is only asked on the first scan, and notifications are never requested yet (see [Notifications](MOBILE_BUILD.md#notifications)).
+- [ ] First launch: a splash screen with the Trakka icon, then the connect screen ("Connect the app"). **No permission dialog appears**: Network is granted at install, the camera is only asked on the first scan, and notifications only when you turn on task reminders (section 4).
 - [ ] Settings → Apps → Trakka → Permissions: Camera not allowed. On GrapheneOS, Network allowed.
 - [ ] *GrapheneOS*: turn the app's **Network** permission off, then try to connect: "Server not found: … or the phone has no network access." Turn it back on.
 
@@ -127,6 +127,25 @@ The picker is in Trakka → Settings: Light / Dark / System.
 
 With an Android System WebView older than 140, the bars keep the phone's theme rather than Trakka's. That's expected.
 
+### Task reminders (local notifications)
+
+How they work: [MOBILE_BUILD.md, Notifications](MOBILE_BUILD.md#task-reminders-local-notifications). For a quick test, set the account's default to "At the exact due time" (Settings → Task notifications), or give each task below its own reminder time, a few minutes ahead. With USB debugging, `adb shell dumpsys alarm | grep -A3 io.github.trakka_project.app` lists the alarms the app holds (one per scheduled reminder).
+
+- [ ] Settings → **Task notifications**: the switch reads **"Local reminders (works offline)"**, enabled and off, with the vibration option below it. No "not supported" message.
+- [ ] Turn it on → Android asks to allow notifications (Android 13+) → **Allow** → the switch stays on. Close and reopen Settings: still on.
+- [ ] *Permission refused*: `adb shell pm clear io.github.trakka_project.app` (or a fresh install), sign in, turn it on, **Don't allow** → the switch goes back off with "Trakka's notifications are blocked on this phone…". Allow notifications in Settings → Apps → Trakka → Notifications, then turn it on again.
+- [ ] Create a task due today at a time 3 minutes from now, reminded at the due time. Leave the app (home screen) and wait: at that minute, a notification **"<task>"**, "🔔 Échéance aujourd'hui à HH:MM — <list>" (always in French, like push reminders), with the Trakka icon in the status bar, and a short double vibration.
+- [ ] Tap it → the app opens on that task's list. Do it once with the app in the background, and once after swiping the app away from recent apps.
+- [ ] **Offline**: create another task reminded 5 minutes from now, wait a few seconds (the app schedules it), then turn on **airplane mode** and close the app. At that minute the notification still comes.
+- [ ] Back online, create a task reminded 4 minutes from now and wait a few seconds. Turn airplane mode on, check the task off, and leave the app. **No notification** comes for it: checking off cancels the reminder on the phone at once.
+- [ ] Before its time comes, turn airplane mode off and uncheck the task: its reminder is scheduled again (`dumpsys alarm`). Then delete the task: no notification comes.
+- [ ] *Recurring task*: a daily task due today with a reminder, checked off → its reminder for tomorrow is scheduled (it shows in `dumpsys alarm`, or wait for it).
+- [ ] *Another device*: from a browser, give one of your tasks a reminder a few minutes ahead. Open the app online (or bring it back to the foreground), leave it → the reminder comes on the phone.
+- [ ] *Vibration*: in Settings, uncheck "Enable notification vibrations" and **Save**, then schedule a task 2 minutes ahead → the notification comes silently, without vibration. Android's settings for the app now list two channels, "Task reminders" and "Task reminders (silent)".
+- [ ] *After a restart*: schedule a reminder 5 minutes ahead, restart the phone and don't open the app → the notification still comes.
+- [ ] Turn the switch off → `dumpsys alarm` no longer lists the app's reminders, and none comes.
+- [ ] *In a browser* (not the app), Settings → Task notifications still reads "Enable push notifications" and works as before.
+
 ### Links and sign-in redirects
 
 - [ ] An item with a product link → tapping the link opens it in the phone's browser, not in the app. Going back returns to Trakka unchanged.
@@ -138,7 +157,8 @@ With an Android System WebView older than 140, the bars keep the phone's theme r
 
 ## Expected limitations (not failures)
 
-- Settings → "Task notifications": "Enable push notifications" is greyed out with "Push notifications aren't supported in the mobile app yet. Use the PWA in your browser to get reminders." (in French: "…pas encore prises en charge dans l'application mobile…"), and the notification vibration option is hidden: the app can't receive push notifications yet ([why](MOBILE_BUILD.md#notifications)).
+- Only task reminders come as notifications in the app: an item added to or checked off in a shared list, or a price drop, doesn't notify the phone ([why](MOBILE_BUILD.md#other-notifications-web-push)).
+- A task created or rescheduled while offline gets its reminder only once the phone is back online.
 - File downloads do nothing, e.g. the admin console's "Download the key (.key)". Use a browser for those.
 - Web pages never get the camera, microphone or location. The camera is only for the QR scanner.
 

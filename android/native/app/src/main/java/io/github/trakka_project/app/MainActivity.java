@@ -66,6 +66,7 @@ public class MainActivity extends BridgeActivity {
         SplashScreen.installSplashScreen(this).setKeepOnScreenCondition(() -> !firstPagePainted);
         store = new ServerStore(this);
         browserSignIn = new BrowserSignIn(this);
+        ReminderChannels.create(this);
         server = store.changeRequested() || pendingError != null ? null : store.current();
         if (server != null && !WebViewFeature.isFeatureSupported(WebViewFeature.DOCUMENT_START_SCRIPT)) {
             // Without it, Capacitor would proxy the server's pages to insert its bridge, and drop

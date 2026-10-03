@@ -4,4 +4,8 @@
     <string name="shortcut_change_server_long">Changer de serveur Trakka</string>
     <string name="qr_scan_hint">Visez le QR code de votre serveur Trakka</string>
     <string name="qr_scan_close">Fermer</string>
+    <string name="channel_reminders">Rappels de tâches</string>
+    <string name="channel_reminders_description">Rappels des échéances de vos tâches, avec une courte double vibration</string>
+    <string name="channel_reminders_quiet">Rappels de tâches (silencieux)</string>
+    <string name="channel_reminders_quiet_description">Rappels des échéances de vos tâches, sans son ni vibration</string>
 </resources>

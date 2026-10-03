@@ -10,7 +10,7 @@ make build-apk-capacitor   # android/out/trakka.apk
 | Path | What it is |
 |---|---|
 | `www/` | The connect screen bundled in the app (server address, QR code, recent servers) |
-| `native/` | The Android Studio project: `MainActivity` (connect screen or server), `TrakkaAppPlugin` (the native API pages call), `QrScanActivity` (CameraX + ZXing), `BrowserSignIn` (SSO sign-in through the browser) |
+| `native/` | The Android Studio project: `MainActivity` (connect screen or server), `TrakkaAppPlugin` (the native API pages call), `QrScanActivity` (CameraX + ZXing), `BrowserSignIn` (SSO sign-in through the browser), `ReminderChannels` (notification channels of task reminders, scheduled by `@capacitor/local-notifications`) |
 | `capacitor.config.json`, `package.json` | Capacitor's configuration and the pinned Capacitor packages |
 | `build.mjs` | The build script (`keystore`, `build`), run by the root [Makefile](../Makefile) inside the builder image |
 | `Dockerfile` | Builder image: Node.js, JDK 21 and the Android SDK, all pinned |

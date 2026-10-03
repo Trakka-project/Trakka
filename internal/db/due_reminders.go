@@ -120,3 +120,69 @@ func (d *DB) MarkDueReminderSent(ctx context.Context, itemID int64, key string) 
 	}
 	return nil
 }
+
+// UserReminder is one active reminder a user is notified of: a
+// DueReminderCandidate on a list the user can access, with that list's name.
+type UserReminder struct {
+	DueReminderCandidate
+	ListName string
+}
+
+// ListActiveRemindersForUser returns the same not-done, reminder-enabled,
+// not-yet-reminded items ListItemsForDueReminderScan does, plus the next
+// occurrence of every done recurring item (next_due_date set, DueDate holding
+// it), restricted to the lists userID has access to — the three access
+// sources ListNotificationRecipients unions, so a user is told about exactly
+// the reminders the push scan would send them. For the Android app, which
+// schedules them on the phone as local notifications (see
+// internal/handlers.handleRemindersUpcoming). Next occurrences are included
+// because RunNextOccurrenceScan brings a task back as late as its reminder
+// moment: waiting for it to come back would leave the phone no time to
+// schedule that reminder ahead, which is the point of scheduling it there.
+func (d *DB) ListActiveRemindersForUser(ctx context.Context, userID int64) ([]*UserReminder, error) {
+	rows, err := d.conn.QueryContext(ctx, `
+		SELECT items.id, items.list_id, l.name, items.title,
+		       CASE WHEN items.done = 0 THEN items.due_date ELSE items.next_due_date END,
+		       items.reminder_offset_days, items.reminder_time, COALESCE(items.due_time, ''), items.reminder_at_due_time
+		FROM items
+		JOIN lists l ON l.id = items.list_id
+		WHERE items.reminder_enabled = 1
+		  AND (
+		    (items.done = 0 AND items.due_date IS NOT NULL
+		     AND (items.due_reminder_sent_for IS NULL OR items.due_reminder_sent_for != `+dueReminderKeyExpr+`))
+		    OR (items.done = 1 AND items.next_due_date IS NOT NULL)
+		  )
+		  AND (
+		    EXISTS (SELECT 1 FROM house_members hm WHERE hm.house_id = l.house_id AND hm.user_id = ?)
+		    OR EXISTS (SELECT 1 FROM list_shares ls WHERE ls.list_id = l.id AND ls.shared_with_user_id = ?)
+		    OR EXISTS (SELECT 1 FROM space_shares ss WHERE ss.custom_category_id = l.custom_category_id AND ss.shared_with_user_id = ?)
+		  )`,
+		userID, userID, userID)
+	if err != nil {
+		return nil, fmt.Errorf("querying active reminders for user %d: %w", userID, err)
+	}
+	defer rows.Close()
+
+	reminders := []*UserReminder{}
+	for rows.Next() {
+		r := &UserReminder{}
+		var offsetDays sql.NullInt64
+		var timeOfDay sql.NullString
+		var atDueTime int
+		if err := rows.Scan(&r.ItemID, &r.ListID, &r.ListName, &r.Title, &r.DueDate, &offsetDays, &timeOfDay, &r.DueTime, &atDueTime); err != nil {
+			return nil, fmt.Errorf("scanning active reminder row: %w", err)
+		}
+		// Skipped for the same reason as in ListItemsForDueReminderScan.
+		if !offsetDays.Valid || !timeOfDay.Valid || timeOfDay.String == "" {
+			continue
+		}
+		r.OffsetDays = int(offsetDays.Int64)
+		r.TimeOfDay = timeOfDay.String
+		r.AtDueTime = atDueTime != 0
+		reminders = append(reminders, r)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterating active reminder rows: %w", err)
+	}
+	return reminders, nil
+}

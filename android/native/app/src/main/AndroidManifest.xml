@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
 
     <uses-permission android:name="android.permission.INTERNET" />
     <!-- The QR code scanner of the connect screen (QrScanActivity). Web pages never get the
@@ -10,6 +11,21 @@
     <!-- Notifications posted by the app itself. Android 13+ only asks the user once the app
          requests it; see docs/MOBILE_BUILD.md, "Notifications". -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!-- Task reminders scheduled on the phone (Capacitor's LocalNotifications, see
+         static/js/local-reminders.js) fire at their exact minute, as "at the exact due time"
+         promises. USE_EXACT_ALARM (Android 13+) is granted at install, as it is for calendar
+         and reminder apps; SCHEDULE_EXACT_ALARM, which the plugin declares, would have to be
+         allowed by hand in Android's settings from Android 14 on, so it is only kept for
+         Android 12 (granted there by default). Without either, Android delays the reminders.
+         The plugin also declares RECEIVE_BOOT_COMPLETED and WAKE_LOCK, to schedule the
+         reminders again after a restart. -->
+    <uses-permission
+        android:name="android.permission.USE_EXACT_ALARM"
+        tools:ignore="ExactAlarm" />
+    <uses-permission
+        android:name="android.permission.SCHEDULE_EXACT_ALARM"
+        android:maxSdkVersion="32"
+        tools:node="replace" />
 
     <uses-feature
         android:name="android.hardware.camera.any"
