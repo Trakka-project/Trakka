@@ -17,6 +17,7 @@
   <img alt="PWA" src="https://img.shields.io/badge/PWA-offline--first-5A0FC8?logo=pwa&logoColor=white">
   <img alt="Tailwind CSS" src="https://img.shields.io/badge/Tailwind_CSS-3-06B6D4?logo=tailwindcss&logoColor=white">
   <a href="LICENSE"><img alt="License: GPL-3.0" src="https://img.shields.io/badge/license-GPL--3.0-blue"></a>
+  <a href="https://github.com/Trakka-project/Trakka/releases/latest"><img alt="Download the Android app (APK)" src="https://img.shields.io/badge/Android-download_APK-3DDC84?logo=android&logoColor=white"></a>
 </p>
 
 <p align="center">
@@ -125,6 +126,10 @@ DB_PATH=./trakka.db STATIC_DIR=./static TEMPLATES_DIR=./templates ./trakka
 ```
 
 Configuration is environment variables only; see [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) for the full list, HTTPS, OIDC and push notification setup.
+
+### Android app
+
+[Download the Android app (APK)](https://github.com/Trakka-project/Trakka/releases/latest): `trakka.apk` is attached to each release, starting with the first that includes the app. One app for any Trakka server: on first launch, enter your server's address or scan its QR code. To build it yourself, or to install it on GrapheneOS, see [docs/MOBILE_BUILD.md](docs/MOBILE_BUILD.md).
 
 ## Architecture at a glance
 

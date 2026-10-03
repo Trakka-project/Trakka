@@ -31,7 +31,7 @@ Unlike iOS, Android/Chrome can also flush queued offline changes in the backgrou
 
 ### Android app (APK)
 
-There is also an Android app, built by whoever runs your Trakka instance (see [docs/MOBILE_BUILD.md](MOBILE_BUILD.md)). If they give you a `trakka.apk` file, open it on your phone and allow the installation. On first launch, enter your Trakka server's address, or scan its QR code, then sign in: the app shows Trakka full screen, as a real app with its own icon, and Paramètres → "Changer de serveur" switches it to another server. It is the better choice on browsers that can only add a home-screen shortcut, such as Vanadium on GrapheneOS. One thing it can't do yet is receive push notifications; see [Notifications](MOBILE_BUILD.md#notifications).
+There is also an Android app, for any Trakka server: [download `trakka.apk` from the latest release](https://github.com/Trakka-project/Trakka/releases/latest) (direct link: <https://github.com/Trakka-project/Trakka/releases/latest/download/trakka.apk>, available from the first release that includes the app), or use the one whoever runs your instance built (see [docs/MOBILE_BUILD.md](MOBILE_BUILD.md)). Open it on your phone and allow the installation. On first launch, enter your Trakka server's address, or scan its QR code, then sign in: the app shows Trakka full screen, as a real app with its own icon, and Paramètres → "Changer de serveur" switches it to another server. It is the better choice on browsers that can only add a home-screen shortcut, such as Vanadium on GrapheneOS. One thing it can't do yet is receive push notifications; see [Notifications](MOBILE_BUILD.md#notifications).
 
 ## Troubleshooting
 

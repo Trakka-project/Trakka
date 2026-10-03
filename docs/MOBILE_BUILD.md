@@ -2,7 +2,7 @@
 
 Trakka's Android app works with any Trakka server: the first time it opens, it asks for the server's address, typed in or scanned from a QR code, then shows that server's Trakka full screen, like an installed app. It is built with [Capacitor](https://capacitorjs.com/): a native Android shell around a WebView. The same APK serves every self-hosted instance, the server needs no change or extra configuration, and the PWA inside keeps updating itself from the server.
 
-This page covers what the app does, building it, and installing it, including on GrapheneOS. To install the PWA straight from a browser instead, see [INSTALLATION.md](INSTALLATION.md).
+This page covers what the app does, building it, and installing it, including on GrapheneOS. Each Trakka release also comes with a ready-made, signed `trakka.apk`, built by GitHub Actions ([Releases built by GitHub Actions](#releases-built-by-github-actions)). To install the PWA straight from a browser instead, see [INSTALLATION.md](INSTALLATION.md).
 
 ## How the app works
 
@@ -82,9 +82,50 @@ It is a self-generated key rather than one managed by an app store, but it becom
 - **To use a key of your own**, put it under `android/` and set `ANDROID_KEYSTORE`, `ANDROID_KEY_ALIAS` and the passwords.
 - **If the key is lost**, uninstall the app from the phones, delete `android/signing/`, and run `make apk-keystore` and `make build-apk-capacitor` again.
 
+## Releases built by GitHub Actions
+
+[`.github/workflows/build-apk.yml`](../.github/workflows/build-apk.yml) builds the APK the same way (`make build-apk-capacitor`, with Docker) and attaches it to Trakka's GitHub releases, so that nobody has to build it to install it: [latest release](https://github.com/Trakka-project/Trakka/releases/latest), or directly <https://github.com/Trakka-project/Trakka/releases/latest/download/trakka.apk>.
+
+- **Publishing a release** (from a `vX.Y.Z` tag) builds `trakka.apk`, signed with the release key, and attaches it with `trakka.apk.sha256` and a build provenance attestation. The app's version comes from the tag: `v1.3.0` gives version name `1.3.0` and version code `1003000`, so each release installs over the previous one. The run's page sums up the package, version, signing certificate and checksum.
+- **Running the workflow by hand** (Actions → Android APK → Run workflow): from a tag, it rebuilds and re-attaches that release's APK, for instance after fixing the secrets; from a branch, it builds a development APK (version code 1, so that any release installs over it), downloadable from the run's page for 14 days.
+- Releases made before the app existed (v1.2.0 and older) have no `android/`, and no APK.
+
+### Setting up the secrets
+
+The workflow signs with the key `make apk-keystore` created, stored in repository secrets (Settings → Secrets and variables → Actions → New repository secret):
+
+| Secret | Value |
+|---|---|
+| `ANDROID_KEYSTORE_BASE64` | The keystore file in base64, on one line: `base64 -w0 android/signing/trakka.keystore` (on macOS, `base64 -i android/signing/trakka.keystore`) |
+| `ANDROID_KEYSTORE_PASSWORD` | The `ANDROID_KEYSTORE_PASSWORD` value from `android/signing/keystore.env` |
+| `ANDROID_KEY_PASSWORD` | The `ANDROID_KEY_PASSWORD` value from the same file. Optional for a key made by `make apk-keystore`, where it is the same password |
+
+With the [GitHub CLI](https://cli.github.com/), from the repository's root, without the values ever showing on screen or landing in the shell history:
+
+```bash
+base64 -w0 android/signing/trakka.keystore | gh secret set ANDROID_KEYSTORE_BASE64
+grep '^ANDROID_KEYSTORE_PASSWORD=' android/signing/keystore.env | cut -d= -f2- | tr -d '\n' | gh secret set ANDROID_KEYSTORE_PASSWORD
+grep '^ANDROID_KEY_PASSWORD=' android/signing/keystore.env | cut -d= -f2- | tr -d '\n' | gh secret set ANDROID_KEY_PASSWORD
+```
+
+A key alias other than `trakka` goes in the repository *variable* `ANDROID_KEY_ALIAS` (it is not secret). Without the secrets, the workflow stops with an error naming the missing one.
+
+The secrets are the release key: whoever can change this repository's workflows could use them, and GitHub never shows a secret again, so keep your own backup of `android/signing/`. To restrict them further, you can move them to a GitHub environment that only `v*` tags may use, and add `environment:` with its name to the workflow's job (development builds from branches then lose access to them).
+
+### Checking a downloaded APK
+
+```bash
+sha256sum -c trakka.apk.sha256
+gh attestation verify trakka.apk --repo Trakka-project/Trakka
+```
+
+The attestation proves the APK was built by this repository's workflow, from the release's commit. To check who signed it, compare its certificate (`apksigner verify --print-certs trakka.apk`, or [AppVerifier](https://github.com/soupslurpr/AppVerifier) on GrapheneOS) with the "signed by" fingerprint on the release's workflow run.
+
+An APK you build yourself is signed with your own key: Android won't install it over the release's APK, or the other way round, without uninstalling first.
+
 ## Installing on the phone
 
-Copy `android/out/trakka.apk` to the phone (USB file transfer, a synced folder, an email to yourself) and open it from the Files app. Android asks you to allow that app to install unknown apps: allow it, install, then you can revoke that permission (Settings → Apps → Special app access → Install unknown apps). With USB debugging enabled, `adb install -r android/out/trakka.apk` from a computer does the same.
+Download `trakka.apk` on the phone from the [latest release](https://github.com/Trakka-project/Trakka/releases/latest), or copy the one you built (`android/out/trakka.apk`) to it (USB file transfer, a synced folder, an email to yourself), and open it from the Files app. Android asks you to allow that app to install unknown apps: allow it, install, then you can revoke that permission (Settings → Apps → Special app access → Install unknown apps). With USB debugging enabled, `adb install -r android/out/trakka.apk` from a computer does the same.
 
 **On GrapheneOS** the steps are the same, and nothing more is required: no sandboxed Google Play, no app store. Keep the app's "Network" permission on (GrapheneOS grants it at install unless you turned that default off): the app does its own networking. The camera permission is only asked for the first time you scan a QR code.
 
@@ -120,6 +161,8 @@ New Trakka versions need no new APK: the app always shows the server's current T
 | A page is broken and Paramètres can't be reached | Long press on the app icon → "Change server" |
 | "App not installed" when updating | The new APK isn't signed with the key of the installed app: use the original key, or uninstall the app first |
 | Trakka says push notifications aren't supported | Expected for now: see [Notifications](#notifications) |
+| The "Android APK" workflow stops on a missing secret | The repository secrets aren't set up: see [Setting up the secrets](#setting-up-the-secrets), then run the workflow by hand from the release's tag |
+| The workflow fails at "Attach the APK to the release" | It was run by hand from a tag that has no GitHub release yet: publish the release, which runs the workflow by itself |
 | The build can't resolve or download anything | The container has no working DNS (common with `systemd-resolved` or a VPN, see [DEPLOYMENT.md](DEPLOYMENT.md#when-the-build-cant-download-go-modules)): `make build-apk-capacitor APK_RUN_FLAGS=--network=host APK_IMAGE_BUILD_FLAGS=--network=host` |
 | `permission denied` writing under `android/`, with rootless Docker | Run as the container's root, which is you there: `make build-apk-capacitor APK_USER_FLAGS=` |
 
@@ -134,6 +177,7 @@ New Trakka versions need no new APK: the app always shows the server's current T
 ## Maintenance
 
 - **Layout.** [android/README.md](../android/README.md) lists what is where. `android/native/` is an ordinary Android Studio project: open it after `npm ci` and `npx cap sync android` in `android/` (or `npx cap open android`). After editing `android/www/`, `npx cap sync android` copies it into the project; `make build-apk-capacitor` does that by itself.
+- **The release workflow** ([.github/workflows/build-apk.yml](../.github/workflows/build-apk.yml)) follows the same rules as `ci.yml`: no permission beyond those its job declares, every action pinned to a full commit SHA ([.claude/ci-security.md](../.claude/ci-security.md)). It runs the same `make build-apk-capacitor`, so whatever builds locally builds there.
 - **Upgrading Capacitor**: change the three exact versions in `android/package.json`, run `npm install` in `android/`, check the Android Gradle Plugin, SDK and JDK versions the new release expects against `android/native/variables.gradle`, `android/native/build.gradle` and the versions pinned in [android/Dockerfile](../android/Dockerfile), then build. The SDK in the builder image is read-only, so a missing package fails the build instead of being downloaded during it.
 - **The lockfile is part of CI's checks**: Trivy's filesystem scan fails on any fixable HIGH or CRITICAL advisory in `android/package-lock.json` ([.claude/ci-security.md](../.claude/ci-security.md)).
 - **The Android command-line tools stay at 21.0, on purpose**: they only install the SDK packages while the image builds. From 22.0 on they bring Google's "Android CLI", which the `sdkmanager` of 23.0 delegates to; it downloads a runtime of its own and uploads usage metrics by default.

@@ -37,7 +37,7 @@ make build-apk-capacitor   # optional Android APK (Capacitor), built in a contai
 | Package layout/import boundaries, `internal/config`, DB driver/connection pool/migration engine, Go & dependency version pinning, `cmd/server` (healthcheck/shutdown/logging), Dockerfile/`compose.yml` | [.claude/architecture.md](.claude/architecture.md) |
 | `internal/handlers`, `internal/db`, `internal/auth`, `internal/scraper`, `internal/webpush`, `internal/backup` — API/RBAC/sharing/pinning/recurring-items/price-lookup/push-notification/encrypted-WebDAV-backup design — and the **full** non-negotiable security rules | [.claude/backend.md](.claude/backend.md) |
 | `static/js/*.js`, `static/sw.js`, `static/css/*.css`, `templates/login.html` — PWA/offline mechanism, i18n, theming, mobile layout rules | [.claude/frontend-pwa.md](.claude/frontend-pwa.md) |
-| `.github/workflows/ci.yml`, `.golangci.yml`, gosec/gitleaks/Trivy findings & exemptions, `.github/` templates | [.claude/ci-security.md](.claude/ci-security.md) |
+| `.github/workflows/ci.yml` and `build-apk.yml` (Android release APK), `.golangci.yml`, gosec/gitleaks/Trivy findings & exemptions, `.github/` templates | [.claude/ci-security.md](.claude/ci-security.md) |
 | "What's built, what's verified, what's left", session handoff, the copy-paste prompt for a new session | [.claude/status.md](.claude/status.md) |
 | REST endpoint reference | [docs/API.md](docs/API.md) |
 | DB schema & migrations | [docs/DATABASE.md](docs/DATABASE.md) |
