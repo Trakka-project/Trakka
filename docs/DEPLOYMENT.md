@@ -10,7 +10,7 @@ Trakka ships as a single static Go binary in a minimal Alpine image, with a [com
 | `DB_PATH` | `/data/trakka.db` | SQLite database file path |
 | `STATIC_DIR` | `/app/static` | Directory served as static assets at `/` |
 | `TEMPLATES_DIR` | `/app/templates` | Directory containing `login.html` |
-| `BASE_URL` | *(empty)* | Externally-visible origin (e.g. `https://trakka.example.com`), used to build the OIDC `redirect_uri`. **Required if OIDC is configured**; the server refuses to start otherwise. |
+| `BASE_URL` | *(empty)* | Externally-visible origin (e.g. `https://trakka.example.com`), used to build the OIDC `redirect_uri` and, in the [calendar feed](#calendar-export), each event's link back to Trakka and its stable ID. **Required if OIDC is configured**; the server refuses to start otherwise. |
 | `OIDC_ISSUER` | *(empty)* | OIDC provider issuer URL (e.g. `https://auth.example.com`). Set together with the two vars below, or leave all three empty to disable OIDC. |
 | `OIDC_CLIENT_ID` | *(empty)* | OIDC client id registered with the provider. |
 | `OIDC_CLIENT_SECRET` | *(empty)* | OIDC client secret. Treat as sensitive — pass it as a secret/secret-file in production, not a plain compose env value, the same way you would any other credential. |
@@ -160,47 +160,42 @@ The container runs as UID `10001`, so both files must be readable by it — brow
 
 The image's `HEALTHCHECK` runs `trakka -healthcheck`, which performs an in-process HTTP GET against its own `/healthz` and exits `0`/`1` accordingly — no `curl` or `wget` is installed in the runtime image. `compose.yml` declares the same check under `services.trakka.healthcheck` so `docker compose ps` / `podman-compose ps` reflect container health.
 
-## Optional CalDAV sync (Radicale)
+## Calendar export
 
-A lightweight [Radicale](https://radicale.org/) service is defined in `compose.yml` but gated behind the `calendar` [Compose profile](https://docs.docker.com/compose/profiles/), so it is **not** started by `docker compose up` alone:
+Each user can subscribe their calendar app (Nextcloud, Google Calendar, Apple Calendar, Thunderbird) to their own tasks through a personal feed link they generate in **Paramètres → Export de calendrier**. It's built into Trakka: no extra service, nothing to configure per user. For it to work well:
 
-```bash
-docker compose --profile calendar up -d
-# or
-podman-compose --profile calendar up -d
-```
+- Set `BASE_URL`, so events link back to Trakka and keep stable IDs.
+- Make Trakka reachable, over HTTPS with a trusted certificate, from wherever the calendar app fetches the feed: Google Calendar fetches from Google's servers (so Trakka must be on the internet), Nextcloud from the Nextcloud server.
+- Let the reverse proxy forward query strings to `/api/v1/calendar/feed.ics` (the default), and treat its access log as sensitive: the feed's secret token is in the query string. Trakka's own log never records it.
 
-It listens on `5232` and persists its data/config in the `radicale_data` and `radicale_config` named volumes, on the same `trakka_net` bridge network as `trakka`. This is intended as an optional companion for calendar-based sync of task lists — Trakka's own API does not talk to Radicale directly; wiring that integration up (e.g. exporting to-do lists as `.ics`/CalDAV) is a separate, not-yet-implemented piece of work.
+Full guide, client setup and limitations: [docs/CALENDAR_EXPORT.md](CALENDAR_EXPORT.md).
 
-**The image starts with authentication disabled** (`[auth] type = none`) and `compose.yml` publishes `5232` on all interfaces, so turn on `htpasswd` auth before exposing it. [docs/RADICALE_INTEGRATION.md](RADICALE_INTEGRATION.md) walks through that, plus connecting CalDAV clients (Thunderbird, Apple, DAVx⁵) and subscribing from Nextcloud.
+Earlier versions of `compose.yml` also defined an optional Radicale CalDAV sidecar behind a `calendar` profile. It never synced with Trakka and has been removed. If you ran it, [Migrating from the Radicale sidecar](CALENDAR_EXPORT.md#migrating-from-the-radicale-sidecar) explains how to keep its data and remove the container and volumes.
 
 ## Networking
 
-Both services sit on a single explicit bridge network, `trakka_net`, defined in `compose.yml`. This keeps them addressable by service name (`trakka`, `radicale`) for any future inter-service calls, without exposing anything beyond the ports explicitly published (`8080` for Trakka, `5232` for Radicale).
+The `trakka` service sits on an explicit bridge network, `trakka_net`, defined in `compose.yml`, and publishes only port `8080`. Any service you add next to it (a reverse proxy, for example) can join that network and reach Trakka by service name (`trakka`) without publishing anything more.
 
 ## Persistence
 
 | Volume | Mounted at | Contains |
 |---|---|---|
 | `trakka_data` | `/data` (in `trakka`) | `trakka.db` (+ WAL/SHM sidecar files), `backup.key` and `backups/` (see [Encrypted WebDAV backups](#what-lives-where)) |
-| `radicale_data` | `/data` (in `radicale`) | CalDAV collections |
-| `radicale_config` | `/config` (in `radicale`) | Radicale configuration |
 
-All three are named Docker/Podman volumes (not bind mounts), which sidesteps host-side UID/permission mismatches that bind mounts commonly hit under rootless Podman.
+It is a named Docker/Podman volume (not a bind mount), which sidesteps host-side UID/permission mismatches that bind mounts commonly hit under rootless Podman.
 
 ## Security posture
 
-- Non-root, fixed UID/GID (`10001:10001`) in both services, set both in the Dockerfile (`USER`) and again explicitly in `compose.yml` (`user:`) for defense in depth.
+- Non-root, fixed UID/GID (`10001:10001`), set both in the Dockerfile (`USER`) and again explicitly in `compose.yml` (`user:`) for defense in depth.
 - Distroless runtime image for `trakka` (no shell, no package manager) — see [Image build](#image-build) above.
 - `read_only: true` on the `trakka` service: the root filesystem is mounted read-only, with `/data` (the named volume) and `/tmp` (an in-memory `tmpfs`, capped at 16MB) as the only writable paths. Nothing in the app writes anywhere else — the SQLite file (plus its `-wal`/`-shm` siblings) lives entirely under `/data`.
 - `cap_drop: [ALL]` on the `trakka` service: a plain HTTP server backed by SQLite needs no Linux capabilities, not even `NET_BIND_SERVICE` (it binds the unprivileged port `8080`).
-- `security_opt: no-new-privileges:true` on both services in `compose.yml`.
+- `security_opt: no-new-privileges:true` in `compose.yml`.
 - No host networking.
 - Every HTTP response (API and static) carries `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, a strict `Content-Security-Policy` (`default-src 'self'`, no `unsafe-inline`), and `Referrer-Policy: no-referrer` — see [docs/API.md](API.md) and `internal/handlers/middleware.go`.
 - All SQL is parameterized (no string-built queries); any user-supplied URL is validated to be an absolute `http://`/`https://` URL before it's ever stored or rendered.
 - Off-site backups are encrypted on the server before upload (AES-256-GCM, authenticated per 64 KiB chunk, see [Encrypted WebDAV backups](#encrypted-webdav-backups)); the WebDAV credentials are stored encrypted and never returned by the API; the WebDAV client never follows redirects (which would resend the credentials) and goes through the same SSRF dial guard as the scraper and Web Push.
-
-`radicale` (the optional CalDAV companion, gated behind the `calendar` profile) is a third-party image and is intentionally left out of the `read_only`/`cap_drop` hardening above — it wasn't built with a read-only root filesystem in mind, and hardening it is out of scope for Trakka itself.
+- The personal calendar feed (`/api/v1/calendar/feed.ics`) is the one API route outside the session check: its secret token is stored hashed, read-only, and revocable by the user — see [docs/CALENDAR_EXPORT.md](CALENDAR_EXPORT.md#security).
 
 ## PWA / offline support
 

@@ -196,7 +196,17 @@ func (app *Application) Routes() http.Handler {
 	apiMux.HandleFunc("DELETE /api/v1/push/subscribe", app.handlePushUnsubscribe)
 	apiMux.HandleFunc("POST /api/v1/push/test", app.handlePushTest)
 
+	apiMux.HandleFunc("GET /api/v1/calendar/feed-token", app.handleCalendarFeedTokenShow)
+	apiMux.HandleFunc("POST /api/v1/calendar/feed-token", app.handleCalendarFeedTokenCreate)
+	apiMux.HandleFunc("DELETE /api/v1/calendar/feed-token", app.handleCalendarFeedTokenDelete)
+
 	mux.Handle("/api/v1/", app.RequireSession(apiMux))
+	// The one /api/v1/... route outside RequireSession: calendar apps poll
+	// it in the background with no session, authenticated by the secret
+	// token in its query string instead (see calendar_feed.go). A more
+	// specific pattern than "/api/v1/" above, so the mux always routes it
+	// here.
+	mux.HandleFunc("GET /api/v1/calendar/feed.ics", app.handleCalendarFeed)
 	fileServer := http.FileServer(staticFileSystem{http.Dir(app.StaticDir)})
 	// GET /sw.js is a more specific pattern than the catch-all "/" below, so
 	// the Go 1.22+ ServeMux resolves every request for it here regardless of

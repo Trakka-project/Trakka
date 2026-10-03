@@ -18,6 +18,7 @@ internal/recurrence/   recurrence rules: parse/normalize the RRULE subset items 
 internal/scraper/      best-effort background price lookup for an item's URL (OpenGraph/JSON-LD/microdata)
 internal/webpush/      hand-rolled Web Push: VAPID (RFC 8292) JWT signing, aes128gcm (RFC 8291) payload encryption, delivery
 internal/backup/       encrypted WebDAV backups: key file, chunked AES-256-GCM stream format, minimal WebDAV client (SSRF-guarded), scheduler, restore
+internal/ical/         minimal iCalendar (RFC 5545) writer — content lines, folding, TEXT escaping, DATE/DURATION values; stdlib only, knows nothing about items (used by the calendar feed in internal/handlers)
 static/                PWA assets served at "/" (index.html, js/, locales/ (FR/EN dictionaries), emoji/ (emoji picker data, generated), sw.js, manifest.json, icons/)
 tools/genemoji/        build-ignored maintenance tool (`go run tools/genemoji/main.go`) regenerating static/emoji/{fr,en}.json from a pinned emojibase-data release
 templates/             login.html, rendered via html/template
@@ -47,7 +48,7 @@ android/               optional Android app: a Capacitor shell (native/ Android 
 
 - **Docker build is multi-stage and CGO-free by requirement**: builder stage `golang:1.27.0-alpine` compiles `./cmd/server` with `CGO_ENABLED=0` to a static, stripped binary (`-ldflags="-s -w"`); runtime stage is `gcr.io/distroless/static-debian12` (no shell, no package manager — chosen over an Alpine runtime specifically to shrink the attack surface, since this binary needs nothing beyond CA certificates, which that image already ships), running as a fixed non-root numeric UID:GID (`10001:10001`), chosen specifically so it maps cleanly under Podman's rootless user-namespace remapping — don't switch to a named `USER` (or to distroless's own built-in `nonroot` user, which is UID `65532`) without keeping the numeric UID pinned. Because distroless has no shell to run `adduser`/`mkdir` in, the `/etc/passwd`/`/etc/group` entries for that UID and an empty, correctly-owned `/data` directory are created in the *builder* stage and `COPY --from=build`'d into the runtime stage, alongside `static/` and `templates/` (the latter for `login.html`). Distroless ships no `tzdata`; this is a non-issue since the app never calls `time.LoadLocation` and every timestamp it stores or logs is UTC by convention, and `compose.yml` no longer sets `TZ` (it would be silently ignored). `compose.yml`'s `trakka` service also sets `read_only: true` (with `/data` and a small `tmpfs` at `/tmp` as the only writable paths) and `cap_drop: [ALL]` — a plain HTTP+SQLite server needs no Linux capabilities, not even `NET_BIND_SERVICE`, since it binds an unprivileged port.
 - **Module download vs. offline builds**: `RUN go mod download` stays a plain layer (no `--mount=type=cache`) because CI's `cache-from: type=gha` persists layers but never cache mounts — only the compile step's `/root/.cache/go-build` is a cache mount. An empty `FROM scratch AS vendor` stage, overridden with `--build-context vendor=./vendor`, is the offline path (see [docs/DEPLOYMENT.md](../docs/DEPLOYMENT.md#when-the-build-cant-download-go-modules)); don't replace it with a wildcard `COPY vendo[r]`, which buildah/podman rejects when nothing matches.
-- **`compose.yml`** must stay valid for both `docker compose` and `podman-compose` — avoid Compose fields that only one of the two supports. The `radicale` (CalDAV) service is optional and gated behind the `calendar` profile; it should never start by default.
+- **`compose.yml`** must stay valid for both `docker compose` and `podman-compose` — avoid Compose fields that only one of the two supports. `trakka` is its only service: the optional Radicale CalDAV sidecar (`calendar` profile) was removed once Trakka grew its own calendar feed (see [backend.md](backend.md#personal-calendar-feed)) — don't reintroduce a sidecar for calendar sync.
 
 ## Conventions
 
@@ -72,9 +73,9 @@ android/               optional Android app: a Capacitor shell (native/ Android 
 - Non-root user with a **fixed numeric UID:GID** (`10001:10001`, via `adduser -u 10001` then `USER 10001:10001`), never a symbolic `USER` — needed for predictable behavior under Podman rootless.
 - `compose.yml` must stay valid for both `docker compose` **and** `podman-compose` at once — avoid any Compose field not supported by both.
 - Named volumes only (never bind mounts), to avoid UID permission issues under rootless.
-- Optional services (e.g. `radicale`) gated behind a Compose profile (`calendar`), never started by default.
+- Any future optional service goes behind a Compose profile, never started by default.
 - `security_opt: no-new-privileges:true`, no privileged capabilities, no host networking.
-- Trakka's own service runs `read_only: true` with `cap_drop: [ALL]`, since a static Go binary talking to SQLite over a local named volume needs to write nowhere but `/data` (and, defensively, `/tmp`) and needs no Linux capability at all. This is specific to `trakka` itself, not a blanket rule for every service in `compose.yml` — a third-party image like `radicale` that wasn't built with a read-only root filesystem in mind is left out of it.
+- Trakka's own service runs `read_only: true` with `cap_drop: [ALL]`, since a static Go binary talking to SQLite over a local named volume needs to write nowhere but `/data` (and, defensively, `/tmp`) and needs no Linux capability at all. This is specific to `trakka` itself, not a blanket rule for any future service in `compose.yml` — a third-party image that wasn't built with a read-only root filesystem in mind may need to be left out of it.
 
 ### Documentation
 
