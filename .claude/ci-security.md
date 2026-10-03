@@ -17,6 +17,8 @@ Four jobs, the last depending on the first three (`needs: [lint, test, security-
 
 Both Trivy scans and gosec are hard gates (`exit-code: "1"` on any unfixed `CRITICAL`/`HIGH` finding) — they still upload whatever SARIF they produced first (`if: always()` on the upload step), so a failing run still shows its findings in the Security tab rather than only in the job log. All four SARIF-upload steps additionally check `hashFiles('<report>.sarif') != ''` before uploading and carry `continue-on-error: true`, so a scan tool that crashes before writing a report (e.g. Trivy failing to pull its vulnerability DB) fails cleanly instead of cascading into a second, unrelated-looking "Path does not exist" error in the next step — see the "Fix: gosec findings... plus SARIF-upload robustness" entry in [status.md](status.md) for the incident that prompted this.
 
+**The Trivy filesystem scan covers every lockfile in the repository**, not just `go.sum` (`scan-ref: .`): today also `android/package-lock.json` (the Capacitor packages of the Android app, [docs/MOBILE_BUILD.md](../docs/MOBILE_BUILD.md)) and `scripts/package-lock.json` (Playwright). When Capacitor was added (2026-10-03) its lockfile had only three moderate advisories (`uuid` through `xcode`, which the Capacitor CLI uses for iOS projects only), below the gate, and a local run of the same scan found no fixable HIGH/CRITICAL. A Capacitor upgrade is the usual way to clear one if it appears; don't skip `android/` in the scan. The Android builder image (`android/Dockerfile`) is not built or scanned in CI.
+
 ### Permissions model
 
 The workflow denies everything by default (`permissions: read-all` at the top level) and each job then declares only what it actually needs, narrowing below even that default:

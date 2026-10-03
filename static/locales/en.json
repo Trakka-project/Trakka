@@ -588,7 +588,11 @@
       "updateCheckButton": "Check for updates",
       "updateCheckUpToDate": "Trakka is already up to date.",
       "updateCheckUnsupported": "Checking for updates isn't supported by this browser.",
-      "updateCheckError": "Couldn't check for updates right now."
+      "updateCheckError": "Couldn't check for updates right now.",
+      "androidAppTitle": "App server",
+      "androidAppHint": "The Android app is connected to this Trakka server.",
+      "androidAppVersion": "Android app {version}",
+      "androidAppChangeServer": "Change server"
     },
     "installHelp": {
       "title": "Install Trakka on your phone",

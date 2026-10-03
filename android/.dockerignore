@@ -1,0 +1,4 @@
+# The builder image needs nothing from this directory: the sources, your settings and your
+# signing key are mounted when the container runs. Ignoring everything keeps them (keystores
+# included) out of the image build context.
+*

@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="shortcut_change_server_short">Changer de serveur</string>
+    <string name="shortcut_change_server_long">Changer de serveur Trakka</string>
+    <string name="qr_scan_hint">Visez le QR code de votre serveur Trakka</string>
+    <string name="qr_scan_close">Fermer</string>
+</resources>

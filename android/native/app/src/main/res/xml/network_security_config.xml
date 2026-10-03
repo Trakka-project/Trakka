@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<network-security-config>
+    <!-- HTTPS only: Trakka's service worker and Secure session cookie need it anyway. Besides
+         public certificate authorities, trust those added in Android's settings, for servers
+         whose certificate comes from a private one (a home network, a Caddy internal CA...). -->
+    <base-config cleartextTrafficPermitted="false">
+        <trust-anchors>
+            <certificates src="system" />
+            <certificates src="user" />
+        </trust-anchors>
+    </base-config>
+</network-security-config>

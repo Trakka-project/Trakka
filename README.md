@@ -149,6 +149,7 @@ cmd/server/          entry point: config, wiring, graceful shutdown
 internal/            config, db, handlers, auth, validate, recurrence, scraper, webpush, backup, …
 static/              PWA frontend: index.html, js/, css/, sw.js, manifest.json, locales/, icons/
 templates/           server-rendered login page
+android/, Makefile   optional Android app (Capacitor): connects to any Trakka server, built in a container
 docs/                reference documentation (see below)
 ```
 
@@ -162,6 +163,7 @@ docs/                reference documentation (see below)
 | [Development](docs/DEVELOPMENT.md) | Local setup, building, project layout, pre-commit hooks |
 | [PWA & offline](docs/PWA.md) | Service worker, IndexedDB sync queue, iOS/Android specifics |
 | [Installing the app](docs/INSTALLATION.md) | Adding Trakka to the home screen on iOS/iPadOS and Android |
+| [Android app (APK)](docs/MOBILE_BUILD.md) | Building and installing the Android app (Capacitor) that connects to any Trakka server, GrapheneOS included |
 | [Push notifications](docs/DOC_PUSH_NOTIFICATIONS.md) | VAPID keys, HTTPS prerequisites, troubleshooting |
 | [Security audit](docs/AUDIT.md) | Findings and fixes from the last audit |
 

@@ -1,0 +1,15 @@
+{
+  "name": "trakka-android",
+  "private": true,
+  "description": "Trakka's Android app: a Capacitor shell that opens the PWA of a Trakka server chosen on the phone. See docs/MOBILE_BUILD.md.",
+  "scripts": {
+    "sync": "cap sync android"
+  },
+  "dependencies": {
+    "@capacitor/android": "8.5.2",
+    "@capacitor/core": "8.5.2"
+  },
+  "devDependencies": {
+    "@capacitor/cli": "8.5.2"
+  }
+}

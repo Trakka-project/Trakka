@@ -1,0 +1,20 @@
+{
+  "appId": "io.github.trakka_project.app",
+  "appName": "Trakka",
+  "webDir": "www",
+  "server": {
+    "androidScheme": "https",
+    "hostname": "localhost"
+  },
+  "android": {
+    "path": "native",
+    "allowMixedContent": false,
+    "appendUserAgent": "TrakkaAndroid"
+  },
+  "plugins": {
+    "SystemBars": {
+      "insetsHandling": "css",
+      "initialViewportFitValueHint": "cover"
+    }
+  }
+}

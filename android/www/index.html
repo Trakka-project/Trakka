@@ -1,0 +1,49 @@
+<!doctype html>
+<!-- The app's connect screen, bundled in the APK and shown at https://localhost when no Trakka
+     server is configured yet, when the user changes server, or when the server could not be
+     opened. connect.js drives it through the native TrakkaApp plugin. -->
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; base-uri 'none'; form-action 'none'">
+  <meta name="color-scheme" content="light dark">
+  <title>Trakka</title>
+  <link rel="stylesheet" href="connect.css">
+  <script src="connect.js" defer></script>
+</head>
+<body>
+  <main class="screen">
+    <header class="brand">
+      <img src="trakka-symbol.svg" alt="" width="56" height="56">
+      <h1 data-i18n="title">Connecter l'application</h1>
+      <p data-i18n="lead">Indiquez l'adresse de votre serveur Trakka, ou scannez son QR code.</p>
+    </header>
+
+    <section id="load-error" class="notice notice-error" role="alert" hidden>
+      <p id="load-error-text"></p>
+      <button type="button" id="retry-button" class="button button-secondary" data-i18n="retry">Réessayer</button>
+    </section>
+
+    <form id="connect-form" class="card" novalidate>
+      <label for="server-url" data-i18n="urlLabel">Adresse du serveur</label>
+      <input id="server-url" type="url" inputmode="url" autocomplete="url" autocapitalize="none" spellcheck="false" enterkeyhint="go" required>
+      <p id="form-message" class="message" role="status" hidden></p>
+      <button type="submit" id="connect-button" class="button button-primary" data-i18n="connect">Se connecter</button>
+      <button type="button" id="connect-anyway-button" class="button button-secondary" data-i18n="connectAnyway" hidden>Se connecter quand même</button>
+      <p class="separator"><span data-i18n="or">ou</span></p>
+      <button type="button" id="scan-button" class="button button-secondary">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 9V5a2 2 0 0 1 2-2h4M15 3h4a2 2 0 0 1 2 2v4M21 15v4a2 2 0 0 1-2 2h-4M9 21H5a2 2 0 0 1-2-2v-4M7 12h10"/></svg>
+        <span data-i18n="scan">Scanner un QR code</span>
+      </button>
+    </form>
+
+    <section id="recent-section" class="card" aria-labelledby="recent-title" hidden>
+      <h2 id="recent-title" data-i18n="recentTitle">Serveurs récents</h2>
+      <ul id="recent-list" class="recent"></ul>
+    </section>
+
+    <button type="button" id="cancel-button" class="button button-link" hidden></button>
+  </main>
+</body>
+</html>

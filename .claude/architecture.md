@@ -21,6 +21,7 @@ internal/backup/       encrypted WebDAV backups: key file, chunked AES-256-GCM s
 static/                PWA assets served at "/" (index.html, js/, locales/ (FR/EN dictionaries), emoji/ (emoji picker data, generated), sw.js, manifest.json, icons/)
 tools/genemoji/        build-ignored maintenance tool (`go run tools/genemoji/main.go`) regenerating static/emoji/{fr,en}.json from a pinned emojibase-data release
 templates/             login.html, rendered via html/template
+android/               optional Android app: a Capacitor shell (native/ Android Studio project, www/ connect screen) that opens any Trakka server's PWA, built by the root Makefile in its own container; no Go, never in the server image — docs/MOBILE_BUILD.md
 ```
 
 `templates/login.html` (via `html/template`, `Content-Type: text/html`) is the one exception to "no server-side rendering" — it genuinely needs server-injected per-request data (whether OIDC is configured, login-vs-register mode, a canned error message), which nothing else in this app does. `internal/handlers.Routes()` still serves `static/` purely via `http.FileServer`; don't add further `html/template` rendering unless something else genuinely needs server-injected per-request data the same way.

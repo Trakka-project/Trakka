@@ -1305,6 +1305,21 @@
         <span data-i18n="modals.userSettings.installHelpButton">Comment installer l'application sur mon téléphone ?</span>
       </button>
 
+      <!-- Only shown inside the Android app (android/, docs/MOBILE_BUILD.md), whose native
+           TrakkaApp plugin settings.js finds on this page: see refreshAndroidAppSection. -->
+      <section id="user-settings-android-app" hidden aria-labelledby="user-settings-android-app-title"
+               class="mt-4 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-4 py-3">
+        <h3 id="user-settings-android-app-title" class="text-sm font-medium text-slate-600 dark:text-slate-300" data-i18n="modals.userSettings.androidAppTitle">Serveur de l'application</h3>
+        <p class="mt-0.5 text-xs font-normal text-slate-500 dark:text-slate-400" data-i18n="modals.userSettings.androidAppHint">L'application Android est connectée à ce serveur Trakka.</p>
+        <p id="user-settings-android-app-server" class="mt-2 break-all text-sm font-medium text-slate-900 dark:text-slate-100"></p>
+        <p id="user-settings-android-app-version" class="mt-0.5 text-xs font-normal text-slate-500 dark:text-slate-400"></p>
+        <button type="button" id="user-settings-android-app-change-button"
+                class="mt-2 flex w-full items-center justify-center gap-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-100 dark:bg-slate-800 px-4 py-2.5 text-sm font-medium text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700">
+          <span aria-hidden="true">🔁</span>
+          <span data-i18n="modals.userSettings.androidAppChangeServer">Changer de serveur</span>
+        </button>
+      </section>
+
       <div class="mt-4 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-4 py-3">
         <p class="text-sm font-medium text-slate-600 dark:text-slate-300" data-i18n="modals.userSettings.updateSectionTitle">Mises à jour</p>
         <p id="user-settings-update-version" class="mt-0.5 text-xs font-normal text-slate-500 dark:text-slate-400" data-i18n="modals.userSettings.updateVersionUnknown">Version inconnue</p>

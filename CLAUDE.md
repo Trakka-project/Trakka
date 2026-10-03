@@ -24,6 +24,10 @@ docker compose --profile calendar up -d   # Trakka + Radicale (CalDAV sync)
 podman-compose up -d                      # same compose.yml works unchanged
 ```
 
+```bash
+make build-apk-capacitor   # optional Android APK (Capacitor), built in a container (docs/MOBILE_BUILD.md)
+```
+
 `go test ./...` applies to whatever packages currently have tests (no custom test runner or build tag scheme). See [.claude/ci-security.md](.claude/ci-security.md) for the full local-check recipe (linters, `govulncheck`, `gosec`, `gitleaks`, Trivy) that mirrors CI.
 
 ## Where to look
@@ -42,6 +46,7 @@ podman-compose up -d                      # same compose.yml works unchanged
 | Local dev setup, pre-commit hooks | [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) |
 | Past security audit | [docs/AUDIT.md](docs/AUDIT.md) |
 | End-user PWA install steps | [docs/INSTALLATION.md](docs/INSTALLATION.md) |
+| `android/`, root `Makefile` — the Android app (Capacitor shell connecting to any Trakka server: connect screen, `TrakkaApp` native plugin, QR scanner, containerized build, signing key) | [docs/MOBILE_BUILD.md](docs/MOBILE_BUILD.md) |
 
 ## Non-negotiable security rules
 

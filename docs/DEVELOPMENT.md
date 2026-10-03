@@ -90,6 +90,7 @@ static/                PWA frontend served at "/": index.html, js/app.js, js/lis
 templates/             login.html, rendered via html/template with server-injected per-request data (OIDC-enabled flag, mode, error message)
 Dockerfile             multi-stage build (golang:1.27.0-alpine -> alpine:latest)
 compose.yml            trakka + optional radicale services, shared bridge network
+android/, Makefile     optional Android app (Capacitor shell for any Trakka server), see docs/MOBILE_BUILD.md
 docs/                  this documentation
 ```
 

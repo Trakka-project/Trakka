@@ -203,3 +203,9 @@ All three are named Docker/Podman volumes (not bind mounts), which sidesteps hos
 ## PWA / offline support
 
 See [docs/PWA.md](PWA.md) for how `static/sw.js`, `static/js/db.js`, and `static/manifest.json` make Trakka installable and usable offline on iOS, iPadOS, and Android — including the HTTPS requirement above, and how offline-created data gets reconciled once the network returns.
+
+## Android app (APK)
+
+Android users can also get a real app: `make build-apk-capacitor` builds a signed APK (a [Capacitor](https://capacitorjs.com/) shell, in a container needing no Android tooling on the host) that works with any Trakka server. The user connects it to an instance by typing its address or scanning a QR code containing it, and can switch instances later. Full guide: [docs/MOBILE_BUILD.md](MOBILE_BUILD.md).
+
+Nothing changes on the server, and there is nothing to set up for the app beyond what a phone needs anyway: Trakka served over HTTPS, with a certificate the phone trusts (from a public authority, or from a private one installed on the phone, which the app accepts). The app refuses plain HTTP. One limitation for now: push notifications don't reach the app, since Android's WebView has no Web Push; see [MOBILE_BUILD.md](MOBILE_BUILD.md#notifications).

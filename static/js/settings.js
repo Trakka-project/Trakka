@@ -47,6 +47,11 @@ const userSettingsEls = {
   status: document.getElementById('user-settings-status'),
   updateVersion: document.getElementById('user-settings-update-version'),
   updateCheckButton: document.getElementById('user-settings-update-check-button'),
+  installHelpButton: document.getElementById('install-help-button'),
+  androidAppSection: document.getElementById('user-settings-android-app'),
+  androidAppServer: document.getElementById('user-settings-android-app-server'),
+  androidAppVersion: document.getElementById('user-settings-android-app-version'),
+  androidAppChangeButton: document.getElementById('user-settings-android-app-change-button'),
 };
 
 function openUserSettingsModal() {
@@ -98,6 +103,7 @@ function openUserSettingsModal() {
   // toggle above, though in practice the version only ever changes once a
   // deployed update actually takes over (see getAppVersion's own comment).
   refreshUpdateStatusUI();
+  refreshAndroidAppSection();
   userSettingsEls.modal.hidden = false;
   document.body.classList.add('overflow-hidden');
 }
@@ -109,6 +115,38 @@ async function refreshUpdateStatusUI() {
     ? t('modals.userSettings.updateVersionKnown', { version })
     : t('modals.userSettings.updateVersionUnknown');
 }
+
+// Inside Trakka's Android app (android/, docs/MOBILE_BUILD.md), the app's native TrakkaApp
+// plugin is reachable from this page, through the bridge the app's WebView injects: show which
+// server the app is connected to, with a way to change it. In a browser there is no such plugin,
+// and the section stays hidden.
+function androidAppPlugin() {
+  const plugins = window.Capacitor && window.Capacitor.Plugins;
+  return (plugins && plugins.TrakkaApp) || null;
+}
+
+async function refreshAndroidAppSection() {
+  const plugin = androidAppPlugin();
+  if (!plugin) return;
+  // The app is already installed: the browser installation help is beside the point.
+  userSettingsEls.installHelpButton.hidden = true;
+  userSettingsEls.androidAppSection.hidden = false;
+  try {
+    const { server, appVersion } = await plugin.getServer();
+    userSettingsEls.androidAppServer.textContent = server || '';
+    userSettingsEls.androidAppVersion.textContent = appVersion
+      ? t('modals.userSettings.androidAppVersion', { version: appVersion })
+      : '';
+  } catch {
+    // The bridge to the app failed: leave the section as it was.
+  }
+}
+
+// The app then replaces this page with its own connect screen, which can come back here.
+userSettingsEls.androidAppChangeButton.addEventListener('click', () => {
+  const plugin = androidAppPlugin();
+  if (plugin) plugin.changeServer();
+});
 
 function closeUserSettingsModal() {
   userSettingsEls.modal.hidden = true;

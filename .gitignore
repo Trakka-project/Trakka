@@ -18,3 +18,11 @@ vendor/
 
 # Maintainer tooling dependencies (scripts/package.json)
 node_modules/
+
+# Android app build (docs/MOBILE_BUILD.md): local settings, the signing key
+# and its passwords, and the built APK.
+/android/apk.env
+/android/signing/
+/android/out/
+*.keystore
+*.jks
