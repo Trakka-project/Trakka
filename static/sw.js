@@ -8,7 +8,7 @@ importScripts('/js/db.js', '/js/recurrence.js');
 
 // Bump both on any change to APP_SHELL's contents so activate()
 // evicts the old cache instead of serving stale assets forever.
-const SHELL_CACHE = 'trakka-shell-v116';
+const SHELL_CACHE = 'trakka-shell-v117';
 const RUNTIME_CACHE = 'trakka-runtime-v113';
 const KNOWN_CACHES = [SHELL_CACHE, RUNTIME_CACHE];
 
@@ -39,6 +39,7 @@ const APP_SHELL = [
   '/js/settings.js',
   '/js/push.js',
   '/js/local-reminders.js',
+  '/js/calendar-feed.js',
   '/js/install-help.js',
   '/css/base.css',
   '/css/tokens.css',
@@ -229,6 +230,15 @@ self.addEventListener('fetch', (event) => {
   // admin.js reports it in place. Reads (GET status/remote listing) still
   // take the normal path below.
   if (url.pathname.startsWith(API_PREFIX + '/admin/backups') && request.method !== 'GET') {
+    return;
+  }
+
+  // The calendar feed (calendar-feed.js, docs/CALENDAR_EXPORT.md) goes
+  // straight to the network too. Generating or revoking the feed link must
+  // never be queued and replayed later: the new link is only ever shown in
+  // the live response. And the feed itself, should someone open the link in
+  // this browser, is a token-bearing URL with nothing to mirror offline.
+  if (url.pathname.startsWith(API_PREFIX + '/calendar/')) {
     return;
   }
 

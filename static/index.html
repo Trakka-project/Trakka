@@ -1303,6 +1303,83 @@
         <button type="submit" data-i18n="modals.userSettings.submit" class="w-full rounded-xl bg-sky-500 px-4 py-3 text-base font-semibold text-white transition hover:bg-sky-400 active:scale-[0.98]">Enregistrer</button>
       </form>
 
+      <!-- "Export de calendrier": the personal iCalendar feed link (calendar-feed.js,
+           internal/handlers/calendar_feed.go). Outside the form: its buttons act at once. -->
+      <section aria-labelledby="calendar-feed-title" class="mt-4 space-y-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-4 py-3">
+        <div>
+          <h3 id="calendar-feed-title" class="flex items-center gap-2 text-sm font-semibold text-slate-700 dark:text-slate-200">
+            <span aria-hidden="true">📅</span>
+            <span data-i18n="modals.userSettings.calendarFeed.title">Export de calendrier (CalDAV / WebCAL)</span>
+          </h3>
+          <p class="mt-0.5 text-xs font-normal text-slate-500 dark:text-slate-400" data-i18n="modals.userSettings.calendarFeed.hint">Abonnez-vous à vos tâches avec échéance depuis Nextcloud, Google Agenda, Apple Calendrier ou Thunderbird. Votre agenda se met à jour tout seul.</p>
+        </div>
+
+        <p id="calendar-feed-status" class="text-xs text-slate-600 dark:text-slate-300" role="status"></p>
+
+        <!-- Shown only right after a link is generated: the server keeps only a hash of the
+             token, so this is the one moment it can be displayed. -->
+        <div id="calendar-feed-links" hidden class="space-y-3 rounded-lg border border-amber-300 dark:border-amber-700 bg-amber-50 dark:bg-amber-950/30 p-3">
+          <p class="text-xs font-medium text-amber-800 dark:text-amber-300" data-i18n="modals.userSettings.calendarFeed.copyNowWarning">Copiez ce lien maintenant : pour votre sécurité, il ne sera plus affiché. Toute personne qui le possède peut voir vos tâches.</p>
+          <div>
+            <label for="calendar-feed-webcal-url" class="block text-xs font-medium text-slate-600 dark:text-slate-300" data-i18n="modals.userSettings.calendarFeed.webcalLabel">Lien WebCAL (Apple Calendrier, Nextcloud, Thunderbird)</label>
+            <div class="mt-1 flex gap-2">
+              <input type="text" id="calendar-feed-webcal-url" readonly
+                     class="min-h-[44px] min-w-0 flex-1 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 font-mono text-xs text-slate-900 dark:text-slate-100 focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500/30">
+              <button type="button" id="calendar-feed-copy-webcal" data-i18n="modals.userSettings.calendarFeed.copy"
+                      class="min-h-[44px] shrink-0 rounded-xl bg-sky-500 px-3 py-2 text-sm font-semibold text-white hover:bg-sky-400">Copier l'URL</button>
+            </div>
+          </div>
+          <div>
+            <label for="calendar-feed-https-url" class="block text-xs font-medium text-slate-600 dark:text-slate-300" data-i18n="modals.userSettings.calendarFeed.httpsLabel">Lien HTTPS (Google Agenda)</label>
+            <div class="mt-1 flex gap-2">
+              <input type="text" id="calendar-feed-https-url" readonly
+                     class="min-h-[44px] min-w-0 flex-1 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 font-mono text-xs text-slate-900 dark:text-slate-100 focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500/30">
+              <button type="button" id="calendar-feed-copy-https" data-i18n="modals.userSettings.calendarFeed.copy"
+                      class="min-h-[44px] shrink-0 rounded-xl bg-sky-500 px-3 py-2 text-sm font-semibold text-white hover:bg-sky-400">Copier l'URL</button>
+            </div>
+          </div>
+          <a id="calendar-feed-subscribe-link" href="#"
+             class="flex min-h-[44px] w-full items-center justify-center gap-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-4 py-2.5 text-sm font-medium text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-800">
+            <span aria-hidden="true">➕</span>
+            <span data-i18n="modals.userSettings.calendarFeed.subscribeHere">S'abonner sur cet appareil</span>
+          </a>
+        </div>
+
+        <div class="flex flex-wrap gap-2">
+          <button type="button" id="calendar-feed-generate-button"
+                  class="min-h-[44px] flex-1 rounded-xl bg-sky-500 px-4 py-2.5 text-sm font-semibold text-white hover:bg-sky-400 disabled:opacity-60"></button>
+          <button type="button" id="calendar-feed-disable-button" hidden
+                  class="min-h-[44px] flex-1 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-100 dark:bg-slate-800 px-4 py-2.5 text-sm font-medium text-slate-600 dark:text-slate-300 hover:bg-rose-500/10 hover:text-rose-600 dark:hover:text-rose-400 disabled:opacity-60"></button>
+        </div>
+        <p id="calendar-feed-error" hidden class="text-xs text-rose-600 dark:text-rose-400" role="alert"></p>
+
+        <details class="group border-t border-slate-200 dark:border-slate-700 pt-3">
+          <summary class="flex cursor-pointer list-none items-center justify-between text-sm font-medium text-slate-600 dark:text-slate-300">
+            <span data-i18n="modals.userSettings.calendarFeed.howTo">Comment s'abonner ?</span>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="h-4 w-4 transition-transform group-open:rotate-180" aria-hidden="true"><polyline points="6 9 12 15 18 9"/></svg>
+          </summary>
+          <div class="mt-3 space-y-3 text-xs text-slate-600 dark:text-slate-300">
+            <div>
+              <p class="font-semibold text-slate-700 dark:text-slate-200">Nextcloud</p>
+              <p class="mt-0.5" data-i18n="modals.userSettings.calendarFeed.nextcloud">Dans l'application Agenda, cliquez sur « + Nouvel agenda » puis « Nouvel abonnement depuis un lien (lecture seule) », et collez le lien WebCAL. Votre serveur Nextcloud doit pouvoir joindre ce serveur Trakka.</p>
+            </div>
+            <div>
+              <p class="font-semibold text-slate-700 dark:text-slate-200" data-i18n="modals.userSettings.calendarFeed.googleTitle">Google Agenda</p>
+              <p class="mt-0.5" data-i18n="modals.userSettings.calendarFeed.google">Sur un ordinateur, ouvrez Google Agenda, cliquez sur « + » à côté de « Autres agendas », puis « À partir de l'URL », et collez le lien HTTPS. Google n'actualise ses abonnements que toutes les quelques heures, et ce serveur Trakka doit être accessible depuis Internet.</p>
+            </div>
+            <div>
+              <p class="font-semibold text-slate-700 dark:text-slate-200" data-i18n="modals.userSettings.calendarFeed.appleTitle">Apple Calendrier</p>
+              <p class="mt-0.5" data-i18n="modals.userSettings.calendarFeed.apple">Sur iPhone ou iPad, appuyez sur « S'abonner sur cet appareil », ou allez dans Réglages → Apps → Calendrier → Comptes de calendrier → Ajouter un compte → Autre → « Ajouter un calendrier avec abonnement ». Sur Mac : Calendrier → Fichier → « Nouvel abonnement à un calendrier… ». Décochez « Supprimer les alertes » pour garder les rappels.</p>
+            </div>
+            <div>
+              <p class="font-semibold text-slate-700 dark:text-slate-200">Thunderbird</p>
+              <p class="mt-0.5" data-i18n="modals.userSettings.calendarFeed.thunderbird">Dans l'onglet Agenda, « + Nouvel agenda » → « Sur le réseau », puis collez le lien HTTPS.</p>
+            </div>
+            <p data-i18n="modals.userSettings.calendarFeed.readOnlyNote">L'abonnement est en lecture seule : cochez et modifiez vos tâches dans Trakka, votre agenda suivra.</p>
+          </div>
+        </details>
+      </section>
+
       <button type="button" id="install-help-button"
               class="mt-4 flex w-full items-center justify-center gap-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-4 py-3 text-sm font-medium text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-800">
         <span aria-hidden="true">📱</span>
@@ -2065,6 +2142,7 @@
   <script src="/js/settings.js" defer></script>
   <script src="/js/push.js" defer></script>
   <script src="/js/local-reminders.js" defer></script>
+  <script src="/js/calendar-feed.js" defer></script>
   <script src="/js/install-help.js" defer></script>
   <script src="/js/admin.js" defer></script>
 </body>

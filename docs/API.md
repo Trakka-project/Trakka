@@ -2,7 +2,7 @@
 
 Base URL: `http://<host>:<port>` (default port `8080`). All endpoints are under `/api/v1`.
 
-All responses are `application/json; charset=utf-8`. Every `/api/v1/...` endpoint requires an authenticated session (see [Authentication](#authentication) below) — there is no anonymous access to the JSON API. `/auth/...` endpoints and static assets stay unauthenticated, since `/auth/...` is how a session gets established in the first place.
+All responses are `application/json; charset=utf-8`, except the [calendar feed](#calendar-feed) (`text/calendar`). Every `/api/v1/...` endpoint requires an authenticated session (see [Authentication](#authentication) below) — there is no anonymous access to the JSON API. The one exception is `GET /api/v1/calendar/feed.ics`, which calendar apps poll without a session and which is authenticated by a secret token in its URL instead (see [Calendar feed](#calendar-feed)). `/auth/...` endpoints and static assets stay unauthenticated, since `/auth/...` is how a session gets established in the first place.
 
 ## Conventions
 
@@ -685,6 +685,55 @@ Returns the reminders the push scan would send this user: those of every not-don
   ]
 }
 ```
+
+## Calendar feed
+
+Each user can have one personal [iCalendar](https://www.rfc-editor.org/rfc/rfc5545) feed of their dated tasks, which calendar apps (Nextcloud, Google Calendar, Apple Calendar, Thunderbird) subscribe to by URL. User guide, client setup and limitations: [CALENDAR_EXPORT.md](CALENDAR_EXPORT.md). Implementation: `internal/handlers/calendar_feed.go`, `internal/ical`.
+
+The feed's token is 32 random bytes (base64url, 43 characters), stored only as its SHA-256 hash ([`calendar_feed_tokens`](DATABASE.md#calendar_feed_tokens)), so it is returned exactly once, by the `POST` that creates it. The three management routes below need a session like the rest of the API, and their writes go through the usual cross-origin check.
+
+### `GET /api/v1/calendar/feed-token`
+
+Whether the calling user has a feed link. Never returns the token.
+
+```json
+{ "enabled": true, "created_at": "2026-10-03T17:19:58.665Z", "last_used_at": "2026-10-03T18:02:11.204Z" }
+```
+
+`last_used_at` is when a calendar app last fetched the feed, omitted if never. Without a link: `{"enabled": false}`.
+
+### `POST /api/v1/calendar/feed-token`
+
+Generates the calling user's feed token, **replacing any previous one**, which stops working immediately. No request body. `201`:
+
+```json
+{ "enabled": true, "token": "f1757f…", "created_at": "2026-10-03T17:19:58.665Z" }
+```
+
+The feed URL is `<origin>/api/v1/calendar/feed.ics?token=<token>` (the frontend also offers it as `webcal://…`).
+
+### `DELETE /api/v1/calendar/feed-token`
+
+Removes the calling user's feed token, so the link stops working. `204`, whether or not there was one.
+
+### `GET /api/v1/calendar/feed.ics?token=<token>`
+
+**No session needed**: the token is the credential. `200` with `Content-Type: text/calendar; charset=utf-8`, `Cache-Control: no-store`, and an iCalendar document; each fetch updates `last_used_at`. `404` (`{"error": "calendar feed not found"}`) for a missing, unknown, replaced or deleted token — deliberately not `401`, which makes Apple Calendar prompt for a password that can't work.
+
+```bash
+curl "http://localhost:8080/api/v1/calendar/feed.ics?token=f1757f…"
+```
+
+Contents: one `VEVENT` per task with a date on any list the token's owner can access (house membership, list share, Space share) — the `due_date` of a task still to do, or the `next_due_date` of a checked-off recurring task. Tasks without a date and done non-recurring tasks are left out.
+
+| Task | Event |
+|---|---|
+| `due_date` only | All-day: `DTSTART;VALUE=DATE` and `DTEND` the next day |
+| `due_date` + `due_time` | `DTSTART;TZID=<APP_TIMEZONE>` and `DTEND` 30 minutes later, with a `VTIMEZONE` generated from the zone's current rules (UTC `…Z` times when `APP_TIMEZONE` is UTC or its rules don't fit a two-transition `VTIMEZONE`) |
+| `recurrence_rule` | `RRULE` with the stored rule as is (it is already an RFC 5545 subset), plus `UNTIL` from `recurrence_end_date`. Omitted for `FREQ=MONTHLY` on days 29–31 and `FREQ=YEARLY` on February 29, where Trakka's clamping to the month's last day differs from RFC 5545's skipping |
+| Reminder enabled | `VALARM` with a `TRIGGER` relative to the event start (all-day events start at local midnight), so it applies to every occurrence: `-PT4H` for "la veille à 20:00", `PT9H` for "le jour même à 09:00", `PT0S` for "à l'heure de l'échéance" |
+
+Every event also carries `UID` `trakka-item-<id>@<host>` (`BASE_URL`'s host, else the request's), `SUMMARY` (the title), `CATEGORIES` and `DESCRIPTION` (the list name), `URL` (`<BASE_URL>/?list=<id>`, only when `BASE_URL` is set), `LAST-MODIFIED` and `TRANSP:TRANSPARENT`. The calendar is named `Trakka — <display name>` and advertises a one-hour refresh (`REFRESH-INTERVAL`, `X-PUBLISHED-TTL`).
 
 ## Admin settings
 

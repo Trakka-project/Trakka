@@ -104,6 +104,10 @@ function openUserSettingsModal() {
   // deployed update actually takes over (see getAppVersion's own comment).
   refreshUpdateStatusUI();
   refreshAndroidAppSection();
+  // refreshCalendarFeedSection is defined in calendar-feed.js (loaded after
+  // this file, called only on click like refreshAdminConsoleButtonVisibility
+  // above): whether a feed link is active, and when an app last used it.
+  refreshCalendarFeedSection();
   userSettingsEls.modal.hidden = false;
   document.body.classList.add('overflow-hidden');
 }

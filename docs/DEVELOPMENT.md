@@ -86,10 +86,11 @@ internal/auth/         non-HTTP auth logic: bcrypt, session tokens, hand-rolled 
 internal/handlers/     HTTP routing, request validation, security headers, JSON responses, session middleware, /auth/... handlers
 internal/validate/     reusable input validators (currently: strict http(s) URL validation)
 internal/logbuffer/    in-memory ring-buffer slog.Handler backing the admin console's "Logs" panel (GET /api/v1/admin/logs)
+internal/ical/         minimal iCalendar (RFC 5545) writer for the personal calendar feed (escaping, line folding, DATE/DURATION values)
 static/                PWA frontend served at "/": index.html, js/app.js, js/list_view.js, js/db.js, sw.js, css/tokens.css, css/base.css, manifest.json, icons/
 templates/             login.html, rendered via html/template with server-injected per-request data (OIDC-enabled flag, mode, error message)
 Dockerfile             multi-stage build (golang:1.27.0-alpine -> alpine:latest)
-compose.yml            trakka + optional radicale services, shared bridge network
+compose.yml            the trakka service on its own bridge network
 android/, Makefile     optional Android app (Capacitor shell for any Trakka server), see docs/MOBILE_BUILD.md
 docs/                  this documentation
 ```
