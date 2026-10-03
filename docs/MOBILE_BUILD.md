@@ -18,7 +18,7 @@ This page covers what the app does, building it, and installing it, including on
 | Look | Full screen, no address bar, light or dark like Trakka, the status and navigation bars matching |
 | Haptic feedback | Yes (the app holds `VIBRATE`) |
 | File uploads (`<input type="file">`) | Yes |
-| **Push notifications** | **Not yet.** Android's WebView has neither Web Push nor the Notifications API, so "Activer les notifications push" reports that push isn't supported. See [Notifications](#notifications) |
+| **Push notifications** | **Not yet.** Android's WebView has neither Web Push nor the Notifications API, so Paramètres greys out "Activer les notifications push", says it isn't supported in the mobile app yet and points to the PWA in a browser, and hides the vibration option. See [Notifications](#notifications) |
 | File downloads | No: the WebView ignores them. The admin console's "Télécharger la clé" (backups) has to be done from a browser |
 | Camera, microphone, location for web pages | Never: the app refuses them, the camera is only for its own QR code scanner |
 | SSO (OIDC) with passkeys or security keys | Yes, through the browser: see [SSO](#sso-oidc-passkeys-and-security-keys). Needs a Trakka server at least as recent as the app |

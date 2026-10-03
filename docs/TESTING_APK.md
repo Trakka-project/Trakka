@@ -138,7 +138,7 @@ With an Android System WebView older than 140, the bars keep the phone's theme r
 
 ## Expected limitations (not failures)
 
-- Settings → "Enable push notifications" reports that push isn't supported: the app can't receive push notifications yet ([why](MOBILE_BUILD.md#notifications)). The same goes for the per-user notification vibration setting.
+- Settings → "Task notifications": "Enable push notifications" is greyed out with "Push notifications aren't supported in the mobile app yet. Use the PWA in your browser to get reminders." (in French: "…pas encore prises en charge dans l'application mobile…"), and the notification vibration option is hidden: the app can't receive push notifications yet ([why](MOBILE_BUILD.md#notifications)).
 - File downloads do nothing, e.g. the admin console's "Download the key (.key)". Use a browser for those.
 - Web pages never get the camera, microphone or location. The camera is only for the QR scanner.
 

@@ -17,6 +17,7 @@
 const pushEls = {
   toggle: document.getElementById('user-settings-push-toggle'),
   status: document.getElementById('user-settings-push-status'),
+  vibrateRow: document.getElementById('user-settings-vibrate-row'),
 };
 
 function isPushSupported() {
@@ -65,16 +66,28 @@ async function getExistingPushSubscription() {
 // instance, permission previously denied (which only the user can undo, via
 // their own browser's site settings — this app can't re-prompt), or the
 // ordinary on/off state of an actual browser subscription.
+//
+// The vibration setting only shapes push notifications, so it is hidden where
+// this device can't get any (unsupported, or push not configured on the
+// instance). Hidden, its checkbox keeps the account's value, which saving the
+// form sends back unchanged: it still applies to the user's other devices.
 async function refreshPushToggleUI() {
   if (!pushEls.toggle) return;
   pushEls.status.hidden = true;
   pushEls.status.textContent = '';
+  if (pushEls.vibrateRow) pushEls.vibrateRow.hidden = false;
 
   if (!isPushSupported()) {
     pushEls.toggle.checked = false;
     pushEls.toggle.disabled = true;
-    pushEls.status.textContent = t('modals.userSettings.pushUnsupported');
+    // Android's WebView, which the Android app (android/) shows Trakka in,
+    // has no Web Push: tell the user where reminders do work rather than
+    // blaming "this browser" they never chose (androidAppPlugin: settings.js).
+    pushEls.status.textContent = t(androidAppPlugin()
+      ? 'modals.userSettings.pushUnsupportedAndroidApp'
+      : 'modals.userSettings.pushUnsupported');
     pushEls.status.hidden = false;
+    if (pushEls.vibrateRow) pushEls.vibrateRow.hidden = true;
     return;
   }
 
@@ -89,6 +102,7 @@ async function refreshPushToggleUI() {
     pushEls.toggle.disabled = true;
     pushEls.status.textContent = t('modals.userSettings.pushNotConfigured');
     pushEls.status.hidden = false;
+    if (pushEls.vibrateRow) pushEls.vibrateRow.hidden = true;
     return;
   }
 

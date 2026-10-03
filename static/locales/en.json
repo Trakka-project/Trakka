@@ -578,6 +578,7 @@
       "vibrateLabel": "Enable notification vibrations",
       "vibrateHint": "A short double vibration when a notification arrives (any sound depends on your phone's settings). When off, notifications arrive with no sound or vibration. No effect on iPhone and iPad.",
       "pushUnsupported": "Push notifications aren't supported by this browser.",
+      "pushUnsupportedAndroidApp": "Push notifications aren't supported in the mobile app yet. Use the PWA in your browser to get reminders.",
       "pushNotConfigured": "Push notifications aren't configured on this instance.",
       "pushPermissionDenied": "Permission denied. Change this site's permissions in your browser settings to re-enable.",
       "installHelpButton": "How do I install the app on my phone?",
