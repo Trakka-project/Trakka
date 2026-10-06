@@ -45,12 +45,19 @@ func TestMigrationRewritesLegacyRecurrenceRules(t *testing.T) {
 	}
 
 	// Rewinding re-runs every later migration too: 23 is idempotent, but
-	// 24's ADD COLUMN and 25's CREATE TABLE have to be undone first.
+	// 24's, 26's and 27's ADD COLUMNs and 25's CREATE TABLE have to be
+	// undone first.
 	if _, err := d.conn.Exec(`ALTER TABLE users DROP COLUMN vibrate_on_notification`); err != nil {
 		t.Fatalf("undoing migration 24: %v", err)
 	}
 	if _, err := d.conn.Exec(`DROP TABLE calendar_feed_tokens`); err != nil {
 		t.Fatalf("undoing migration 25: %v", err)
+	}
+	for _, column := range []string{"reminders_enabled", "overdue_tasks_summary_enabled", "overdue_tasks_summary_time", "overdue_tasks_summary_sent_on",
+		"collaborator_actions_enabled", "item_additions_enabled", "list_sharing_enabled"} {
+		if _, err := d.conn.Exec(`ALTER TABLE users DROP COLUMN ` + column); err != nil {
+			t.Fatalf("undoing migrations 26 and 27: %v", err)
+		}
 	}
 	if _, err := d.conn.Exec(`PRAGMA user_version = 21`); err != nil {
 		t.Fatalf("rewinding user_version: %v", err)

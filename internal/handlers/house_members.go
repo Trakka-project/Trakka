@@ -99,6 +99,7 @@ func (app *Application) handleHouseMembersInvite(w http.ResponseWriter, r *http.
 		app.serverError(w, r, err)
 		return
 	}
+	app.notifyInvitation(db.InvitationKindHouse, houseID, invitation.Email, userFromContext(r))
 	writeJSON(w, http.StatusCreated, invitation)
 }
 

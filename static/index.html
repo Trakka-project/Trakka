@@ -1241,8 +1241,9 @@
 
         <!-- "Notifications de tâches": the push opt-in (applies immediately,
              see push.js — the form's submit handler never reads it), and the
-             vibration preference and personal reminder default (both saved
-             with the form, see settings.js). -->
+             vibration preference, the "Types de notifications" matrix and the
+             personal reminder default (all saved with the form, see
+             settings.js). -->
         <section aria-labelledby="user-settings-task-notifications-title" class="space-y-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-4 py-3">
           <div>
             <h3 id="user-settings-task-notifications-title" class="flex items-center gap-2 text-sm font-semibold text-slate-700 dark:text-slate-200">
@@ -1275,6 +1276,81 @@
             </span>
           </label>
 
+          <!-- "Types de notifications": one switch per kind of notification, account-wide
+               (users.*_enabled, PATCH /api/v1/me, saved with the form — settings.js). -->
+          <div class="border-t border-slate-200 dark:border-slate-700 pt-3">
+            <h4 id="user-settings-notification-types-title" class="text-sm font-semibold text-slate-700 dark:text-slate-200" data-i18n="modals.userSettings.notificationTypesTitle">Types de notifications</h4>
+            <div role="group" aria-labelledby="user-settings-notification-types-title"
+                 class="mt-2 divide-y divide-slate-200 dark:divide-slate-700 rounded-xl border border-slate-200 dark:border-slate-700 px-3">
+              <div class="py-3">
+                <label class="flex cursor-pointer items-center justify-between gap-3">
+                  <span class="min-w-0">
+                    <span class="block text-sm font-medium text-slate-700 dark:text-slate-200" data-i18n="modals.userSettings.remindersEnabledLabel">Rappels des tâches à échéance</span>
+                    <span class="mt-0.5 block text-xs text-slate-500 dark:text-slate-400" data-i18n="modals.userSettings.remindersEnabledHint">Rappel à l'heure/jour prévu pour la tâche</span>
+                  </span>
+                  <span class="relative inline-flex shrink-0">
+                    <input type="checkbox" role="switch" id="user-settings-reminders-enabled" checked class="peer sr-only">
+                    <span aria-hidden="true" class="block h-6 w-11 rounded-full bg-slate-300 dark:bg-slate-600 transition-colors peer-checked:bg-sky-500 peer-focus-visible:ring-2 peer-focus-visible:ring-sky-500/50 peer-focus-visible:ring-offset-2 dark:peer-focus-visible:ring-offset-slate-900 after:absolute after:left-0.5 after:top-0.5 after:h-5 after:w-5 after:rounded-full after:bg-white after:shadow after:transition-transform after:content-[''] peer-checked:after:translate-x-5"></span>
+                  </span>
+                </label>
+              </div>
+              <div class="py-3">
+                <label class="flex cursor-pointer items-center justify-between gap-3">
+                  <span class="min-w-0">
+                    <span class="block text-sm font-medium text-slate-700 dark:text-slate-200" data-i18n="modals.userSettings.overdueSummaryLabel">Rappel des tâches en retard / non effectuées</span>
+                    <span class="mt-0.5 block text-xs text-slate-500 dark:text-slate-400" data-i18n="modals.userSettings.overdueSummaryHint">Résumé pour les tâches échues des jours précédents</span>
+                  </span>
+                  <span class="relative inline-flex shrink-0">
+                    <input type="checkbox" role="switch" id="user-settings-overdue-summary" class="peer sr-only">
+                    <span aria-hidden="true" class="block h-6 w-11 rounded-full bg-slate-300 dark:bg-slate-600 transition-colors peer-checked:bg-sky-500 peer-focus-visible:ring-2 peer-focus-visible:ring-sky-500/50 peer-focus-visible:ring-offset-2 dark:peer-focus-visible:ring-offset-slate-900 after:absolute after:left-0.5 after:top-0.5 after:h-5 after:w-5 after:rounded-full after:bg-white after:shadow after:transition-transform after:content-[''] peer-checked:after:translate-x-5"></span>
+                  </span>
+                </label>
+                <!-- Shown only while the summary is on (settings.js). -->
+                <div id="user-settings-overdue-summary-time-row" hidden class="mt-2 flex items-center gap-2">
+                  <label for="user-settings-overdue-summary-time" class="text-xs text-slate-500 dark:text-slate-400" data-i18n="modals.userSettings.overdueSummaryTimeLabel">Heure du résumé</label>
+                  <input type="time" id="user-settings-overdue-summary-time" value="08:00"
+                         class="min-h-[44px] min-w-0 flex-1 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 text-sm text-slate-900 dark:text-slate-100 focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500/30">
+                </div>
+              </div>
+              <div class="py-3">
+                <label class="flex cursor-pointer items-center justify-between gap-3">
+                  <span class="min-w-0">
+                    <span class="block text-sm font-medium text-slate-700 dark:text-slate-200" data-i18n="modals.userSettings.collaboratorActionsLabel">Actions des collaborateurs</span>
+                    <span class="mt-0.5 block text-xs text-slate-500 dark:text-slate-400" data-i18n="modals.userSettings.collaboratorActionsHint">Lorsqu'une autre personne coche ou décoche un item dans une liste partagée</span>
+                  </span>
+                  <span class="relative inline-flex shrink-0">
+                    <input type="checkbox" role="switch" id="user-settings-collaborator-actions" checked class="peer sr-only">
+                    <span aria-hidden="true" class="block h-6 w-11 rounded-full bg-slate-300 dark:bg-slate-600 transition-colors peer-checked:bg-sky-500 peer-focus-visible:ring-2 peer-focus-visible:ring-sky-500/50 peer-focus-visible:ring-offset-2 dark:peer-focus-visible:ring-offset-slate-900 after:absolute after:left-0.5 after:top-0.5 after:h-5 after:w-5 after:rounded-full after:bg-white after:shadow after:transition-transform after:content-[''] peer-checked:after:translate-x-5"></span>
+                  </span>
+                </label>
+              </div>
+              <div class="py-3">
+                <label class="flex cursor-pointer items-center justify-between gap-3">
+                  <span class="min-w-0">
+                    <span class="block text-sm font-medium text-slate-700 dark:text-slate-200" data-i18n="modals.userSettings.itemAdditionsLabel">Ajout d'items</span>
+                    <span class="mt-0.5 block text-xs text-slate-500 dark:text-slate-400" data-i18n="modals.userSettings.itemAdditionsHint">Notification lors de la création d'un nouvel item par un tiers</span>
+                  </span>
+                  <span class="relative inline-flex shrink-0">
+                    <input type="checkbox" role="switch" id="user-settings-item-additions" checked class="peer sr-only">
+                    <span aria-hidden="true" class="block h-6 w-11 rounded-full bg-slate-300 dark:bg-slate-600 transition-colors peer-checked:bg-sky-500 peer-focus-visible:ring-2 peer-focus-visible:ring-sky-500/50 peer-focus-visible:ring-offset-2 dark:peer-focus-visible:ring-offset-slate-900 after:absolute after:left-0.5 after:top-0.5 after:h-5 after:w-5 after:rounded-full after:bg-white after:shadow after:transition-transform after:content-[''] peer-checked:after:translate-x-5"></span>
+                  </span>
+                </label>
+              </div>
+              <div class="py-3">
+                <label class="flex cursor-pointer items-center justify-between gap-3">
+                  <span class="min-w-0">
+                    <span class="block text-sm font-medium text-slate-700 dark:text-slate-200" data-i18n="modals.userSettings.listSharingLabel">Partage de listes</span>
+                    <span class="mt-0.5 block text-xs text-slate-500 dark:text-slate-400" data-i18n="modals.userSettings.listSharingHint">Notification lorsqu'une liste vous est partagée ou qu'une invitation est reçue</span>
+                  </span>
+                  <span class="relative inline-flex shrink-0">
+                    <input type="checkbox" role="switch" id="user-settings-list-sharing" checked class="peer sr-only">
+                    <span aria-hidden="true" class="block h-6 w-11 rounded-full bg-slate-300 dark:bg-slate-600 transition-colors peer-checked:bg-sky-500 peer-focus-visible:ring-2 peer-focus-visible:ring-sky-500/50 peer-focus-visible:ring-offset-2 dark:peer-focus-visible:ring-offset-slate-900 after:absolute after:left-0.5 after:top-0.5 after:h-5 after:w-5 after:rounded-full after:bg-white after:shadow after:transition-transform after:content-[''] peer-checked:after:translate-x-5"></span>
+                  </span>
+                </label>
+              </div>
+            </div>
+          </div>
+
           <div class="border-t border-slate-200 dark:border-slate-700 pt-3">
             <label for="user-settings-reminder-preset" class="block text-sm font-medium text-slate-600 dark:text-slate-300" data-i18n="modals.userSettings.reminderDefaultLabel">Moment du rappel</label>
             <p class="mt-0.5 text-xs font-normal text-slate-500 dark:text-slate-400" data-i18n="modals.userSettings.reminderDefaultHint">Moment auquel vous être rappelé pour une tâche, sauf si vous le personnalisez pour cette tâche.</p>
@@ -1296,6 +1372,7 @@
             </div>
             <p id="user-settings-reminder-fallback-hint" hidden class="mt-1 text-xs text-slate-500 dark:text-slate-400" data-i18n="modals.userSettings.reminderAtDueTimeFallbackHint">Pour une tâche sans heure, le rappel arrive le jour même à cette heure.</p>
           </div>
+
         </section>
 
         <p id="user-settings-status" class="text-sm text-emerald-600 dark:text-emerald-400" role="status" hidden></p>

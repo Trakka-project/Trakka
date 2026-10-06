@@ -232,6 +232,12 @@ func marshalPushBodies(payload pushPayload) (quiet, vibrating []byte, err error)
 // Each subscription gets the quiet or the vibrating body per its owner's
 // preference (see marshalPushBodies).
 func (app *Application) sendToUsers(ctx context.Context, userIDs []int64, payload pushPayload) {
+	if app.pushHook != nil {
+		if len(userIDs) > 0 {
+			app.pushHook(userIDs, payload)
+		}
+		return
+	}
 	if !app.Config.PushEnabled() || len(userIDs) == 0 {
 		return
 	}
@@ -275,10 +281,31 @@ func (app *Application) sendToUsers(ctx context.Context, userIDs []int64, payloa
 	wg.Wait()
 }
 
+// listChange is what someone did to an item that notifyListChange tells the
+// list's other users about.
+type listChange int
+
+const (
+	itemAdded listChange = iota
+	itemChecked
+	itemUnchecked
+)
+
+// doneChange is the listChange of an item whose done flag just flipped to
+// checked (true) or back (false).
+func doneChange(checked bool) listChange {
+	if checked {
+		return itemChecked
+	}
+	return itemUnchecked
+}
+
 // notifyListChange fires a push notification to every other user with
 // access to list (see db.ListNotificationRecipients — House members, plus
-// anyone the list or its parent Space has been shared with) when actor adds
-// or checks off an item, per this feature's "Use Case 1". Called from
+// anyone the list or its parent Space has been shared with) when actor adds,
+// checks off or unchecks an item, per this feature's "Use Case 1" — each
+// recipient only if they want that type (models.User.ItemAdditionsEnabled
+// for an addition, CollaboratorActionsEnabled for a check or uncheck). Called from
 // handleItemsCreate/handleItemsUpdate/handleItemsPatch (items.go) in a
 // detached goroutine on its own bounded context — never r.Context(), which
 // is canceled the moment the response is written, the same reasoning
@@ -292,35 +319,108 @@ func (app *Application) sendToUsers(ctx context.Context, userIDs []int64, payloa
 // per-recipient localization is out of scope here — the same reasoning that
 // already leaves templates/login.html French-only, per CLAUDE.md's "UI
 // language" convention.
-func (app *Application) notifyListChange(list *models.List, actor *models.User, itemTitle string, checkedOff bool) {
+func (app *Application) notifyListChange(list *models.List, actor *models.User, itemTitle string, change listChange) {
 	go func() {
 		ctx, cancel := context.WithTimeout(context.Background(), pushSendTimeout)
 		defer cancel()
-
-		recipients, err := app.DB.ListNotificationRecipients(ctx, list.ID, actor.ID)
-		if err != nil {
-			app.Logger.Error("listing notification recipients", "list_id", list.ID, "error", err)
-			return
-		}
-		if len(recipients) == 0 {
-			return
-		}
-
-		actorName := actor.DisplayName
-		if actorName == "" {
-			actorName = actor.Email
-		}
-		verb := "a ajouté un article"
-		if checkedOff {
-			verb = "a coché un article"
-		}
-		payload := pushPayload{
-			Title: list.Name,
-			Body:  fmt.Sprintf("%s %s (« %s ») dans %s", actorName, verb, itemTitle, list.Name),
-			URL:   fmt.Sprintf("/?list=%d", list.ID),
-		}
-		app.sendToUsers(ctx, recipients, payload)
+		app.deliverListChange(ctx, list, actor, itemTitle, change)
 	}()
+}
+
+// deliverListChange is notifyListChange's work, run synchronously.
+func (app *Application) deliverListChange(ctx context.Context, list *models.List, actor *models.User, itemTitle string, change listChange) {
+	kind, verb := db.NotifyItemAdditions, "a ajouté un article"
+	switch change {
+	case itemChecked:
+		kind, verb = db.NotifyCollaboratorActions, "a coché un article"
+	case itemUnchecked:
+		kind, verb = db.NotifyCollaboratorActions, "a décoché un article"
+	}
+	recipients, err := app.DB.ListNotificationRecipientsFor(ctx, list.ID, actor.ID, kind)
+	if err != nil {
+		app.Logger.Error("listing notification recipients", "list_id", list.ID, "error", err)
+		return
+	}
+	if len(recipients) == 0 {
+		return
+	}
+	app.sendToUsers(ctx, recipients, pushPayload{
+		Title: list.Name,
+		Body:  fmt.Sprintf("%s %s (« %s ») dans %s", displayName(actor), verb, itemTitle, list.Name),
+		URL:   fmt.Sprintf("/?list=%d", list.ID),
+	})
+}
+
+// notifyInvitation tells the person invited to a House, or with whom a List
+// or Space was just shared (invitation kind db.InvitationKind*, targetID),
+// about it — if email belongs to an account here that wants it
+// (models.User.ListSharingEnabled). The invitation itself takes effect the
+// next time they open the app (db.MaterializePendingInvitations), which the
+// notification's tap does. Detached, like notifyListChange: the inviting
+// request's reply must not depend on whether the address has an account
+// here, not even through its timing (docs/AUDIT.md, L-06).
+func (app *Application) notifyInvitation(kind string, targetID int64, email string, inviter *models.User) {
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), pushSendTimeout)
+		defer cancel()
+		app.deliverInvitation(ctx, kind, targetID, email, inviter)
+	}()
+}
+
+// deliverInvitation is notifyInvitation's work, run synchronously.
+func (app *Application) deliverInvitation(ctx context.Context, kind string, targetID int64, email string, inviter *models.User) {
+	invitee, err := app.DB.GetUserByEmail(ctx, email)
+	if errors.Is(err, db.ErrNotFound) {
+		return // no account yet: nobody to notify
+	}
+	if err != nil {
+		app.Logger.Error("looking up an invitee", "error", err)
+		return
+	}
+	if wants, err := app.DB.UserWantsNotification(ctx, invitee.ID, db.NotifyListSharing); err != nil {
+		app.Logger.Error("reading an invitee's notification preference", "user_id", invitee.ID, "error", err)
+		return
+	} else if !wants {
+		return
+	}
+
+	who := displayName(inviter)
+	var payload pushPayload
+	switch kind {
+	case db.InvitationKindHouse:
+		house, err := app.DB.GetHouse(ctx, targetID)
+		if err != nil {
+			app.Logger.Error("loading the house of an invitation", "house_id", targetID, "error", err)
+			return
+		}
+		payload = pushPayload{Title: "Invitation", Body: fmt.Sprintf("%s vous a invité à rejoindre la maison « %s »", who, house.Name), URL: "/"}
+	case db.InvitationKindSpace:
+		space, err := app.DB.GetCustomCategoryForUser(ctx, targetID, inviter.ID)
+		if err != nil {
+			app.Logger.Error("loading the space of a share", "custom_category_id", targetID, "error", err)
+			return
+		}
+		payload = pushPayload{Title: "Nouveau partage", Body: fmt.Sprintf("%s a partagé l'espace « %s » avec vous", who, space.Name), URL: "/"}
+	case db.InvitationKindList:
+		list, err := app.DB.GetList(ctx, targetID)
+		if err != nil {
+			app.Logger.Error("loading the list of a share", "list_id", targetID, "error", err)
+			return
+		}
+		payload = pushPayload{Title: "Nouveau partage", Body: fmt.Sprintf("%s a partagé la liste « %s » avec vous", who, list.Name), URL: fmt.Sprintf("/?list=%d", list.ID)}
+	default:
+		return
+	}
+	app.sendToUsers(ctx, []int64{invitee.ID}, payload)
+}
+
+// displayName is how a notification names user: their display name, else
+// their email address.
+func displayName(user *models.User) string {
+	if user.DisplayName != "" {
+		return user.DisplayName
+	}
+	return user.Email
 }
 
 // ---------------------------------------------------------------------------
@@ -411,15 +511,17 @@ func (app *Application) checkItemForDueReminder(ctx context.Context, c *db.DueRe
 
 	// Every House member, plus every share recipient, is notified here —
 	// unlike notifyListChange there is no single "actor" to exclude, since a
-	// due-date reminder is not the result of anyone's own action.
-	recipients, err := app.DB.ListNotificationRecipients(ctx, list.ID, 0)
+	// due-date reminder is not the result of anyone's own action — except
+	// those who turned task reminders off (models.User.RemindersEnabled).
+	// The reminder is still marked sent below either way, so turning them
+	// back on doesn't deliver every reminder missed meanwhile.
+	recipients, err := app.DB.ListNotificationRecipientsFor(ctx, list.ID, 0, db.NotifyTaskReminders)
 	if err != nil {
 		return fmt.Errorf("listing notification recipients: %w", err)
 	}
-	// A house has exactly one owner at minimum, so a list with zero
-	// recipients here would mean list.HouseID itself has no members left —
-	// not expected in practice, but if it ever happens there is nobody to
-	// notify and nothing further to do.
+	// Nobody left to notify (everyone turned reminders off, or — not
+	// expected in practice — the house has no members left): nothing to
+	// send, but the reminder still counts as handled.
 	if len(recipients) > 0 {
 		app.sendToUsers(ctx, recipients, pushPayload{
 			Title: c.Title,
@@ -482,10 +584,7 @@ func describeDueFR(dueDate, dueTime string, now time.Time) string {
 	// a 23- or 25-hour local day can't round the count off by one.
 	today := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.UTC)
 	days := int(due.Sub(today).Hours() / 24)
-	label := fmt.Sprintf("%s %d %s", frenchWeekdays[due.Weekday()], due.Day(), frenchMonths[due.Month()-1])
-	if due.Year() != now.Year() {
-		label += fmt.Sprintf(" %d", due.Year())
-	}
+	label := shortDateFR(due, now)
 
 	var phrase string
 	switch {
@@ -502,6 +601,16 @@ func describeDueFR(dueDate, dueTime string, now time.Time) string {
 		phrase += " à " + dueTime
 	}
 	return phrase
+}
+
+// shortDateFR is due's short French form, "dim. 11 oct.", with the year
+// only when it isn't now's.
+func shortDateFR(due, now time.Time) string {
+	label := fmt.Sprintf("%s %d %s", frenchWeekdays[due.Weekday()], due.Day(), frenchMonths[due.Month()-1])
+	if due.Year() != now.Year() {
+		label += fmt.Sprintf(" %d", due.Year())
+	}
+	return label
 }
 
 // parseTimeOfDay parses an HH:MM (24h) string — already validated by

@@ -57,7 +57,8 @@ func (d *DB) CreateUser(ctx context.Context, email string, passwordHash, oidcSub
 // public models.User field.
 const userSelectColumns = `id, email, display_name, created_at, is_admin, keep_last_page, language,
 		 reminder_default_offset_days, reminder_default_time, reminder_default_at_due_time,
-		 vibrate_on_notification`
+		 vibrate_on_notification, reminders_enabled, overdue_tasks_summary_enabled, overdue_tasks_summary_time,
+		 collaborator_actions_enabled, item_additions_enabled, list_sharing_enabled`
 
 // userCredentialColumns is userSelectColumns plus the credentials
 // getUserWithCredentials scans into models.UserWithCredentials.
@@ -66,9 +67,11 @@ const userCredentialColumns = userSelectColumns + `, password_hash, oidc_subject
 // scanUser scans one row of userSelectColumns into u, followed by extra
 // destinations for a query that selects more columns after them.
 func scanUser(row rowScanner, u *models.User, extra ...any) error {
-	var isAdmin, keepLastPage, atDueTime, vibrate int
+	var isAdmin, keepLastPage, atDueTime, vibrate, reminders, overdueSummary, collaborators, additions, sharing int
 	dest := append([]any{&u.ID, &u.Email, &u.DisplayName, &u.CreatedAt, &isAdmin, &keepLastPage, &u.Language,
-		&u.ReminderDefaultOffsetDays, &u.ReminderDefaultTime, &atDueTime, &vibrate}, extra...)
+		&u.ReminderDefaultOffsetDays, &u.ReminderDefaultTime, &atDueTime, &vibrate,
+		&reminders, &overdueSummary, &u.OverdueTasksSummaryTime,
+		&collaborators, &additions, &sharing}, extra...)
 	if err := row.Scan(dest...); err != nil {
 		return err
 	}
@@ -76,6 +79,11 @@ func scanUser(row rowScanner, u *models.User, extra ...any) error {
 	u.KeepLastPage = keepLastPage != 0
 	u.ReminderDefaultAtDueTime = atDueTime != 0
 	u.VibrateOnNotification = vibrate != 0
+	u.RemindersEnabled = reminders != 0
+	u.OverdueTasksSummaryEnabled = overdueSummary != 0
+	u.CollaboratorActionsEnabled = collaborators != 0
+	u.ItemAdditionsEnabled = additions != 0
+	u.ListSharingEnabled = sharing != 0
 	return nil
 }
 
@@ -170,6 +178,67 @@ func (d *DB) UpdateUserReminderDefaults(ctx context.Context, id int64, offsetDay
 	affected, err := res.RowsAffected()
 	if err != nil {
 		return nil, fmt.Errorf("reading rows affected updating user %d reminder defaults: %w", id, err)
+	}
+	if affected == 0 {
+		return nil, ErrNotFound
+	}
+	return d.GetUser(ctx, id)
+}
+
+// NotificationPreferences is a partial update of the notification-type
+// preferences on models.User: a nil field is left as it is. Each value must
+// already be validated by the caller (OverdueTasksSummaryTime via
+// internal/validate.TimeOfDay, non-empty).
+type NotificationPreferences struct {
+	RemindersEnabled           *bool
+	OverdueTasksSummaryEnabled *bool
+	OverdueTasksSummaryTime    *string
+	CollaboratorActionsEnabled *bool
+	ItemAdditionsEnabled       *bool
+	ListSharingEnabled         *bool
+}
+
+// Any reports whether prefs changes anything at all.
+func (prefs NotificationPreferences) Any() bool {
+	return prefs.RemindersEnabled != nil || prefs.OverdueTasksSummaryEnabled != nil || prefs.OverdueTasksSummaryTime != nil ||
+		prefs.CollaboratorActionsEnabled != nil || prefs.ItemAdditionsEnabled != nil || prefs.ListSharingEnabled != nil
+}
+
+// nullableBoolToInt is boolToInt for an optional value, nil staying nil
+// (SQL NULL) so COALESCE keeps the stored column.
+func nullableBoolToInt(b *bool) any {
+	if b == nil {
+		return nil
+	}
+	return boolToInt(*b)
+}
+
+// UpdateUserNotificationPreferences applies prefs to the user's own
+// notification-type preferences (see models.User.RemindersEnabled and the
+// fields after it). Returns ErrNotFound if no such user exists.
+func (d *DB) UpdateUserNotificationPreferences(ctx context.Context, id int64, prefs NotificationPreferences) (*models.User, error) {
+	var summaryTime any
+	if prefs.OverdueTasksSummaryTime != nil {
+		summaryTime = *prefs.OverdueTasksSummaryTime
+	}
+	res, err := d.conn.ExecContext(ctx,
+		`UPDATE users SET
+		   reminders_enabled = COALESCE(?, reminders_enabled),
+		   overdue_tasks_summary_enabled = COALESCE(?, overdue_tasks_summary_enabled),
+		   overdue_tasks_summary_time = COALESCE(?, overdue_tasks_summary_time),
+		   collaborator_actions_enabled = COALESCE(?, collaborator_actions_enabled),
+		   item_additions_enabled = COALESCE(?, item_additions_enabled),
+		   list_sharing_enabled = COALESCE(?, list_sharing_enabled)
+		 WHERE id = ?`,
+		nullableBoolToInt(prefs.RemindersEnabled), nullableBoolToInt(prefs.OverdueTasksSummaryEnabled), summaryTime,
+		nullableBoolToInt(prefs.CollaboratorActionsEnabled), nullableBoolToInt(prefs.ItemAdditionsEnabled),
+		nullableBoolToInt(prefs.ListSharingEnabled), id)
+	if err != nil {
+		return nil, fmt.Errorf("updating user %d notification preferences: %w", id, err)
+	}
+	affected, err := res.RowsAffected()
+	if err != nil {
+		return nil, fmt.Errorf("reading rows affected updating user %d notification preferences: %w", id, err)
 	}
 	if affected == 0 {
 		return nil, ErrNotFound

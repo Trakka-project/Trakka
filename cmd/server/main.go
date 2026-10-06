@@ -275,8 +275,10 @@ func runTargetPriceScanLoop(ctx context.Context, app *handlers.Application, inte
 
 // runDueReminderScanLoop periodically checks every item's due date against
 // its own (already-resolved) reminder offset/time and sends a push once
-// that moment is reached (see handlers.Application.RunDueReminderScan),
-// stopping once ctx is canceled during shutdown. Runs an initial scan
+// that moment is reached (see handlers.Application.RunDueReminderScan), and
+// sends each user's daily overdue-tasks summary once their summary time has
+// passed (handlers.Application.RunOverdueSummaryScan), stopping once ctx is
+// canceled during shutdown. Runs an initial scan
 // immediately, same reasoning as runPriceAlertScanLoop: a freshly deployed
 // instance shouldn't sit with a backlog of overdue reminders for up to a
 // full NOTIF_DUE_SCAN_INTERVAL_MINUTES before its first check.
@@ -286,12 +288,14 @@ func runDueReminderScanLoop(ctx context.Context, app *handlers.Application, inte
 
 	logger.Info("starting periodic due-date reminder scan", "interval", interval)
 	app.RunDueReminderScan(ctx)
+	app.RunOverdueSummaryScan(ctx)
 	for {
 		select {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
 			app.RunDueReminderScan(ctx)
+			app.RunOverdueSummaryScan(ctx)
 		}
 	}
 }

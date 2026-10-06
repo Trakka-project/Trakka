@@ -72,6 +72,12 @@ type Application struct {
 	// oidc_app.go), lazily built for the same reason.
 	appHandoffsOnce sync.Once
 	appHandoffsVal  *appHandoffStore
+
+	// pushHook, when set (tests only), receives every notification
+	// sendToUsers would deliver instead of it being sent: no test can reach
+	// a real push service, whose endpoints the SSRF guard keeps off
+	// loopback anyway.
+	pushHook func(userIDs []int64, payload pushPayload)
 }
 
 // authIPLimiter is the per-client-IP authentication attempt bucket.

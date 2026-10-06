@@ -470,18 +470,41 @@ func (app *Application) materializeInvitations(r *http.Request, user *models.Use
 // only come with that pair, and the pair on its own means false, so a
 // client that predates the preset still saves a plain offset default.
 // vibrate_on_notification (see models.User.VibrateOnNotification) is a
-// plain on/off like keep_last_page.
+// plain on/off like keep_last_page, and so are the notification types —
+// reminders_enabled, overdue_tasks_summary_enabled,
+// collaborator_actions_enabled, item_additions_enabled,
+// list_sharing_enabled (models.User.RemindersEnabled and the fields after
+// it); overdue_tasks_summary_time is an HH:MM that may be given on its own.
 func (app *Application) handleMeUpdate(w http.ResponseWriter, r *http.Request) {
 	var in struct {
-		KeepLastPage              *bool   `json:"keep_last_page"`
-		Language                  *string `json:"language"`
-		ReminderDefaultOffsetDays *int    `json:"reminder_default_offset_days"`
-		ReminderDefaultTime       *string `json:"reminder_default_time"`
-		ReminderDefaultAtDueTime  *bool   `json:"reminder_default_at_due_time"`
-		VibrateOnNotification     *bool   `json:"vibrate_on_notification"`
+		KeepLastPage               *bool   `json:"keep_last_page"`
+		Language                   *string `json:"language"`
+		ReminderDefaultOffsetDays  *int    `json:"reminder_default_offset_days"`
+		ReminderDefaultTime        *string `json:"reminder_default_time"`
+		ReminderDefaultAtDueTime   *bool   `json:"reminder_default_at_due_time"`
+		VibrateOnNotification      *bool   `json:"vibrate_on_notification"`
+		RemindersEnabled           *bool   `json:"reminders_enabled"`
+		OverdueTasksSummaryEnabled *bool   `json:"overdue_tasks_summary_enabled"`
+		OverdueTasksSummaryTime    *string `json:"overdue_tasks_summary_time"`
+		CollaboratorActionsEnabled *bool   `json:"collaborator_actions_enabled"`
+		ItemAdditionsEnabled       *bool   `json:"item_additions_enabled"`
+		ListSharingEnabled         *bool   `json:"list_sharing_enabled"`
 	}
 	if !decodeJSON(w, r, &in) {
 		return
+	}
+
+	if in.OverdueTasksSummaryTime != nil {
+		clean, err := validate.TimeOfDay(*in.OverdueTasksSummaryTime)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		if clean == "" {
+			writeError(w, http.StatusBadRequest, "overdue_tasks_summary_time cannot be empty")
+			return
+		}
+		in.OverdueTasksSummaryTime = &clean
 	}
 
 	if (in.ReminderDefaultOffsetDays == nil) != (in.ReminderDefaultTime == nil) {
@@ -543,6 +566,25 @@ func (app *Application) handleMeUpdate(w http.ResponseWriter, r *http.Request) {
 
 	if in.VibrateOnNotification != nil {
 		updated, err := app.DB.UpdateUserVibrateOnNotification(r.Context(), user.ID, *in.VibrateOnNotification)
+		if errors.Is(err, db.ErrNotFound) {
+			writeError(w, http.StatusNotFound, "user not found")
+			return
+		} else if err != nil {
+			app.serverError(w, r, err)
+			return
+		}
+		user = updated
+	}
+
+	if prefs := (db.NotificationPreferences{
+		RemindersEnabled:           in.RemindersEnabled,
+		OverdueTasksSummaryEnabled: in.OverdueTasksSummaryEnabled,
+		OverdueTasksSummaryTime:    in.OverdueTasksSummaryTime,
+		CollaboratorActionsEnabled: in.CollaboratorActionsEnabled,
+		ItemAdditionsEnabled:       in.ItemAdditionsEnabled,
+		ListSharingEnabled:         in.ListSharingEnabled,
+	}); prefs.Any() {
+		updated, err := app.DB.UpdateUserNotificationPreferences(r.Context(), user.ID, prefs)
 		if errors.Is(err, db.ErrNotFound) {
 			writeError(w, http.StatusNotFound, "user not found")
 			return

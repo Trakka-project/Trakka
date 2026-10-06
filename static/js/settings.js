@@ -39,6 +39,13 @@ const userSettingsEls = {
   form: document.getElementById('user-settings-form'),
   keepLastPage: document.getElementById('user-settings-keep-last-page'),
   vibrate: document.getElementById('user-settings-vibrate'),
+  remindersEnabled: document.getElementById('user-settings-reminders-enabled'),
+  overdueSummary: document.getElementById('user-settings-overdue-summary'),
+  overdueSummaryTimeRow: document.getElementById('user-settings-overdue-summary-time-row'),
+  overdueSummaryTime: document.getElementById('user-settings-overdue-summary-time'),
+  collaboratorActions: document.getElementById('user-settings-collaborator-actions'),
+  itemAdditions: document.getElementById('user-settings-item-additions'),
+  listSharing: document.getElementById('user-settings-list-sharing'),
   reminderPreset: document.getElementById('user-settings-reminder-preset'),
   reminderOffset: document.getElementById('user-settings-reminder-offset'),
   reminderOffsetSuffix: document.getElementById('user-settings-reminder-offset-suffix'),
@@ -73,6 +80,17 @@ function openUserSettingsModal() {
   // pattern), so there's no localStorage mirror: before /me resolves this
   // shows the column's own default, on.
   userSettingsEls.vibrate.checked = state.currentUser ? state.currentUser.vibrate_on_notification !== false : true;
+  // "Types de notifications": account-wide, so like the vibration they come
+  // from the server only, falling back to the columns' own defaults (all on
+  // but the overdue summary, at 08:00) before /me resolves.
+  const wants = (field) => (state.currentUser ? state.currentUser[field] !== false : true);
+  userSettingsEls.remindersEnabled.checked = wants('reminders_enabled');
+  userSettingsEls.collaboratorActions.checked = wants('collaborator_actions_enabled');
+  userSettingsEls.itemAdditions.checked = wants('item_additions_enabled');
+  userSettingsEls.listSharing.checked = wants('list_sharing_enabled');
+  userSettingsEls.overdueSummary.checked = Boolean(state.currentUser && state.currentUser.overdue_tasks_summary_enabled);
+  userSettingsEls.overdueSummaryTime.value = (state.currentUser && state.currentUser.overdue_tasks_summary_time) || '08:00';
+  updateOverdueSummaryTimeVisibility();
   // state.currentUser's own reminder_default_offset_days/_time/_at_due_time
   // (from GET/PATCH /api/v1/me) drive the preset select (see
   // reminderDefaultsToPreset), falling back to the "Le jour même" defaults
@@ -185,6 +203,13 @@ function updateReminderOffsetVisibility() {
   userSettingsEls.reminderFallbackHint.hidden = preset !== 'at_due_time';
 }
 
+// The summary's time of day only matters while the summary is on.
+function updateOverdueSummaryTimeVisibility() {
+  userSettingsEls.overdueSummaryTimeRow.hidden = !userSettingsEls.overdueSummary.checked;
+}
+
+userSettingsEls.overdueSummary.addEventListener('change', updateOverdueSummaryTimeVisibility);
+
 userSettingsEls.reminderPreset.addEventListener('change', () => {
   updateReminderOffsetVisibility();
   // Picking "Le jour même"/"la veille" fills in its named default (0 at
@@ -235,28 +260,41 @@ userSettingsEls.form.addEventListener('submit', async (event) => {
   const reminderDefaultOffsetDays = Math.max(0, Number.parseInt(userSettingsEls.reminderOffset.value, 10) || 0);
   const reminderDefaultTime = userSettingsEls.reminderTime.value || '09:00';
   const reminderDefaultAtDueTime = userSettingsEls.reminderPreset.value === 'at_due_time';
+  const payload = {
+    keep_last_page: keepLastPage,
+    vibrate_on_notification: vibrateOnNotification,
+    reminders_enabled: userSettingsEls.remindersEnabled.checked,
+    overdue_tasks_summary_enabled: userSettingsEls.overdueSummary.checked,
+    overdue_tasks_summary_time: userSettingsEls.overdueSummaryTime.value || '08:00',
+    collaborator_actions_enabled: userSettingsEls.collaboratorActions.checked,
+    item_additions_enabled: userSettingsEls.itemAdditions.checked,
+    list_sharing_enabled: userSettingsEls.listSharing.checked,
+    reminder_default_offset_days: reminderDefaultOffsetDays,
+    reminder_default_time: reminderDefaultTime,
+    reminder_default_at_due_time: reminderDefaultAtDueTime,
+  };
   let user;
   try {
-    user = await apiRequest('/me', {
-      method: 'PATCH',
-      body: JSON.stringify({
-        keep_last_page: keepLastPage,
-        vibrate_on_notification: vibrateOnNotification,
-        reminder_default_offset_days: reminderDefaultOffsetDays,
-        reminder_default_time: reminderDefaultTime,
-        reminder_default_at_due_time: reminderDefaultAtDueTime,
-      }),
-    });
+    user = await apiRequest('/me', { method: 'PATCH', body: JSON.stringify(payload) });
   } catch (err) {
     if (!isNetworkError(err)) showError(err.message);
     return;
   }
 
-  state.currentUser = user;
+  // Queued offline, the PATCH comes back as sw.js's {queued: true}
+  // placeholder rather than the profile (see the language picker below): keep
+  // the profile, with what was just saved, so the next opening of this modal
+  // and local-reminders.js see the new preferences until the server's copy
+  // replaces it.
+  if (user && typeof user.id === 'number') {
+    state.currentUser = user;
+  } else if (state.currentUser) {
+    state.currentUser = { ...state.currentUser, ...payload };
+  }
   // setKeepLastPagePreference is defined in app.js — keeps the localStorage
   // mirror in step immediately, rather than waiting for the next reload's
   // /me call to do it.
-  setKeepLastPagePreference(user.keep_last_page);
+  setKeepLastPagePreference(keepLastPage);
   userSettingsEls.status.textContent = t('modals.userSettings.saved');
   userSettingsEls.status.hidden = false;
 });
