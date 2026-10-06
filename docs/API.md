@@ -63,7 +63,7 @@ Another app registering the same URL scheme can receive the code but cannot rede
 Returns the authenticated user. `401 {"error": "authentication required"}` if the session cookie is missing, invalid, or expired.
 
 ```json
-{ "id": 1, "email": "alice@example.com", "display_name": "Alice", "is_admin": false, "created_at": "...", "keep_last_page": true, "language": "en", "reminder_default_offset_days": 0, "reminder_default_time": "09:00", "reminder_default_at_due_time": false, "vibrate_on_notification": true }
+{ "id": 1, "email": "alice@example.com", "display_name": "Alice", "is_admin": false, "created_at": "...", "keep_last_page": true, "language": "en", "reminder_default_offset_days": 0, "reminder_default_time": "09:00", "reminder_default_at_due_time": false, "vibrate_on_notification": true, "reminders_enabled": true, "overdue_tasks_summary_enabled": false, "overdue_tasks_summary_time": "08:00", "collaborator_actions_enabled": true, "item_additions_enabled": true, "list_sharing_enabled": true }
 ```
 
 `is_admin` grants access to the [Admin](#admin-settings) endpoints below. The very first account ever created on an instance (local or OIDC-provisioned) becomes an admin automatically — see `internal/db.CreateUser` in [CLAUDE.md](../CLAUDE.md) — and any existing admin can grant or revoke it for any other account via [`PATCH /api/v1/admin/users/{id}`](#patch-apiv1adminusersid).
@@ -76,9 +76,21 @@ Returns the authenticated user. `401 {"error": "authentication required"}` if th
 
 `vibrate_on_notification` (`bool`, defaults to `true`) controls whether this account's [Web Push](#push-notifications) notifications vibrate the device. The server applies it per recipient when it sends a push: the payload carries `"vibrate": [200, 100, 200]` when it is on and no `vibrate` key when it is off, and the service worker shows a payload without one as a silent notification.
 
+The next six fields are Paramètres' **"Types de notifications"** matrix — which notifications this account receives, on every device (one `users` column each, see [DATABASE.md](DATABASE.md#users)). Turning one off only affects this account: everyone else with access to the list still gets theirs.
+
+| Field | Default | Paramètres switch | What it gates |
+|---|---|---|---|
+| `reminders_enabled` | `true` | Rappels des tâches à échéance | the per-task [reminders](#reminders): the reminder push leaves the account out (the reminder still counts as sent, so turning it back on doesn't deliver every reminder missed meanwhile), and [`GET /api/v1/reminders/upcoming`](#get-apiv1remindersupcoming) returns none. The tasks' own reminder settings and the [calendar feed](#calendar-feed)'s alarms are untouched. |
+| `overdue_tasks_summary_enabled` | `false` | Rappel des tâches en retard / non effectuées | the daily overdue-tasks summary, below |
+| `collaborator_actions_enabled` | `true` | Actions des collaborateurs | someone else checking off or unchecking an item on a list the account can access |
+| `item_additions_enabled` | `true` | Ajout d'items | someone else adding an item to such a list |
+| `list_sharing_enabled` | `true` | Partage de listes | a List or Space shared with the account, or an invitation to a House — sent to an existing account when the invitation is made (it takes effect the next time they open the app); an address without an account gets nothing, and the inviting request's reply never depends on it |
+
+The **overdue-tasks summary**: once a day at `overdue_tasks_summary_time` (`string` `HH:MM` 24h, default `"08:00"`, in `APP_TIMEZONE`), one notification listing **every task past its due date** (`due_date` before today) that is still not checked off, oldest first, on every list the account can access — whatever each task's own reminder setting. A task keeps being summarized every day until it is checked off or rescheduled; nothing is sent on a day with nothing overdue. One task: "« Appeler le plombier » (Maison), échue le ven. 2 oct., n'est toujours pas cochée."; several: "3 tâches en retard ne sont pas cochées : A, B, C". By Web Push from the due-reminder scan (so only with push configured, and at most `NOTIF_DUE_SCAN_INTERVAL_MINUTES` late), and in the Android app from `GET /api/v1/reminders/upcoming`'s `overdue_summary`. Turned on after that day's time, the day's summary goes out at the next scan.
+
 ### `PATCH /api/v1/me`
 
-Partial update of the caller's own profile preferences — `keep_last_page`, `language`, `vibrate_on_notification`, and/or `reminder_default_offset_days`/`reminder_default_time` — following the same "absent = untouched" convention as `PATCH /api/v1/items/{id}`; any subset may be present in one request. Returns the updated user (same shape as `GET /api/v1/me`). `language` must be `"fr"` or `"en"`, or the request is rejected with `400`. `reminder_default_offset_days`/`reminder_default_time` must be given together (sending only one is rejected with `400`, since the pair is meaningless half-updated); `reminder_default_offset_days` must be ≥ 0 and `reminder_default_time` must be a real `HH:MM` time, else `400`. `reminder_default_at_due_time` may only be sent with that pair (`400` otherwise), and the pair sent without it saves `false` — so a client unaware of the at-due-time preset still saves a plain offset default.
+Partial update of the caller's own profile preferences — `keep_last_page`, `language`, `vibrate_on_notification`, the notification types above (`reminders_enabled`, `overdue_tasks_summary_enabled`, `overdue_tasks_summary_time`, `collaborator_actions_enabled`, `item_additions_enabled`, `list_sharing_enabled`), and/or `reminder_default_offset_days`/`reminder_default_time` — following the same "absent = untouched" convention as `PATCH /api/v1/items/{id}`; any subset may be present in one request. Returns the updated user (same shape as `GET /api/v1/me`). `language` must be `"fr"` or `"en"`, or the request is rejected with `400`. `reminder_default_offset_days`/`reminder_default_time` must be given together (sending only one is rejected with `400`, since the pair is meaningless half-updated); `reminder_default_offset_days` must be ≥ 0 and `reminder_default_time` must be a real `HH:MM` time, else `400`. `reminder_default_at_due_time` may only be sent with that pair (`400` otherwise), and the pair sent without it saves `false` — so a client unaware of the at-due-time preset still saves a plain offset default. `overdue_tasks_summary_time` may be sent on its own, and must be a real, non-empty `HH:MM` time, else `400`.
 
 ```bash
 curl -b cookies.txt -X PATCH http://localhost:8080/api/v1/me \
@@ -87,6 +99,10 @@ curl -b cookies.txt -X PATCH http://localhost:8080/api/v1/me \
 # "À l'heure exacte de l'échéance", falling back to 08:30 the same day for a task without a time
 curl -b cookies.txt -X PATCH http://localhost:8080/api/v1/me \
   -H 'Content-Type: application/json' -d '{"reminder_default_offset_days": 0, "reminder_default_time": "08:30", "reminder_default_at_due_time": true}'
+
+# No per-task reminders and no "item added" pushes; a summary of overdue tasks every morning at 07:30
+curl -b cookies.txt -X PATCH http://localhost:8080/api/v1/me \
+  -H 'Content-Type: application/json' -d '{"reminders_enabled": false, "item_additions_enabled": false, "overdue_tasks_summary_enabled": true, "overdue_tasks_summary_time": "07:30"}'
 ```
 
 **CSRF**: `/auth/login`/`/auth/register` each require the `csrf_token` form field described above — a double-submit token, minted and set as an HttpOnly `trakka_csrf` cookie by `GET /auth/login`, that the submitted form field must match (`internal/handlers/csrf.go`). This defends specifically against "login CSRF" (a cross-site POST silently signing a victim into an attacker-controlled account) — a threat `SameSite` alone can't prevent here, since neither of these requests carries a pre-existing session cookie for `SameSite` to withhold. Every subsequent state-changing call instead goes through `/api/v1/...`, protected by the session cookie's `SameSite=Lax` attribute plus an `Origin`/`Sec-Fetch-Site` check (`requireSameOriginWrite`, same file): a cross-site request never carries the session cookie, and the same middleware also rejects a cross-site `/auth/logout` POST, which carries no session cookie either but would still be a nuisance if forgeable.
@@ -676,13 +692,19 @@ curl -X POST -b cookies.txt http://localhost:8080/api/v1/push/test
 
 The calling user's task reminders still to come, for the Android app, which schedules them on the phone as local notifications because its WebView has no Web Push ([MOBILE_BUILD.md](MOBILE_BUILD.md#task-reminders-local-notifications)). Independent of push: works without VAPID keys.
 
-Returns the reminders the push scan would send this user: those of every not-done task with an active reminder on a list the user can access (House membership, list share, or Space share), plus the next occurrence of each checked-off recurring task (`next_due_date`), since that task only comes back at its reminder moment at the latest. `remind_at` (UTC) is computed exactly as for the push ([Reminders](#reminders)), in the instance's `APP_TIMEZONE`; `title`, `body` and `url` are the push's. Only reminders in the next 60 days, at most 200, earliest first; past ones are left out.
+Returns the reminders the push scan would send this user: those of every not-done task with an active reminder on a list the user can access (House membership, list share, or Space share), plus the next occurrence of each checked-off recurring task (`next_due_date`), since that task only comes back at its reminder moment at the latest. `remind_at` (UTC) is computed exactly as for the push ([Reminders](#reminders)), in the instance's `APP_TIMEZONE`; `title`, `body` and `url` are the push's. Only reminders in the next 60 days, at most 200, earliest first; past ones are left out. `reminders` is empty when the user turned task reminders off (`reminders_enabled`, [`GET /api/v1/me`](#get-apiv1me)).
+
+`overdue_summary` is the user's next [overdue-tasks summary](#get-apiv1me) still to come, or `null` (turned off, or nothing to list). Before today's summary time, it is today's, listing the tasks due before today; from then on, tomorrow's, listing those due today or earlier — the app asks again whenever a task changes, so a task checked off in the meantime drops out. `item_ids` lets the app cancel it once it has checked them all off, offline too; `title`/`body`/`url` are the push's (`url` opens the tasks' list when they all belong to one, else the dashboard).
 
 ```json
 {
   "reminders": [
     { "item_id": 12, "list_id": 3, "title": "Arroser", "body": "🔔 Échéance demain — Corvées", "url": "/?list=3", "remind_at": "2026-10-05T07:00:00Z" }
-  ]
+  ],
+  "overdue_summary": {
+    "title": "Tâches en retard", "body": "2 tâches en retard ne sont pas cochées : Appeler le plombier, Payer le loyer",
+    "url": "/?list=3", "remind_at": "2026-10-06T06:00:00Z", "item_ids": [9, 14]
+  }
 }
 ```
 

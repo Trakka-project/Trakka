@@ -24,6 +24,13 @@
 //     cancels this occurrence's reminder, not the next one's, which the server also returns.
 //   - A recurring task checked off offline only gets its next occurrence's reminder at the next
 //     sync: when it is due is the server's to compute.
+//   - The daily overdue-tasks summary (Paramètres' "Rappel des tâches en retard / non
+//     effectuées": every task past its due date still open) comes with the same answer, as its next one or none, and is scheduled under its own
+//     notification id. It lists tasks by id, so checking them all off here cancels it at once,
+//     offline too, and unchecking one brings it back. Its text is the server's, so checking off
+//     only some of them leaves it as it is until the next sync.
+//   - The account's notification preferences (PATCH /me) decide what the server returns: turning
+//     task reminders or the summary off also cancels them here at once, without waiting for it.
 //
 // Shares `state`, `t`, `API_BASE` and handleNotificationClickMessage with app.js, the same
 // classic-<script>-tags shared-scope pattern as every other frontend file.
@@ -33,6 +40,12 @@ const LOCAL_REMINDERS_SUPPRESSED_KEY = 'trakka:localRemindersSuppressed';
 // What was last scheduled, as the server described it: the plugin's own getPending doesn't give
 // a notification back in a form that can be scheduled again.
 const LOCAL_REMINDERS_SCHEDULED_KEY = 'trakka:localRemindersScheduled';
+// { summary, done }: the overdue-tasks summary last scheduled, as GET /reminders/upcoming returned
+// it, and which of its tasks were checked off here since.
+const LOCAL_OVERDUE_SUMMARY_KEY = 'trakka:localOverdueSummaryScheduled';
+// The summary's notification id: a task's reminder uses the task's id, and a household's tasks
+// never get anywhere near this one.
+const OVERDUE_SUMMARY_NOTIFICATION_ID = 2000000000;
 // The channels android/native/.../ReminderChannels.java creates.
 const REMINDER_CHANNEL_VIBRATING = 'trakka_reminders';
 const REMINDER_CHANNEL_QUIET = 'trakka_reminders_quiet';
@@ -99,6 +112,32 @@ const writeSuppressedReminders = (map) => writeReminderMap(LOCAL_REMINDERS_SUPPR
 const readScheduledReminders = () => readReminderMap(LOCAL_REMINDERS_SCHEDULED_KEY);
 const writeScheduledReminders = (map) => writeReminderMap(LOCAL_REMINDERS_SCHEDULED_KEY, map);
 
+function readOverdueSummary() {
+  try {
+    const entry = JSON.parse(localStorage.getItem(LOCAL_OVERDUE_SUMMARY_KEY) || 'null');
+    return entry && entry.summary && Array.isArray(entry.summary.item_ids) && Array.isArray(entry.done) ? entry : null;
+  } catch {
+    return null;
+  }
+}
+
+function writeOverdueSummary(entry) {
+  try {
+    if (entry) {
+      localStorage.setItem(LOCAL_OVERDUE_SUMMARY_KEY, JSON.stringify(entry));
+    } else {
+      localStorage.removeItem(LOCAL_OVERDUE_SUMMARY_KEY);
+    }
+  } catch {
+    // Storage denied: checking the summary's tasks off offline won't cancel it.
+  }
+}
+
+// Whether the summary still lists a task not checked off here.
+function overdueSummaryHasOpenTasks(entry) {
+  return entry.summary.item_ids.some((id) => !entry.done.includes(id));
+}
+
 function reminderChannelId() {
   return state.currentUser && state.currentUser.vibrate_on_notification === false
     ? REMINDER_CHANNEL_QUIET
@@ -118,23 +157,40 @@ function toLocalNotification(reminder) {
   };
 }
 
+function toSummaryNotification(summary) {
+  return {
+    id: OVERDUE_SUMMARY_NOTIFICATION_ID,
+    title: summary.title,
+    body: summary.body,
+    channelId: reminderChannelId(),
+    schedule: { at: new Date(summary.remind_at), allowWhileIdle: true },
+    autoCancel: true,
+    extra: { url: summary.url },
+  };
+}
+
 async function cancelAllLocalReminders(plugin) {
   const { notifications } = await plugin.getPending();
   if (Array.isArray(notifications) && notifications.length > 0) {
     await plugin.cancel({ notifications: notifications.map((n) => ({ id: n.id })) });
   }
   writeScheduledReminders({});
+  writeOverdueSummary(null);
 }
 
-// The server's list of reminders still to come, or null when it can't be had right now
-// (offline, or an answer sw.js made up from its offline mirror, which has none for this).
+// The server's reminders still to come and next overdue-tasks summary (or null), as
+// { reminders, overdueSummary }, or null when they can't be had right now (offline, or an answer
+// sw.js made up from its offline mirror, which has none for this).
 async function fetchUpcomingReminders() {
   if (!navigator.onLine) return null;
   try {
     const response = await fetch(`${API_BASE}/reminders/upcoming`, { credentials: 'same-origin', cache: 'no-store' });
     if (!response.ok || response.headers.get('X-Trakka-Offline') === 'true') return null;
     const body = await response.json();
-    return Array.isArray(body.reminders) ? body.reminders : null;
+    if (!Array.isArray(body.reminders)) return null;
+    const summary = body.overdue_summary;
+    const overdueSummary = summary && Array.isArray(summary.item_ids) && summary.item_ids.length > 0 ? summary : null;
+    return { reminders: body.reminders, overdueSummary };
   } catch {
     return null;
   }
@@ -158,8 +214,9 @@ async function syncLocalReminders() {
       lastLocalReminderSyncAt = Date.now();
       const permission = await plugin.checkPermissions();
       if (permission.display !== 'granted') return;
-      const reminders = await fetchUpcomingReminders();
-      if (!reminders) return;
+      const upcoming = await fetchUpcomingReminders();
+      if (!upcoming) return;
+      const { reminders } = upcoming;
 
       // A suppression ends once the server no longer returns that occurrence.
       const isSuppressed = (r, suppressed) => {
@@ -177,9 +234,25 @@ async function syncLocalReminders() {
 
       const now = Date.now();
       const wanted = reminders.filter((r) => !isSuppressed(r, suppressed) && Date.parse(r.remind_at) > now);
+      const summary = upcoming.overdueSummary && Date.parse(upcoming.overdueSummary.remind_at) > now
+        ? upcoming.overdueSummary
+        : null;
+      // Tasks checked off here stay checked for the same summary, as long as the server still
+      // lists them: the same race with the offline queue as the suppressions above.
+      const previousSummary = readOverdueSummary();
+      const summaryEntry = summary && {
+        summary,
+        done: previousSummary && previousSummary.summary.remind_at === summary.remind_at
+          ? previousSummary.done.filter((id) => summary.item_ids.includes(id))
+          : [],
+      };
+      const notifications = wanted.map(toLocalNotification);
+      if (summaryEntry && overdueSummaryHasOpenTasks(summaryEntry)) notifications.push(toSummaryNotification(summary));
+
       await cancelAllLocalReminders(plugin);
-      if (wanted.length > 0) await plugin.schedule({ notifications: wanted.map(toLocalNotification) });
+      if (notifications.length > 0) await plugin.schedule({ notifications });
       writeScheduledReminders(Object.fromEntries(wanted.map((r) => [String(r.item_id), r])));
+      writeOverdueSummary(summaryEntry);
     } while (localReminderSyncAgain);
   } catch (err) {
     console.warn('Rappels locaux non synchronisés :', err);
@@ -226,14 +299,50 @@ async function restoreItemReminder(plugin, itemId) {
   }
 }
 
+// Records tasks checked off (done) or unchecked here against the scheduled overdue-tasks summary:
+// it is cancelled once none of its tasks is left, and comes back when one is unchecked.
+async function markOverdueSummaryTasks(plugin, itemIds, done) {
+  const entry = readOverdueSummary();
+  if (!entry) return;
+  const ids = itemIds.filter((id) => entry.summary.item_ids.includes(id));
+  if (ids.length === 0) return;
+  const hadOpenTasks = overdueSummaryHasOpenTasks(entry);
+  entry.done = done
+    ? [...new Set([...entry.done, ...ids])]
+    : entry.done.filter((id) => !ids.includes(id));
+  writeOverdueSummary(entry);
+  const hasOpenTasks = overdueSummaryHasOpenTasks(entry);
+  if (hadOpenTasks && !hasOpenTasks) {
+    await plugin.cancel({ notifications: [{ id: OVERDUE_SUMMARY_NOTIFICATION_ID }] });
+  } else if (!hadOpenTasks && hasOpenTasks && Date.parse(entry.summary.remind_at) > Date.now()) {
+    await plugin.schedule({ notifications: [toSummaryNotification(entry.summary)] });
+  }
+}
+
+// Turning a notification type off in Paramètres cancels what it had scheduled here right away; the
+// sync that follows (once the PATCH has reached the server) agrees with it.
+async function applyNotificationPreferences(plugin, prefs) {
+  if (prefs.reminders_enabled === false) {
+    const ids = Object.keys(readScheduledReminders());
+    if (ids.length > 0) await plugin.cancel({ notifications: ids.map((id) => ({ id: Number(id) })) });
+    writeScheduledReminders({});
+    writeSuppressedReminders({});
+  }
+  if (prefs.overdue_tasks_summary_enabled === false && readOverdueSummary()) {
+    await plugin.cancel({ notifications: [{ id: OVERDUE_SUMMARY_NOTIFICATION_ID }] });
+    writeOverdueSummary(null);
+  }
+}
+
 // Called by apiRequest (app.js) after every write it sends, queued offline or not.
 function noteLocalReminderWrite(method, path, rawBody) {
   const plugin = localNotificationsPlugin();
   if (!plugin || !isLocalRemindersEnabled()) return;
   const itemMatch = /^\/items\/(\d+)$/.exec(path);
   const listMatch = /^\/lists\/(\d+)$/.exec(path);
-  // Creating a task (POST /items), changing a list, or Paramètres (PATCH /me: the vibration
-  // setting picks the channel) only need the sync below.
+  // Creating a task (POST /items) or changing a list only need the sync below; so does Paramètres
+  // (PATCH /me: the vibration setting picks the channel), apart from turning a notification type
+  // off.
   if (!itemMatch && !listMatch && path !== '/items' && path !== '/me') return;
 
   let body = null;
@@ -247,10 +356,12 @@ function noteLocalReminderWrite(method, path, rawBody) {
   if (itemMatch) {
     const itemId = Number(itemMatch[1]);
     if (method === 'DELETE' || (body && body.done === true)) {
-      local = suppressLocalReminders(plugin, [itemId]);
+      local = suppressLocalReminders(plugin, [itemId]).then(() => markOverdueSummaryTasks(plugin, [itemId], true));
     } else if (body && body.done === false) {
-      local = restoreItemReminder(plugin, itemId);
+      local = restoreItemReminder(plugin, itemId).then(() => markOverdueSummaryTasks(plugin, [itemId], false));
     }
+  } else if (path === '/me' && body) {
+    local = applyNotificationPreferences(plugin, body);
   } else if (listMatch && method === 'DELETE') {
     const listId = Number(listMatch[1]);
     const ids = Object.values(readScheduledReminders())

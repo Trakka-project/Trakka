@@ -277,7 +277,7 @@ func (app *Application) handleItemsCreate(w http.ResponseWriter, r *http.Request
 		// toast signal through to this specific response.
 		item.PriceAlertTriggered = true
 	}
-	app.notifyListChange(list, userFromContext(r), item.Title, false)
+	app.notifyListChange(list, userFromContext(r), item.Title, itemAdded)
 	writeJSON(w, http.StatusCreated, item)
 }
 
@@ -442,6 +442,7 @@ func (app *Application) handleItemsUpdate(w http.ResponseWriter, r *http.Request
 		RecurrenceEndDate: nullableString(cleanRecurrenceEndDate),
 	}
 	justCompleted := !existing.Done && in.Done
+	justUnchecked := existing.Done && !in.Done
 	applyRecurrenceLifecycle(scheduled, existing, app.today())
 
 	item, err := app.DB.UpdateItem(r.Context(), id, in.Title, nullableString(cleanURL), in.Quantity, in.Price, false, imageURL, scheduled.Done, in.Position,
@@ -489,13 +490,13 @@ func (app *Application) handleItemsUpdate(w http.ResponseWriter, r *http.Request
 	if hadNoPriceBeforeScrape && item.Price != nil && priceAlertCondition(item) {
 		item.PriceAlertTriggered = true
 	}
-	// Only a genuine check-off notifies (see notifyListChange's own doc
-	// comment for why this is scoped to "add or check off" and not every
-	// field edit) — an ordinary PUT that never touched Done at all must not
-	// fire a "checked an item" push.
-	if justCompleted {
+	// Only a genuine check-off or uncheck notifies (see notifyListChange's
+	// own doc comment for why this is scoped to "add, check off, uncheck" and
+	// not every field edit) — an ordinary PUT that never touched Done at all
+	// must not fire a "checked an item" push.
+	if justCompleted || justUnchecked {
 		if list, listErr := app.DB.GetList(r.Context(), item.ListID); listErr == nil {
-			app.notifyListChange(list, userFromContext(r), item.Title, true)
+			app.notifyListChange(list, userFromContext(r), item.Title, doneChange(justCompleted))
 		}
 	}
 	writeJSON(w, http.StatusOK, item)
@@ -800,6 +801,7 @@ func (app *Application) handleItemsPatch(w http.ResponseWriter, r *http.Request)
 	}
 
 	justCompleted := !before.Done && item.Done
+	justUnchecked := before.Done && !item.Done
 
 	// See applyRecurrenceLifecycle: a recurring item being checked off
 	// (false → true) stays done here, with next_due_date set to its next
@@ -854,9 +856,9 @@ func (app *Application) handleItemsPatch(w http.ResponseWriter, r *http.Request)
 	if hadNoPriceBeforeScrape && updated.Price != nil && priceAlertCondition(updated) {
 		updated.PriceAlertTriggered = true
 	}
-	if justCompleted {
+	if justCompleted || justUnchecked {
 		if list, listErr := app.DB.GetList(r.Context(), updated.ListID); listErr == nil {
-			app.notifyListChange(list, userFromContext(r), updated.Title, true)
+			app.notifyListChange(list, userFromContext(r), updated.Title, doneChange(justCompleted))
 		}
 	}
 	writeJSON(w, http.StatusOK, updated)

@@ -112,6 +112,7 @@ func (app *Application) handleSpaceShareCreate(w http.ResponseWriter, r *http.Re
 		app.serverError(w, r, err)
 		return
 	}
+	app.notifyInvitation(db.InvitationKindSpace, id, invitation.Email, userFromContext(r))
 	writeJSON(w, http.StatusCreated, invitation)
 }
 
@@ -348,6 +349,7 @@ func (app *Application) handleListShareCreate(w http.ResponseWriter, r *http.Req
 		app.serverError(w, r, err)
 		return
 	}
+	app.notifyInvitation(db.InvitationKindList, id, invitation.Email, userFromContext(r))
 	writeJSON(w, http.StatusCreated, invitation)
 }
 

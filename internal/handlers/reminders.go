@@ -1,10 +1,13 @@
 package handlers
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"sort"
 	"time"
+
+	"trakka/internal/models"
 )
 
 // Local reminders for the Android app (android/, docs/MOBILE_BUILD.md).
@@ -36,18 +39,40 @@ type upcomingReminder struct {
 }
 
 // handleRemindersUpcoming answers GET /api/v1/reminders/upcoming: the caller's
-// reminders still to come within upcomingRemindersHorizon, earliest first.
+// reminders still to come within upcomingRemindersHorizon, earliest first
+// (none when the caller turned task reminders off, models.User.
+// RemindersEnabled), plus their next overdue-tasks summary, or null (see
+// nextOverdueSummary). The phone schedules exactly this, so turning either
+// preference off cancels what it had scheduled at its next sync.
 func (app *Application) handleRemindersUpcoming(w http.ResponseWriter, r *http.Request) {
 	user := userFromContext(r)
-	reminders, err := app.DB.ListActiveRemindersForUser(r.Context(), user.ID)
+	now := time.Now()
+	upcoming, err := app.upcomingReminders(r.Context(), user, now)
 	if err != nil {
 		app.serverError(w, r, err)
 		return
 	}
+	summary, err := app.nextOverdueSummary(r.Context(), user, now)
+	if err != nil {
+		app.serverError(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"reminders": upcoming, "overdue_summary": summary})
+}
+
+// upcomingReminders returns user's task reminders still to come as of now,
+// within upcomingRemindersHorizon, earliest first.
+func (app *Application) upcomingReminders(ctx context.Context, user *models.User, now time.Time) ([]upcomingReminder, error) {
+	upcoming := []upcomingReminder{}
+	if !user.RemindersEnabled {
+		return upcoming, nil
+	}
+	reminders, err := app.DB.ListActiveRemindersForUser(ctx, user.ID)
+	if err != nil {
+		return nil, err
+	}
 
 	loc := app.location()
-	now := time.Now()
-	upcoming := []upcomingReminder{}
 	for _, c := range reminders {
 		at, err := reminderMoment(c.DueDate, c.DueTime, c.AtDueTime, c.OffsetDays, c.TimeOfDay, loc)
 		if err != nil {
@@ -73,5 +98,5 @@ func (app *Application) handleRemindersUpcoming(w http.ResponseWriter, r *http.R
 	if len(upcoming) > maxUpcomingReminders {
 		upcoming = upcoming[:maxUpcomingReminders]
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"reminders": upcoming})
+	return upcoming, nil
 }

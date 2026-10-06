@@ -316,6 +316,28 @@ type User struct {
 	// static/sw.js shows a notification without one as silent. Settable via
 	// PATCH /api/v1/me.
 	VibrateOnNotification bool `json:"vibrate_on_notification"`
+	// RemindersEnabled controls whether this account receives per-task due
+	// reminders at all: when off, internal/handlers.checkItemForDueReminder
+	// leaves the user out of the push (db.ListReminderRecipients) and
+	// GET /api/v1/reminders/upcoming returns none for the Android app.
+	// Settable via PATCH /api/v1/me.
+	RemindersEnabled bool `json:"reminders_enabled"`
+	// OverdueTasksSummaryEnabled/OverdueTasksSummaryTime are the daily
+	// "tasks past their due date still not done" summary: one notification a day at
+	// OverdueTasksSummaryTime (HH:MM, 24h, in APP_TIMEZONE) — see
+	// internal/handlers.RunOverdueSummaryScan. Off by default. Settable via
+	// PATCH /api/v1/me, each on its own.
+	OverdueTasksSummaryEnabled bool   `json:"overdue_tasks_summary_enabled"`
+	OverdueTasksSummaryTime    string `json:"overdue_tasks_summary_time"`
+	// CollaboratorActionsEnabled/ItemAdditionsEnabled/ListSharingEnabled are
+	// the other notification types: someone else checking or unchecking an
+	// item on a list this account can access, someone else adding an item to
+	// one, and a list or Space being shared with this account or an
+	// invitation to a House (see internal/handlers.notifyListChange/
+	// notifyInvitation). All on by default; settable via PATCH /api/v1/me.
+	CollaboratorActionsEnabled bool `json:"collaborator_actions_enabled"`
+	ItemAdditionsEnabled       bool `json:"item_additions_enabled"`
+	ListSharingEnabled         bool `json:"list_sharing_enabled"`
 }
 
 // UserWithCredentials is returned by db lookups used for authentication
