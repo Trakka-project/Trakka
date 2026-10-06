@@ -58,6 +58,12 @@ type Config struct {
 	// scraper.DealSearchQuery). DEAL_SEARCH_ENABLED, default true.
 	DealSearchEnabled bool
 
+	// LogLevel is the minimum level written to stdout and the admin console's
+	// log panel: "debug", "info" (the default), "warn" or "error". "debug"
+	// shows each price check step by step — the url fetched, the HTTP status,
+	// where the price was read and its raw text, what was done with it.
+	LogLevel string
+
 	// InstanceName and RegistrationOpen are the env-var defaults for two of
 	// the settings manageable at runtime via the admin-only
 	// PATCH /api/v1/admin/settings endpoint (see internal/settings.Resolve).
@@ -146,6 +152,7 @@ func Load() Config {
 
 		TargetPriceScrapeInterval: envDuration("SCRAPE_INTERVAL", 12*time.Hour),
 		DealSearchEnabled:         envBool("DEAL_SEARCH_ENABLED", true),
+		LogLevel:                  envOr("LOG_LEVEL", "info"),
 
 		InstanceName:     envOr("INSTANCE_NAME", "Trakka"),
 		RegistrationOpen: envBool("REGISTRATION_OPEN", true),

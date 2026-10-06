@@ -90,6 +90,15 @@
     "priceAlertToast": "🔥 « {title} » est passé à {price} (sous votre seuil de {target}) !",
     "priceDropped": "Prix en baisse (avant : {previous})",
     "priceIncreased": "Prix en hausse (avant : {previous})",
+    "priceChecking": "Vérification du prix en cours…",
+    "checkPriceAriaLabel": "Vérifier le prix de « {title} » maintenant",
+    "priceCheckDropped": "« {title} » : prix en baisse, {from} → {to}",
+    "priceCheckIncreased": "« {title} » : prix en hausse, {from} → {to}",
+    "priceCheckFound": "« {title} » : prix trouvé, {price}",
+    "priceCheckUnchanged": "« {title} » : prix inchangé ({price})",
+    "priceCheckNothing": "Aucun prix trouvé sur la page de « {title} »",
+    "priceCheckDeal": "Bon plan trouvé pour « {title} » : {price} — voir 🔔",
+    "priceCheckOffline": "Vérification du prix impossible hors ligne",
     "targetPriceInfo": "Alerte si le prix descend sous {target}",
     "targetPriceValidationError": "Le prix cible doit être un nombre positif.",
     "targetMonthAriaLabel": "Mois prévu (optionnel)",
@@ -196,7 +205,9 @@
     "sortButtonLabel": "Trier",
     "filterItemsAriaLabel": "Filtrer les articles",
     "filterButtonLabel": "Filtres",
-    "listOptionsAriaLabel": "Options de la liste"
+    "listOptionsAriaLabel": "Options de la liste",
+    "priceCheckUnreachable": "Impossible de lire la page de « {title} » ({reason}) — prix non vérifié",
+    "priceCheckDealExpired": "Le bon plan suivi par « {title} » a expiré — prix non vérifié"
   },
   "planning": {
     "tabTitle": "Budget & Prévisions",
@@ -334,6 +345,7 @@
       "openLink": "Ouvrir le lien",
       "copyLink": "Copier le lien",
       "shareLink": "Partager le lien",
+      "checkPrice": "Vérifier le prix maintenant",
       "markUrgent": "Basculer en urgent",
       "unmarkUrgent": "Retirer l'urgence",
       "delete": "Supprimer l'article"

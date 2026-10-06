@@ -55,8 +55,16 @@ func main() {
 	// package doc for why. Capacity of 500 is generous for "what's happening
 	// right now" at the scale this app targets while staying a small,
 	// bounded amount of memory regardless of how long the process has run.
-	logHandler := logbuffer.NewHandler(slog.NewJSONHandler(os.Stdout, nil), 500)
+	var logLevel slog.Level
+	logLevelErr := logLevel.UnmarshalText([]byte(cfg.LogLevel))
+	if logLevelErr != nil {
+		logLevel = slog.LevelInfo
+	}
+	logHandler := logbuffer.NewHandler(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: logLevel}), 500)
 	logger := slog.New(logHandler)
+	if logLevelErr != nil {
+		logger.Warn("unrecognized LOG_LEVEL, using info", "value", cfg.LogLevel)
+	}
 
 	if err := cfg.Validate(); err != nil {
 		logger.Error("invalid configuration", "error", err)

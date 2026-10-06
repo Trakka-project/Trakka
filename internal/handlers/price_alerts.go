@@ -154,10 +154,13 @@ func (app *Application) handlePriceAlertsUpdate(w http.ResponseWriter, r *http.R
 }
 
 // handleItemsPriceCheck runs an immediate, synchronous trackItemPrice for
-// one item (the "à la demande" counterpart to the periodic scans) and
-// reports the item as it stands afterward — its price updated if it follows
-// its page — along with whatever pending alert exists for it: a freshly
-// created one, one from an earlier check that's still pending, or null.
+// one item ("Vérifier le prix maintenant", the "à la demande" counterpart
+// to the periodic scans) as a manual check — the item's price becomes its
+// page's, even a typed-in one — and reports the item as it stands
+// afterward, what the check read on the page (check: status, observed
+// price, or why the page couldn't be read), and whatever pending alert
+// exists for it: a freshly created one, one from an earlier check that's
+// still pending, or null.
 // Bounded by priceCheckTimeout for the item's page plus dealSearchTimeout
 // for the deal search.
 func (app *Application) handleItemsPriceCheck(w http.ResponseWriter, r *http.Request) {
@@ -182,7 +185,8 @@ func (app *Application) handleItemsPriceCheck(w http.ResponseWriter, r *http.Req
 		return
 	}
 
-	if _, err := app.trackItemPrice(r.Context(), item); err != nil {
+	_, outcome, err := app.trackItemPrice(r.Context(), item, true)
+	if err != nil {
 		app.serverError(w, r, err)
 		return
 	}
@@ -198,5 +202,5 @@ func (app *Application) handleItemsPriceCheck(w http.ResponseWriter, r *http.Req
 		app.serverError(w, r, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"alert": alert, "item": updated})
+	writeJSON(w, http.StatusOK, map[string]any{"alert": alert, "item": updated, "check": outcome})
 }

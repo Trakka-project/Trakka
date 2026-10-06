@@ -101,17 +101,29 @@ func (d *DB) CreatePriceNotifications(ctx context.Context, userIDs []int64, item
 }
 
 // ListPriceNotifications returns userID's newest limit price notifications,
-// read or not, newest first — only for items on lists the user can still
-// access (the three access sources ListOverdueTasksForUser also checks), so
-// losing access to a list also hides what was queued about it.
+// read or not, newest first — only those of a kind the user currently wants
+// (Paramètres → "Alertes de prix": the master switch, then drops — which
+// include better deals — or increases; an expired deal under the master
+// switch alone), since every entry is recorded whatever the preferences
+// (see internal/handlers.notifyPriceChange), and only for items on lists
+// the user can still access (the three access sources
+// ListOverdueTasksForUser also checks), so losing access to a list also
+// hides what was queued about it.
 func (d *DB) ListPriceNotifications(ctx context.Context, userID int64, limit int) ([]*models.PriceNotification, error) {
 	rows, err := d.conn.QueryContext(ctx, `
 		SELECT pn.id, pn.item_id, items.title, items.list_id, pn.kind, pn.old_price, pn.new_price,
 		       pn.source_url, pn.created_at, pn.read_at
 		FROM price_notifications pn
+		JOIN users u ON u.id = pn.user_id
 		JOIN items ON items.id = pn.item_id
 		JOIN lists l ON l.id = items.list_id
 		WHERE pn.user_id = ?
+		  AND u.price_alerts_enabled = 1
+		  AND CASE pn.kind
+		        WHEN 'increase' THEN u.price_increase_alerts_enabled
+		        WHEN 'expired' THEN 1
+		        ELSE u.price_drop_alerts_enabled
+		      END = 1
 		  AND (
 		    EXISTS (SELECT 1 FROM house_members hm WHERE hm.house_id = l.house_id AND hm.user_id = pn.user_id)
 		    OR EXISTS (SELECT 1 FROM list_shares ls WHERE ls.list_id = l.id AND ls.shared_with_user_id = pn.user_id)

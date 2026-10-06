@@ -90,6 +90,15 @@
     "priceAlertToast": "🔥 \"{title}\" is now {price} (under your {target} threshold)!",
     "priceDropped": "Price down (was {previous})",
     "priceIncreased": "Price up (was {previous})",
+    "priceChecking": "Checking the price…",
+    "checkPriceAriaLabel": "Check the price of \"{title}\" now",
+    "priceCheckDropped": "\"{title}\": price down, {from} → {to}",
+    "priceCheckIncreased": "\"{title}\": price up, {from} → {to}",
+    "priceCheckFound": "\"{title}\": price found, {price}",
+    "priceCheckUnchanged": "\"{title}\": price unchanged ({price})",
+    "priceCheckNothing": "No price found on the page of \"{title}\"",
+    "priceCheckDeal": "Deal found for \"{title}\": {price} — see 🔔",
+    "priceCheckOffline": "Can't check the price while offline",
     "targetPriceInfo": "Alert when price drops below {target}",
     "targetPriceValidationError": "The target price must be a positive number.",
     "targetMonthAriaLabel": "Planned month (optional)",
@@ -196,7 +205,9 @@
     "sortButtonLabel": "Sort",
     "filterItemsAriaLabel": "Filter items",
     "filterButtonLabel": "Filters",
-    "listOptionsAriaLabel": "List options"
+    "listOptionsAriaLabel": "List options",
+    "priceCheckUnreachable": "Couldn't read the page of \"{title}\" ({reason}) — price not checked",
+    "priceCheckDealExpired": "The deal \"{title}\" follows has expired — price not checked"
   },
   "planning": {
     "tabTitle": "Budget & Forecast",
@@ -334,6 +345,7 @@
       "openLink": "Open link",
       "copyLink": "Copy link",
       "shareLink": "Share link",
+      "checkPrice": "Check price now",
       "markUrgent": "Toggle urgent",
       "unmarkUrgent": "Remove urgent",
       "delete": "Delete item"

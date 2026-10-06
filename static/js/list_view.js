@@ -108,6 +108,7 @@ const listEls = {
   itemActionsOpenLinkButton: document.getElementById('item-actions-open-link-button'),
   itemActionsCopyLinkButton: document.getElementById('item-actions-copy-link-button'),
   itemActionsShareLinkButton: document.getElementById('item-actions-share-link-button'),
+  itemActionsPriceCheckButton: document.getElementById('item-actions-price-check-button'),
   itemActionsUrgentButton: document.getElementById('item-actions-urgent-button'),
   itemActionsUrgentLabel: document.getElementById('item-actions-urgent-label'),
   itemActionsDeleteButton: document.getElementById('item-actions-delete-button'),
@@ -149,6 +150,12 @@ let labelManageItems = null;
 const PENCIL_ICON_SVG =
   '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="h-5 w-5" aria-hidden="true">' +
   '<path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4Z"/></svg>';
+
+// Static, hard-coded icon markup (never interpolates user data) for the
+// desktop "Vérifier le prix maintenant" button (see buildItemRow).
+const REFRESH_ICON_SVG =
+  '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="h-5 w-5" aria-hidden="true">' +
+  '<path d="M21 12a9 9 0 0 1-15.5 6.2L3 16"/><path d="M3 21v-5h5"/><path d="M3 12a9 9 0 0 1 15.5-6.2L21 8"/><path d="M21 3v5h-5"/></svg>';
 
 // Static, hard-coded icon markup (never interpolates user data, same rule as
 // PENCIL_ICON_SVG/TRASH_ICON_SVG) for the quantity stepper's [-]/[+] buttons.
@@ -1600,6 +1607,79 @@ function mergeServerItem(item, updated) {
   Object.assign(item, updated);
 }
 
+// Ids of the items whose "Vérifier le prix maintenant" check is in flight:
+// their row shows 🔄 and the desktop button spins, disabled.
+const itemPriceChecksRunning = new Set();
+
+// Whether "Vérifier le prix maintenant" applies to item: it has a real http(s)
+// link to check and already exists server-side (not an offline-queued
+// local item).
+function canCheckItemPrice(item) {
+  return Boolean(item.url && isSafeHttpUrl(item.url)) && typeof item.id === 'number' && !isOfflineQueuedItem(item);
+}
+
+// "Vérifier le prix maintenant" (#item-actions-sheet, and the desktop row's
+// own button): POST /api/v1/items/{id}/price-check runs the same check as
+// the background scans for this one item — its page, then Dealabs — and can
+// take several seconds, hence the 🔄 meanwhile. The list is then reloaded
+// (refreshCurrentList, which also reloads 🔔), so the row shows the new
+// price and its ▲/▼ exactly as stored, and a toast says what happened.
+// Needs the network: a request queued offline would only run later, with no
+// one waiting for its answer.
+async function checkItemPriceNow(item) {
+  if (!canCheckItemPrice(item) || itemPriceChecksRunning.has(item.id)) return;
+  if (!navigator.onLine) {
+    window.TrakkaToast?.success(t('items.priceCheckOffline'));
+    return;
+  }
+  hideError();
+  const before = item.price;
+  itemPriceChecksRunning.add(item.id);
+  renderItems();
+  let result = null;
+  try {
+    result = await apiRequest(`/items/${item.id}/price-check`, { method: 'POST' });
+  } catch (err) {
+    if (isNetworkError(err)) window.TrakkaToast?.success(t('items.priceCheckOffline'));
+    else showError(err.message);
+  } finally {
+    itemPriceChecksRunning.delete(item.id);
+  }
+  if (!result || !result.item) {
+    renderItems();
+    return;
+  }
+  await refreshCurrentList();
+  const { message, warning } = priceCheckMessage(item.title, before, result);
+  if (warning) window.TrakkaToast?.warning(message);
+  else window.TrakkaToast?.success(message, 4000);
+}
+
+// The toast for a finished price check, from what the check read on the
+// page (result.check, see priceCheckOutcome in internal/handlers): a page
+// that couldn't be read, had no price or is an expired deal says so — it is
+// never reported as an unchanged price. Otherwise how the item's price moved,
+// then a better deal waiting in 🔔, then "unchanged" with the price read.
+function priceCheckMessage(title, before, { item, alert, check }) {
+  const status = check ? check.status : 'ok';
+  if (status === 'unreachable') {
+    return { warning: true, message: t('items.priceCheckUnreachable', { title, reason: check.error || '' }) };
+  }
+  if (status === 'no_price') return { warning: true, message: t('items.priceCheckNothing', { title }) };
+  if (status === 'deal_expired') return { warning: true, message: t('items.priceCheckDealExpired', { title }) };
+  const after = item.price;
+  if (after != null && before != null && after < before) {
+    return { message: t('items.priceCheckDropped', { title, from: formatEuro(before), to: formatEuro(after) }) };
+  }
+  if (after != null && before != null && after > before) {
+    return { message: t('items.priceCheckIncreased', { title, from: formatEuro(before), to: formatEuro(after) }) };
+  }
+  if (after != null && before == null) return { message: t('items.priceCheckFound', { title, price: formatEuro(after) }) };
+  if (alert) return { message: t('items.priceCheckDeal', { title, price: formatEuro(alert.found_price) }) };
+  const read = check && check.observed_price != null ? check.observed_price : after;
+  return { message: t('items.priceCheckUnchanged', { title, price: formatEuro(read) }) };
+}
+
 // Mirrors internal/handlers.priceAlertCondition exactly: whether item's own
 // user-set "notify me when the price drops" threshold currently holds —
 // alerting opted in, a threshold set, a price present, and that price at
@@ -1982,13 +2062,17 @@ function buildCompactPriceLabel(item) {
     label.textContent = formatEuro(lineTotal(item));
     if (movement) label.prepend(buildPriceMovementIcon(item, movement));
     wrapper.appendChild(label);
-    if (item.price_auto) wrapper.appendChild(buildAutoPriceIcon(item));
+    if (itemPriceChecksRunning.has(item.id)) {
+      wrapper.appendChild(buildPendingPriceIcon('🔄', t('items.priceChecking'), 'animate-pulse text-sky-600 dark:text-sky-300'));
+    } else if (item.price_auto) {
+      wrapper.appendChild(buildAutoPriceIcon(item));
+    }
     return wrapper;
   }
   if (item.url && isOfflineQueuedItem(item)) {
     return buildPendingPriceIcon('⏳', t('items.priceSyncPending'), 'text-amber-600 dark:text-amber-300');
   }
-  if (item.url && item.priceScrapePending) {
+  if (item.url && (item.priceScrapePending || itemPriceChecksRunning.has(item.id))) {
     return buildPendingPriceIcon('🔄', t('items.priceDetecting'), 'animate-pulse text-sky-600 dark:text-sky-300');
   }
   return null;
@@ -2096,11 +2180,15 @@ function buildPriceBlock(item, { showPrice }) {
       price.classList.add(PRICE_MOVEMENT_TEXT_CLASS[movement], 'relative');
       price.prepend(buildPriceMovementIcon(item, movement, { overhang: true }));
     }
-    if (item.price_auto) statusSlot.appendChild(buildAutoPriceIcon(item));
+    if (itemPriceChecksRunning.has(item.id)) {
+      statusSlot.appendChild(buildPendingPriceIcon('🔄', t('items.priceChecking'), 'animate-pulse text-sky-600 dark:text-sky-300'));
+    } else if (item.price_auto) {
+      statusSlot.appendChild(buildAutoPriceIcon(item));
+    }
     if (priceAlertCondition(item)) statusSlot.appendChild(buildPriceAlertIcon(item));
   } else if (item.url && isOfflineQueuedItem(item)) {
     statusSlot.appendChild(buildPendingPriceIcon('⏳', t('items.priceSyncPending'), 'text-amber-600 dark:text-amber-300'));
-  } else if (item.url && item.priceScrapePending) {
+  } else if (item.url && (item.priceScrapePending || itemPriceChecksRunning.has(item.id))) {
     statusSlot.appendChild(buildPendingPriceIcon('🔄', t('items.priceDetecting'), 'animate-pulse text-sky-600 dark:text-sky-300'));
   }
   // else: no price yet and nothing pending either — both cells stay empty,
@@ -2518,6 +2606,19 @@ function buildItemRow(item, { showCheckbox = true, index, showQuantity = true, s
     const actions = document.createElement('div');
     actions.className = 'item-card__actions hidden shrink-0 items-center gap-1 md:flex';
 
+    if (showPrice && canCheckItemPrice(item)) {
+      const running = itemPriceChecksRunning.has(item.id);
+      const checkBtn = document.createElement('button');
+      checkBtn.type = 'button';
+      checkBtn.setAttribute('aria-label', t('items.checkPriceAriaLabel', { title: item.title }));
+      checkBtn.title = t('modals.itemActions.checkPrice');
+      checkBtn.disabled = running;
+      checkBtn.className = `flex h-11 w-11 shrink-0 items-center justify-center rounded-lg text-slate-500 hover:bg-sky-500/10 hover:text-sky-600 dark:hover:text-sky-400 disabled:cursor-wait${running ? ' animate-spin' : ''}`;
+      checkBtn.innerHTML = REFRESH_ICON_SVG;
+      checkBtn.addEventListener('click', () => checkItemPriceNow(item));
+      actions.appendChild(checkBtn);
+    }
+
     const editBtn = document.createElement('button');
     editBtn.type = 'button';
     editBtn.setAttribute('aria-label', t('items.editItemAriaLabel', { title: item.title }));
@@ -2815,6 +2916,10 @@ async function refreshCurrentList() {
   try {
     state.currentList = await apiRequest(`/lists/${state.currentListId}`);
     renderItems();
+    // A reload can bring a price a background scan just moved (its ▲/▼):
+    // reload the 🔔 inbox with it, so the two never disagree.
+    // refreshNotifications is defined in notifications.js.
+    refreshNotifications();
   } catch (err) {
     // Offline, or a transient server error: fall back to the local mirror
     // rather than leaving the item list stuck on stale data with no
@@ -2962,6 +3067,8 @@ async function selectList(id, opts = {}) {
   state.currentList = list;
   setListActionButtonsEnabled(true);
   renderItems();
+  // Same reason as refreshCurrentList: keep 🔔 in step with the indicators.
+  refreshNotifications();
   // saveLastView is defined in app.js — see the "keep last page on launch"
   // preference there.
   saveLastView({ type: 'list', id });
@@ -3606,6 +3713,7 @@ function openItemActionsSheet(item, { focusLink = false } = {}) {
   listEls.itemActionsSheetMeta.hidden = listEls.itemActionsSheetMeta.children.length === 0;
   const hasLink = Boolean(item.url && isSafeHttpUrl(item.url));
   listEls.itemActionsLinkGroup.hidden = !hasLink;
+  listEls.itemActionsPriceCheckButton.hidden = !(canCheckItemPrice(item) && fieldVisibilityFor(state.currentList?.type).price);
   listEls.itemActionsUrgentLabel.textContent = t(item.is_urgent ? 'modals.itemActions.unmarkUrgent' : 'modals.itemActions.markUrgent');
   listEls.itemActionsSheet.hidden = false;
   document.body.classList.add('overflow-hidden');
@@ -3656,6 +3764,12 @@ listEls.itemActionsShareLinkButton.addEventListener('click', () => {
   const item = itemActionsSheetItem;
   closeItemActionsSheet();
   if (item) shareLink(item);
+});
+
+listEls.itemActionsPriceCheckButton.addEventListener('click', () => {
+  const item = itemActionsSheetItem;
+  closeItemActionsSheet();
+  if (item) checkItemPriceNow(item);
 });
 
 listEls.itemActionsUrgentButton.addEventListener('click', () => {

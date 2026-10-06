@@ -266,7 +266,7 @@ Every distinct price observed on an item's own `url` (migration 28): the scrape 
 
 ### `price_notifications`
 
-Each user's in-app price alert inbox, shown in the 🔔 drawer (migration 28; see [API.md](API.md#price-tracking)): one row per recipient, written by `internal/handlers.notifyPriceChange` for everyone who wants that kind of alert — independently of push, which is what lets alerts reach a user with push off. Pruned by the daily price scan: read rows after 30 days, all rows after 90 (`PrunePriceNotifications`).
+Each user's in-app price alert inbox, shown in the 🔔 drawer (migration 28; see [API.md](API.md#price-tracking)): one row per recipient, written by `internal/handlers.notifyPriceChange` for every user with access to the item's list, whatever their preferences — `ListPriceNotifications` filters by the user's *current* `price_*_enabled` columns when reading (a `JOIN users` + `CASE kind`), so the inbox follows the settings both ways. Written independently of push, which is what lets alerts reach a user with push off. Pruned by the daily price scan: read rows after 30 days, all rows after 90 (`PrunePriceNotifications`).
 
 | Column | Type | Notes |
 |---|---|---|

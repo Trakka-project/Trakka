@@ -1901,6 +1901,13 @@
             <span data-i18n="modals.itemActions.shareLink">Partager le lien</span>
           </button>
         </div>
+        <!-- Shown only for an item with a link on a list that shows prices
+             (openItemActionsSheet): POST /api/v1/items/{id}/price-check. -->
+        <button type="button" id="item-actions-price-check-button" hidden
+                class="flex items-center gap-3 rounded-xl px-3 py-3 text-left text-base font-medium text-slate-900 dark:text-slate-100 hover:bg-slate-200 dark:hover:bg-slate-700">
+          <span aria-hidden="true">🔄</span>
+          <span data-i18n="modals.itemActions.checkPrice">Vérifier le prix maintenant</span>
+        </button>
         <button type="button" id="item-actions-urgent-button"
                 class="flex items-center gap-3 rounded-xl px-3 py-3 text-left text-base font-medium text-slate-900 dark:text-slate-100 hover:bg-slate-200 dark:hover:bg-slate-700">
           <span aria-hidden="true">🚨</span>

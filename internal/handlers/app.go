@@ -5,6 +5,7 @@
 package handlers
 
 import (
+	"context"
 	"html/template"
 	"io/fs"
 	"log/slog"
@@ -20,6 +21,7 @@ import (
 	"trakka/internal/config"
 	"trakka/internal/db"
 	"trakka/internal/logbuffer"
+	"trakka/internal/scraper"
 )
 
 // Application holds the dependencies shared by every handler.
@@ -78,6 +80,21 @@ type Application struct {
 	// a real push service, whose endpoints the SSRF guard keeps off
 	// loopback anyway.
 	pushHook func(userIDs []int64, payload pushPayload)
+
+	// productPageHook, when set (tests only), stands in for
+	// scraper.FetchProductInfo in the price checks (fetchProductPage): the
+	// SSRF guard keeps the real fetch off a loopback test server, the same
+	// reason as pushHook.
+	productPageHook func(ctx context.Context, rawURL string) (*scraper.ProductInfo, error)
+}
+
+// fetchProductPage reads an item's own page for a price check:
+// scraper.FetchProductInfo, or productPageHook in tests.
+func (app *Application) fetchProductPage(ctx context.Context, rawURL string) (*scraper.ProductInfo, error) {
+	if app.productPageHook != nil {
+		return app.productPageHook(ctx, rawURL)
+	}
+	return scraper.FetchProductInfo(ctx, rawURL, app.Logger)
 }
 
 // authIPLimiter is the per-client-IP authentication attempt bucket.

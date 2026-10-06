@@ -68,7 +68,7 @@ func TestApplyObservedPriceFollowsAutoPrice(t *testing.T) {
 	owner, friend, item := trackedItemFixture(t, app, true)
 	setPrefs(t, app, friend.ID, db.NotificationPreferences{PriceDropAlertsEnabled: off, PriceIncreaseAlertsEnabled: on})
 
-	if err := app.applyObservedPrice(ctx, item, 80); err != nil {
+	if err := app.applyObservedPrice(ctx, item, 80, false); err != nil {
 		t.Fatal(err)
 	}
 	drop := pushes.next(t)
@@ -90,11 +90,11 @@ func TestApplyObservedPriceFollowsAutoPrice(t *testing.T) {
 	}
 
 	// The same price again is no change at all.
-	if err := app.applyObservedPrice(ctx, reloaded, 80); err != nil {
+	if err := app.applyObservedPrice(ctx, reloaded, 80, false); err != nil {
 		t.Fatal(err)
 	}
 
-	if err := app.applyObservedPrice(ctx, reloaded, 90); err != nil {
+	if err := app.applyObservedPrice(ctx, reloaded, 90, false); err != nil {
 		t.Fatal(err)
 	}
 	increase := pushes.next(t)
@@ -128,7 +128,7 @@ func TestApplyObservedPriceFollowsAutoPrice(t *testing.T) {
 		t.Fatalf("manual edit kept the movement: %+v", edited)
 	}
 	// An edit leaving price and url alone keeps it.
-	if err := app.applyObservedPrice(ctx, &models.Item{ID: item.ID, ListID: item.ListID, Title: item.Title, URL: item.URL, Price: &manual, PriceAuto: true}, 70); err != nil {
+	if err := app.applyObservedPrice(ctx, &models.Item{ID: item.ID, ListID: item.ListID, Title: item.Title, URL: item.URL, Price: &manual, PriceAuto: true}, 70, false); err != nil {
 		t.Fatal(err)
 	}
 	pushes.next(t)
@@ -152,10 +152,10 @@ func TestApplyObservedPriceKeepsManualPrice(t *testing.T) {
 	ctx := context.Background()
 	owner, _, item := trackedItemFixture(t, app, false)
 
-	if err := app.applyObservedPrice(ctx, item, 120); err != nil {
+	if err := app.applyObservedPrice(ctx, item, 120, false); err != nil {
 		t.Fatal(err)
 	}
-	if err := app.applyObservedPrice(ctx, item, 90); err != nil {
+	if err := app.applyObservedPrice(ctx, item, 90, false); err != nil {
 		t.Fatal(err)
 	}
 	deal := pushes.next(t)
@@ -177,7 +177,7 @@ func TestApplyObservedPriceKeepsManualPrice(t *testing.T) {
 	if _, err := app.DB.RejectPriceAlert(ctx, alert.ID); err != nil {
 		t.Fatal(err)
 	}
-	if err := app.applyObservedPrice(ctx, item, 90); err != nil {
+	if err := app.applyObservedPrice(ctx, item, 90, false); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := app.DB.GetPendingPriceAlertForItem(ctx, item.ID); err == nil {
@@ -187,6 +187,38 @@ func TestApplyObservedPriceKeepsManualPrice(t *testing.T) {
 	history, _ := app.DB.ListPriceHistory(ctx, item.ID, 10)
 	if len(history) != 2 || history[0].Price != 120 || history[1].Price != 90 {
 		t.Fatalf("history = %+v, want 120 then 90", history)
+	}
+}
+
+// TestIncreaseInInboxFollowsCurrentSetting: with push not configured at all,
+// a price increase still reaches the inbox of whoever has "Notifier en cas
+// de hausse de prix" on — including one detected while it was still off,
+// like the ▲ indicator the list already shows for it — and nobody's while
+// it is off, or while price alerts are turned off altogether.
+func TestIncreaseInInboxFollowsCurrentSetting(t *testing.T) {
+	app := newTestApplication(t) // no VAPID keys, no push hook: push is off
+	ctx := context.Background()
+	owner, friend, item := trackedItemFixture(t, app, true)
+	setPrefs(t, app, friend.ID, db.NotificationPreferences{PriceIncreaseAlertsEnabled: on})
+
+	if err := app.applyObservedPrice(ctx, item, 120, false); err != nil {
+		t.Fatal(err)
+	}
+	waitUntil(t, "the increase in the friend's inbox", func() bool {
+		n := priceNotificationsOf(t, app, friend.ID)
+		return len(n) == 1 && n[0].Kind == "increase" && n[0].OldPrice == 100 && n[0].NewPrice == 120
+	})
+	if n := priceNotificationsOf(t, app, owner.ID); len(n) != 0 {
+		t.Fatalf("owner has increases off (the default) but sees %+v", n)
+	}
+
+	setPrefs(t, app, owner.ID, db.NotificationPreferences{PriceIncreaseAlertsEnabled: on})
+	if n := priceNotificationsOf(t, app, owner.ID); len(n) != 1 || n[0].Kind != "increase" {
+		t.Fatalf("owner turned increases on, inbox = %+v", n)
+	}
+	setPrefs(t, app, owner.ID, db.NotificationPreferences{PriceAlertsEnabled: off})
+	if n := priceNotificationsOf(t, app, owner.ID); len(n) != 0 {
+		t.Fatalf("owner turned price alerts off, inbox = %+v", n)
 	}
 }
 
@@ -224,7 +256,7 @@ func TestAcceptingDealSwitchesURL(t *testing.T) {
 	}
 
 	// The deal page is now the item's page: its price is followed.
-	if err := app.applyObservedPrice(ctx, accepted, 65); err != nil {
+	if err := app.applyObservedPrice(ctx, accepted, 65, false); err != nil {
 		t.Fatal(err)
 	}
 	if p := pushes.next(t); p.payload.Title != "📉 Baisse de prix" {
@@ -296,7 +328,7 @@ func TestTargetPriceReachedPushesOnce(t *testing.T) {
 	target := 85.0
 	item.TargetPrice, item.AlertOnPriceDrop = &target, true
 
-	if err := app.applyObservedPrice(ctx, item, 80); err != nil {
+	if err := app.applyObservedPrice(ctx, item, 80, false); err != nil {
 		t.Fatal(err)
 	}
 	if p := pushes.next(t); p.payload.Title != "🔥 Bonne affaire !" {
@@ -336,6 +368,9 @@ func TestHandlePriceNotifications(t *testing.T) {
 	app := newTestApplication(t)
 	ctx := context.Background()
 	owner, friend, item := trackedItemFixture(t, app, true)
+	for _, u := range []*models.User{owner, friend} {
+		setPrefs(t, app, u.ID, db.NotificationPreferences{PriceIncreaseAlertsEnabled: on})
+	}
 	for _, kind := range []string{db.PriceNotificationDrop, db.PriceNotificationIncrease} {
 		if err := app.DB.CreatePriceNotifications(ctx, []int64{owner.ID, friend.ID}, item.ID, kind, 100, 90, nil); err != nil {
 			t.Fatal(err)

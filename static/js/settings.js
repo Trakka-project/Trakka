@@ -330,6 +330,10 @@ userSettingsEls.form.addEventListener('submit', async (event) => {
   // so turning them on or off shows right away. refreshVisibleView is
   // defined in app.js.
   refreshVisibleView();
+  // Which price alerts the 🔔 inbox shows follows these same preferences
+  // (filtered server-side when read): reload it. refreshNotifications is
+  // defined in notifications.js.
+  refreshNotifications();
   userSettingsEls.status.textContent = t('modals.userSettings.saved');
   userSettingsEls.status.hidden = false;
 });

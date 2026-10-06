@@ -307,6 +307,14 @@ function refreshNotifications() {
   loadNotifications();
 }
 
+// A background scan can find a price change at any time: while Trakka stays
+// open and visible, look again every minute (the hooks above cover a
+// return to the tab, and list reloads — see refreshCurrentList).
+const NOTIFICATIONS_POLL_MS = 60 * 1000;
+setInterval(() => {
+  if (document.visibilityState === 'visible' && state.currentUser) loadNotifications();
+}, NOTIFICATIONS_POLL_MS);
+
 function openNotificationsModal() {
   notifEls.modal.hidden = false;
   document.body.classList.add('overflow-hidden');
