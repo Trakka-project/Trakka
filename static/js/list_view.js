@@ -1610,6 +1610,73 @@ function priceAlertCondition(item) {
   return Boolean(item.alert_on_price_drop) && item.target_price != null && item.price != null && item.price <= item.target_price;
 }
 
+// How long a price a background scan moved (item.previous_price/
+// price_changed_at, see models.Item.PreviousPrice) stays highlighted.
+const PRICE_MOVEMENT_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
+
+// The direction a background scan recently moved item's price in — 'drop',
+// 'increase', or null when there's nothing to show: no movement recorded,
+// one older than PRICE_MOVEMENT_WINDOW_MS, a done item, or the user turned
+// "Afficher les indicateurs visuels de variation de prix" off (Paramètres,
+// users.price_change_indicators_enabled — on until /me says otherwise).
+function recentPriceMovement(item) {
+  if (state.currentUser && state.currentUser.price_change_indicators_enabled === false) return null;
+  if (item.done || item.price == null || item.previous_price == null || !item.price_changed_at) return null;
+  const changedAt = Date.parse(item.price_changed_at);
+  if (!Number.isFinite(changedAt) || Date.now() - changedAt > PRICE_MOVEMENT_WINDOW_MS) return null;
+  if (item.price < item.previous_price) return 'drop';
+  if (item.price > item.previous_price) return 'increase';
+  return null;
+}
+
+const PRICE_MOVEMENT_TEXT_CLASS = {
+  drop: 'text-[color:var(--tk-price-drop)]',
+  increase: 'text-[color:var(--tk-price-increase)]',
+};
+
+// The ▼/▲ glyph next to a moved price's own text (not the fixed-width status
+// slot, which ✨ and 🔥 can already fill), with the price before as its
+// tooltip/accessible name. In buildPriceBlock's pill it hangs just left of
+// the price (`overhang`, in the pill's own padding), taking no width: a
+// wider pill would shift that row's whole trailing group out of line with
+// its siblings (see PRICE_STATUS_SLOT_CLASS). The Compact label has no such
+// alignment to keep, so there it simply leads the text.
+function buildPriceMovementIcon(item, movement, { overhang = false } = {}) {
+  const label = t(movement === 'drop' ? 'items.priceDropped' : 'items.priceIncreased', { previous: formatEuro(item.previous_price) });
+  const icon = document.createElement('span');
+  icon.className = overhang
+    ? 'absolute right-full top-1/2 mr-px -translate-y-1/2 text-[10px]'
+    : 'mr-0.5 align-middle text-[10px]';
+  icon.textContent = movement === 'drop' ? '▼' : '▲';
+  icon.title = label;
+  icon.setAttribute('aria-label', label);
+  icon.setAttribute('role', 'img');
+  return icon;
+}
+
+// When this page first showed each movement (key: item id + when it moved).
+// The glow (.item-card--price-flash) plays once per movement: a list is
+// often rendered several times in a row (the cached copy, then the server's,
+// then after an edit), so a re-render during the glow carries it on where it
+// was, through a negative animation-delay, and one after it shows none.
+const PRICE_FLASH_MS = 2400; // base.css's tk-price-*-flash duration
+const priceMovementsFirstShown = new Map();
+
+// Adds the row-level half of the indicator (base.css's
+// .item-card--price-drop/--price-increase accent bar, plus the one-off glow)
+// to an item's <li>.
+function decoratePriceMovementRow(li, item, movement) {
+  li.classList.add(`item-card--price-${movement}`);
+  const key = `${item.id}:${item.price_changed_at}`;
+  const now = Date.now();
+  if (!priceMovementsFirstShown.has(key)) priceMovementsFirstShown.set(key, now);
+  const elapsed = now - priceMovementsFirstShown.get(key);
+  if (elapsed < PRICE_FLASH_MS) {
+    li.classList.add('item-card--price-flash');
+    li.style.animationDelay = `-${elapsed}ms`;
+  }
+}
+
 // A single eye-catching 🔥 glyph shown once an item's price has reached the
 // threshold set via its "Déclencher une alerte si le prix descend en
 // dessous de" field — an icon rather than the old full-text "Bonne affaire"
@@ -1909,9 +1976,11 @@ function buildCompactPriceLabel(item) {
     // stay glued together if this row's other trailing content ever wraps.
     const wrapper = document.createElement('span');
     wrapper.className = 'flex shrink-0 items-center gap-1';
+    const movement = recentPriceMovement(item);
     const label = document.createElement('span');
-    label.className = 'text-sm font-semibold tabular-nums text-[color:var(--tk-money-total)]';
+    label.className = `text-sm font-semibold tabular-nums ${movement ? PRICE_MOVEMENT_TEXT_CLASS[movement] : 'text-[color:var(--tk-money-total)]'}`;
     label.textContent = formatEuro(lineTotal(item));
+    if (movement) label.prepend(buildPriceMovementIcon(item, movement));
     wrapper.appendChild(label);
     if (item.price_auto) wrapper.appendChild(buildAutoPriceIcon(item));
     return wrapper;
@@ -2021,6 +2090,12 @@ function buildPriceBlock(item, { showPrice }) {
 
   if (item.price != null) {
     price.textContent = formatEuro(lineTotal(item));
+    const movement = recentPriceMovement(item);
+    if (movement) {
+      price.classList.remove('text-[color:var(--tk-money-total)]');
+      price.classList.add(PRICE_MOVEMENT_TEXT_CLASS[movement], 'relative');
+      price.prepend(buildPriceMovementIcon(item, movement, { overhang: true }));
+    }
     if (item.price_auto) statusSlot.appendChild(buildAutoPriceIcon(item));
     if (priceAlertCondition(item)) statusSlot.appendChild(buildPriceAlertIcon(item));
   } else if (item.url && isOfflineQueuedItem(item)) {
@@ -2238,6 +2313,10 @@ function buildItemRow(item, { showCheckbox = true, index, showQuantity = true, s
   li.className = urgent
     ? `${shapeClasses} border-2 border-rose-500/60 bg-rose-500/5`
     : `${shapeClasses} border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/30`;
+  // Only where the row shows a price at all (showPrice — not a to-do or
+  // custom list).
+  const priceMovement = showPrice ? recentPriceMovement(item) : null;
+  if (priceMovement) decoratePriceMovementRow(li, item, priceMovement);
 
   // rowTop: checkbox/marker + thumbnail + title + edit/delete + kebab — see
   // the header comment above for why this wrapper exists and why it needs

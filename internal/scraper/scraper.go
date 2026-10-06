@@ -213,6 +213,10 @@ type ProductInfo struct {
 	// caller that wants it (e.g. suggesting a name when an item is created
 	// from a bare URL).
 	Title string
+	// DealExpired is set when rawURL is a Dealabs deal page whose deal has
+	// expired (or was withdrawn): Price is then nil, since the price the page
+	// still shows can no longer be had. See dealabsDealState.
+	DealExpired bool
 }
 
 // setBrowserHeaders sets every header FetchProductInfo sends to make a
@@ -315,6 +319,19 @@ func FetchProductInfo(ctx context.Context, rawURL string, logger *slog.Logger) (
 	info, err := extractProductInfo(bytes.NewReader(body), parsed)
 	if err != nil {
 		return nil, fmt.Errorf("parsing %s: %w", rawURL, err)
+	}
+	if isDealabsDealURL(parsed) {
+		// A deal page lists other deals' prices too: the deal's own price
+		// (and whether it is still live) comes from its page state only,
+		// never from the generic sources extractProductInfo reads.
+		info.Price = nil
+		if state, ok := dealabsDealState(body); ok {
+			if state.live() {
+				info.Price = state.Price
+			} else {
+				info.DealExpired = true
+			}
+		}
 	}
 	if info.Price == nil && info.ImageURL == "" && info.Title == "" {
 		return nil, fmt.Errorf("no price, image, or title found on %s", rawURL)

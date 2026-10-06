@@ -207,9 +207,17 @@ type Item struct {
 	// AlertOnPriceDrop opts an item into the target-price notification
 	// above. A plain user-set toggle, independent of every other field
 	// here — the same relationship IsUrgent has to the rest of Item.
-	AlertOnPriceDrop bool   `json:"alert_on_price_drop"`
-	CreatedAt        string `json:"created_at"`
-	UpdatedAt        string `json:"updated_at"`
+	AlertOnPriceDrop bool `json:"alert_on_price_drop"`
+	// PreviousPrice/PriceChangedAt describe the last time a background price
+	// scan moved Price (internal/handlers.trackItemPrice): the price before,
+	// and when (UTC). The list view colours a recent drop green and a recent
+	// increase red from them. Both are nil until a scan first moves the
+	// price, and are cleared again by a manual price or url edit
+	// (db.UpdateItem), which is not a movement at the store.
+	PreviousPrice  *float64 `json:"previous_price,omitempty"`
+	PriceChangedAt *string  `json:"price_changed_at,omitempty"`
+	CreatedAt      string   `json:"created_at"`
+	UpdatedAt      string   `json:"updated_at"`
 	// PriceStatus is a transient, response-only field set by
 	// internal/handlers.scrapePrice after a create/update/patch — never
 	// persisted, and never populated by a plain GET (it's the zero value
@@ -338,6 +346,19 @@ type User struct {
 	CollaboratorActionsEnabled bool `json:"collaborator_actions_enabled"`
 	ItemAdditionsEnabled       bool `json:"item_additions_enabled"`
 	ListSharingEnabled         bool `json:"list_sharing_enabled"`
+	// PriceAlertsEnabled is the master switch for every price alert this
+	// account receives — a price drop or increase on a tracked item, a
+	// target price being reached, a better price found elsewhere — as a push
+	// notification or in the in-app 🔔 drawer alike. Off never stops the
+	// background price scans themselves. PriceDropAlertsEnabled/
+	// PriceIncreaseAlertsEnabled pick the directions under it (drops on,
+	// increases off by default). PriceChangeIndicatorsEnabled colours a
+	// recently moved price in the list view (see Item.PreviousPrice).
+	// Settable via PATCH /api/v1/me.
+	PriceAlertsEnabled           bool `json:"price_alerts_enabled"`
+	PriceDropAlertsEnabled       bool `json:"price_drop_alerts_enabled"`
+	PriceIncreaseAlertsEnabled   bool `json:"price_increase_alerts_enabled"`
+	PriceChangeIndicatorsEnabled bool `json:"price_change_indicators_enabled"`
 }
 
 // UserWithCredentials is returned by db lookups used for authentication
@@ -423,8 +444,42 @@ type PriceAlert struct {
 	OriginalPrice float64 `json:"original_price"`
 	FoundPrice    float64 `json:"found_price"`
 	SourceURL     string  `json:"source_url"`
-	Status        string  `json:"status"`
-	CreatedAt     string  `json:"created_at"`
+	// ChangesURL reports that accepting the alert would also replace the
+	// item's url with SourceURL (a deal found elsewhere, e.g. on Dealabs) —
+	// joined in from the item at read time, for the drawer's wording.
+	ChangesURL bool   `json:"changes_url"`
+	Status     string `json:"status"`
+	CreatedAt  string `json:"created_at"`
+}
+
+// PricePoint is one price observed on an item's own url by the background
+// price scans (see db.RecordPriceObservation) — GET
+// /api/v1/items/{id}/price-history returns them oldest first.
+type PricePoint struct {
+	Price      float64 `json:"price"`
+	RecordedAt string  `json:"recorded_at"`
+}
+
+// PriceNotification is one entry of a user's in-app price alert inbox
+// (the 🔔 drawer): Kind "drop"/"increase" means the item's price moved from
+// OldPrice to NewPrice, "deal" that NewPrice was found at SourceURL and is
+// waiting as a pending PriceAlert, "expired" that the Dealabs deal at
+// SourceURL the item follows has expired (OldPrice = NewPrice = its price). Written for every recipient who wants
+// that kind of alert, independently of push (see
+// internal/handlers.notifyPriceChange).
+type PriceNotification struct {
+	ID     int64 `json:"id"`
+	ItemID int64 `json:"item_id"`
+	// ItemTitle/ListID are joined in from the item for display, like
+	// PriceAlert's.
+	ItemTitle string  `json:"item_title"`
+	ListID    int64   `json:"list_id"`
+	Kind      string  `json:"kind"`
+	OldPrice  float64 `json:"old_price"`
+	NewPrice  float64 `json:"new_price"`
+	SourceURL *string `json:"source_url,omitempty"`
+	CreatedAt string  `json:"created_at"`
+	ReadAt    *string `json:"read_at,omitempty"`
 }
 
 // ValidPriceAlertStatuses enumerates the allowed values for

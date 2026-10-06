@@ -15,13 +15,14 @@ import (
 const priceAlertSelect = `
 	SELECT price_alerts.id, price_alerts.item_id, items.title, items.list_id,
 	       price_alerts.original_price, price_alerts.found_price, price_alerts.source_url,
+	       items.url IS NOT price_alerts.source_url,
 	       price_alerts.status, price_alerts.created_at
 	FROM price_alerts JOIN items ON items.id = price_alerts.item_id`
 
 func scanPriceAlert(row rowScanner) (*models.PriceAlert, error) {
 	a := &models.PriceAlert{}
 	if err := row.Scan(&a.ID, &a.ItemID, &a.ItemTitle, &a.ListID,
-		&a.OriginalPrice, &a.FoundPrice, &a.SourceURL, &a.Status, &a.CreatedAt); err != nil {
+		&a.OriginalPrice, &a.FoundPrice, &a.SourceURL, &a.ChangesURL, &a.Status, &a.CreatedAt); err != nil {
 		return nil, err
 	}
 	return a, nil
@@ -34,17 +35,36 @@ func scanPriceAlert(row rowScanner) (*models.PriceAlert, error) {
 // would spawn a fresh alert every single time the scan ran before the
 // existing one was accepted or rejected. Silently does nothing in that
 // case — the same "expected, not an error" no-op convention as
-// UpdateItemPriceIfMissing/UpdateItemImageIfMissing.
-func (d *DB) CreatePriceAlertIfNonePending(ctx context.Context, itemID int64, originalPrice, foundPrice float64, sourceURL string) error {
-	_, err := d.conn.ExecContext(ctx,
+// UpdateItemPriceIfMissing/UpdateItemImageIfMissing. Reports whether an
+// alert was actually created, so the caller notifies about a new deal once
+// rather than on every scan that sees it again.
+func (d *DB) CreatePriceAlertIfNonePending(ctx context.Context, itemID int64, originalPrice, foundPrice float64, sourceURL string) (bool, error) {
+	res, err := d.conn.ExecContext(ctx,
 		`INSERT INTO price_alerts (item_id, original_price, found_price, source_url)
 		 SELECT ?, ?, ?, ?
 		 WHERE NOT EXISTS (SELECT 1 FROM price_alerts WHERE item_id = ? AND status = 'pending')`,
 		itemID, originalPrice, foundPrice, sourceURL, itemID)
 	if err != nil {
-		return fmt.Errorf("recording price alert for item %d: %w", itemID, err)
+		return false, fmt.Errorf("recording price alert for item %d: %w", itemID, err)
 	}
-	return nil
+	n, err := res.RowsAffected()
+	if err != nil {
+		return false, fmt.Errorf("reading rows affected recording price alert for item %d: %w", itemID, err)
+	}
+	return n > 0, nil
+}
+
+// HasPriceAlertForSource reports whether itemID already has an alert of any
+// status for sourceURL at foundPrice — so a deal the user already rejected
+// (or accepted) is not proposed again on every scan that still finds it.
+func (d *DB) HasPriceAlertForSource(ctx context.Context, itemID int64, sourceURL string, foundPrice float64) (bool, error) {
+	var n int
+	if err := d.conn.QueryRowContext(ctx,
+		`SELECT COUNT(*) FROM price_alerts WHERE item_id = ? AND source_url = ? AND found_price = ?`,
+		itemID, sourceURL, foundPrice).Scan(&n); err != nil {
+		return false, fmt.Errorf("checking price alerts of item %d for %s: %w", itemID, sourceURL, err)
+	}
+	return n > 0, nil
 }
 
 // GetPriceAlert fetches a single alert by id. Returns ErrNotFound if no
@@ -112,14 +132,22 @@ func (d *DB) ListPriceAlertsByHouse(ctx context.Context, houseID int64, status s
 	return alerts, nil
 }
 
-// AcceptPriceAlert applies a pending alert's found_price to its item
-// (marking it auto-detected, the same as a fresh scrape result) and marks
-// the alert accepted, atomically. A partial failure here — the item
-// updated but the alert left "pending", or vice versa — would otherwise
-// let the same alert be actioned twice, or silently fail to apply the
-// price it claims to have applied; this is the same reasoning
-// CreateHouseWithOwner uses for its own transaction. Returns ErrNotFound
-// if the alert doesn't exist or was already actioned (not "pending").
+// AcceptPriceAlert applies a pending alert's found price to its item and
+// marks the alert accepted, atomically. The item's url becomes the alert's
+// source_url — a no-op for a lower price found on the item's own page, a
+// switch to the deal page for one found on Dealabs — and its price follows
+// that page from then on (price_auto = 1), so the background scans track
+// the price the user chose rather than the one they turned down. The found
+// price starts the new url's price history, and previous_price/
+// price_changed_at are cleared: the user's own decision is not a movement
+// at the store. image_url is kept: it is still the same product. A partial
+// failure here — the item updated but the alert left "pending", or vice
+// versa — would otherwise let the same alert be actioned twice, or silently
+// fail to apply the price it claims to have applied; this is the same
+// reasoning CreateHouseWithOwner uses for its own transaction. sourceURL
+// must have passed internal/validate.URL (the handler re-checks it). Returns
+// ErrNotFound if the alert doesn't exist or was already actioned (not
+// "pending").
 func (d *DB) AcceptPriceAlert(ctx context.Context, id int64) (*models.PriceAlert, error) {
 	tx, err := d.conn.BeginTx(ctx, nil)
 	if err != nil {
@@ -129,9 +157,10 @@ func (d *DB) AcceptPriceAlert(ctx context.Context, id int64) (*models.PriceAlert
 
 	var itemID int64
 	var foundPrice float64
+	var sourceURL string
 	err = tx.QueryRowContext(ctx,
-		`SELECT item_id, found_price FROM price_alerts WHERE id = ? AND status = 'pending'`, id,
-	).Scan(&itemID, &foundPrice)
+		`SELECT item_id, found_price, source_url FROM price_alerts WHERE id = ? AND status = 'pending'`, id,
+	).Scan(&itemID, &foundPrice, &sourceURL)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrNotFound
 	}
@@ -140,10 +169,19 @@ func (d *DB) AcceptPriceAlert(ctx context.Context, id int64) (*models.PriceAlert
 	}
 
 	if _, err := tx.ExecContext(ctx,
-		`UPDATE items SET price = ?, price_auto = 1, updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE id = ?`,
-		foundPrice, itemID,
+		`UPDATE items SET price = ?, price_auto = 1, url = ?, previous_price = NULL, price_changed_at = NULL,
+		 updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE id = ?`,
+		foundPrice, sourceURL, itemID,
 	); err != nil {
 		return nil, fmt.Errorf("applying accepted price to item %d: %w", itemID, err)
+	}
+	if _, err := tx.ExecContext(ctx,
+		`INSERT INTO price_history (item_id, price)
+		 SELECT ?, ?
+		 WHERE (SELECT price FROM price_history WHERE item_id = ? ORDER BY recorded_at DESC, id DESC LIMIT 1) IS NOT ?`,
+		itemID, foundPrice, itemID, foundPrice,
+	); err != nil {
+		return nil, fmt.Errorf("recording accepted price for item %d: %w", itemID, err)
 	}
 	if _, err := tx.ExecContext(ctx,
 		`UPDATE price_alerts SET status = 'accepted' WHERE id = ?`, id,
@@ -177,11 +215,15 @@ func (d *DB) RejectPriceAlert(ctx context.Context, id int64) (*models.PriceAlert
 	return d.GetPriceAlert(ctx, id)
 }
 
-// ListItemsForPriceScan returns every not-done item that has both a url and
-// a price set — the population internal/handlers.RunPriceAlertScan checks
-// on each periodic (or on-demand, for a single item) pass. An item missing
-// either field has nothing to compare a scraped price against, and a done
-// item's price isn't worth chasing anymore. Items belonging to a `custom`
+// ListItemsForPriceScan returns every not-done item that has a url and no
+// active target price — the population internal/handlers.RunPriceAlertScan
+// tracks on each periodic pass. Items with an active target price
+// (alert_on_price_drop = 1 and target_price set) are left out: they belong
+// to the more frequent RunTargetPriceScan (ListItemsForTargetPriceScan),
+// which runs the same per-item check, so no item is fetched by both. An
+// item without a price yet is included, so a price the initial lookup
+// missed is still filled in later. A done item's price isn't worth chasing
+// anymore. Items belonging to a `custom`
 // (freeform notes) list are excluded via the lists join: the UI never lets
 // a custom-list item carry a url/price (see FIELD_VISIBILITY_BY_TYPE in
 // static/js/list_view.js), so this only ever matters for one created
@@ -193,7 +235,8 @@ func (d *DB) ListItemsForPriceScan(ctx context.Context) ([]*models.Item, error) 
 		`SELECT `+itemSelectColumns+`
 		 FROM items
 		 JOIN lists ON lists.id = items.list_id
-		 WHERE items.done = 0 AND items.url IS NOT NULL AND items.url != '' AND items.price IS NOT NULL AND lists.type != 'custom'`)
+		 WHERE items.done = 0 AND items.url IS NOT NULL AND items.url != '' AND lists.type != 'custom'
+		   AND NOT (items.alert_on_price_drop = 1 AND items.target_price IS NOT NULL)`)
 	if err != nil {
 		return nil, fmt.Errorf("querying items for price scan: %w", err)
 	}

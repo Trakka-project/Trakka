@@ -33,24 +33,30 @@ type Config struct {
 	SessionCookieSecure bool
 	SessionTTL          time.Duration
 
-	// PriceCheckInterval is how often the background price-drop scan
-	// (internal/handlers.RunPriceAlertScan) re-checks every eligible item.
+	// PriceCheckInterval is how often the background price scan
+	// (internal/handlers.RunPriceAlertScan) re-checks every tracked item
+	// that has no active target price (those are TargetPriceScrapeInterval's).
 	// A value <= 0 disables the periodic scan entirely (on-demand checks via
 	// POST /api/v1/items/{id}/price-check still work regardless).
 	PriceCheckInterval time.Duration
 
 	// TargetPriceScrapeInterval is how often the target-price background
-	// worker (internal/handlers.RunTargetPriceScan) re-scrapes every item
+	// worker (internal/handlers.RunTargetPriceScan) re-checks every item
 	// with an active "notify me when the price drops" threshold (see
-	// models.Item.TargetPrice/AlertOnPriceDrop) and applies whatever current
-	// price it finds. This is distinct from PriceCheckInterval above: that
-	// scan compares a scraped price against the item's own current price and
-	// only ever proposes a price_alerts row for the user to accept/reject,
-	// while this one compares against the user's own explicit threshold and,
-	// once crossed, writes items.price directly and notifies immediately
-	// with no accept/reject step. A value <= 0 disables the periodic scan
-	// entirely.
+	// models.Item.TargetPrice/AlertOnPriceDrop). Both scans run the same
+	// per-item check (internal/handlers.trackItemPrice) on disjoint sets of
+	// items; this one is usually more frequent, since a user waiting on a
+	// target price wants to know soon. A value <= 0 disables the periodic
+	// scan entirely.
 	TargetPriceScrapeInterval time.Duration
+
+	// DealSearchEnabled lets both price scans above also look an item's
+	// title up on Dealabs (internal/scraper.SearchDealabs) for an active
+	// deal cheaper than its current price, proposed as a price_alerts row
+	// to accept or reject. Only the title of an item that has a url and a
+	// price is ever sent, and only when it names a specific product (see
+	// scraper.DealSearchQuery). DEAL_SEARCH_ENABLED, default true.
+	DealSearchEnabled bool
 
 	// InstanceName and RegistrationOpen are the env-var defaults for two of
 	// the settings manageable at runtime via the admin-only
@@ -139,6 +145,7 @@ func Load() Config {
 		PriceCheckInterval: time.Duration(envInt("PRICE_CHECK_INTERVAL_HOURS", 24)) * time.Hour,
 
 		TargetPriceScrapeInterval: envDuration("SCRAPE_INTERVAL", 12*time.Hour),
+		DealSearchEnabled:         envBool("DEAL_SEARCH_ENABLED", true),
 
 		InstanceName:     envOr("INSTANCE_NAME", "Trakka"),
 		RegistrationOpen: envBool("REGISTRATION_OPEN", true),

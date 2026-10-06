@@ -83,7 +83,8 @@ func TestPrepareRestoreFileMigratesOlderSchema(t *testing.T) {
 	// Simulate a backup from before migration 20 by undoing migrations 20,
 	// 21, 23, 24, 25, 26 and 27 (backup_runs, the task-scheduling columns
 	// and index, the due-reminder index, the notification-vibration column,
-	// the calendar feed tokens, the notification preferences; 22 only
+	// the calendar feed tokens, the notification preferences, the price
+	// tracking tables and columns; 22 only
 	// rewrites rows) and rewinding
 	// user_version on the staged copy.
 	old, err := Open(snap, logger)
@@ -108,6 +109,14 @@ func TestPrepareRestoreFileMigratesOlderSchema(t *testing.T) {
 		`ALTER TABLE users DROP COLUMN collaborator_actions_enabled`,
 		`ALTER TABLE users DROP COLUMN item_additions_enabled`,
 		`ALTER TABLE users DROP COLUMN list_sharing_enabled`,
+		`DROP TABLE price_history`,
+		`DROP TABLE price_notifications`,
+		`ALTER TABLE items DROP COLUMN previous_price`,
+		`ALTER TABLE items DROP COLUMN price_changed_at`,
+		`ALTER TABLE users DROP COLUMN price_alerts_enabled`,
+		`ALTER TABLE users DROP COLUMN price_drop_alerts_enabled`,
+		`ALTER TABLE users DROP COLUMN price_increase_alerts_enabled`,
+		`ALTER TABLE users DROP COLUMN price_change_indicators_enabled`,
 	} {
 		if _, err := old.conn.Exec(stmt); err != nil {
 			t.Fatalf("%s: %v", stmt, err)

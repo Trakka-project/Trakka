@@ -31,8 +31,8 @@ func TestCreatePriceAlertIfNonePending(t *testing.T) {
 	d := openTestDB(t)
 	itemID, url := setupPriceAlertItem(t, ctx, d, 20.0)
 
-	if err := d.CreatePriceAlertIfNonePending(ctx, itemID, 20.0, 15.0, url); err != nil {
-		t.Fatalf("CreatePriceAlertIfNonePending: %v", err)
+	if created, err := d.CreatePriceAlertIfNonePending(ctx, itemID, 20.0, 15.0, url); err != nil || !created {
+		t.Fatalf("CreatePriceAlertIfNonePending = %v, %v; want created", created, err)
 	}
 	alert, err := d.GetPendingPriceAlertForItem(ctx, itemID)
 	if err != nil {
@@ -44,8 +44,8 @@ func TestCreatePriceAlertIfNonePending(t *testing.T) {
 
 	// A second, even lower price found while the first alert is still
 	// pending must not create a duplicate row.
-	if err := d.CreatePriceAlertIfNonePending(ctx, itemID, 20.0, 12.0, url); err != nil {
-		t.Fatalf("CreatePriceAlertIfNonePending (second): %v", err)
+	if created, err := d.CreatePriceAlertIfNonePending(ctx, itemID, 20.0, 12.0, url); err != nil || created {
+		t.Fatalf("CreatePriceAlertIfNonePending (second) = %v, %v; want not created", created, err)
 	}
 	alerts, err := d.ListPriceAlertsByHouse(ctx, mustHouseIDForItem(t, ctx, d, itemID), "")
 	if err != nil {
@@ -68,7 +68,7 @@ func TestAcceptPriceAlert(t *testing.T) {
 	d := openTestDB(t)
 	itemID, url := setupPriceAlertItem(t, ctx, d, 20.0)
 
-	if err := d.CreatePriceAlertIfNonePending(ctx, itemID, 20.0, 15.0, url); err != nil {
+	if _, err := d.CreatePriceAlertIfNonePending(ctx, itemID, 20.0, 15.0, url); err != nil {
 		t.Fatalf("CreatePriceAlertIfNonePending: %v", err)
 	}
 	alert, err := d.GetPendingPriceAlertForItem(ctx, itemID)
@@ -110,7 +110,7 @@ func TestRejectPriceAlert(t *testing.T) {
 	d := openTestDB(t)
 	itemID, url := setupPriceAlertItem(t, ctx, d, 20.0)
 
-	if err := d.CreatePriceAlertIfNonePending(ctx, itemID, 20.0, 15.0, url); err != nil {
+	if _, err := d.CreatePriceAlertIfNonePending(ctx, itemID, 20.0, 15.0, url); err != nil {
 		t.Fatalf("CreatePriceAlertIfNonePending: %v", err)
 	}
 	alert, err := d.GetPendingPriceAlertForItem(ctx, itemID)
@@ -136,7 +136,8 @@ func TestRejectPriceAlert(t *testing.T) {
 }
 
 // TestListItemsForPriceScan exercises the eligibility filter the periodic
-// scan relies on: only not-done items with both a url and a price qualify.
+// scan relies on: not-done items with a url, with or without a price yet,
+// and without an active target price (those are RunTargetPriceScan's).
 func TestListItemsForPriceScan(t *testing.T) {
 	ctx := context.Background()
 	d := openTestDB(t)
@@ -152,6 +153,7 @@ func TestListItemsForPriceScan(t *testing.T) {
 
 	url := "https://example.com/product"
 	price := 10.0
+	target := 8.0
 
 	eligible, err := d.CreateItem(ctx, list.ID, "Éligible", &url, 1, &price, false, 0, nil, nil, nil, nil, false, nil, nil, false)
 	if err != nil {
@@ -160,8 +162,17 @@ func TestListItemsForPriceScan(t *testing.T) {
 	if _, err := d.CreateItem(ctx, list.ID, "Sans URL", nil, 1, &price, false, 0, nil, nil, nil, nil, false, nil, nil, false); err != nil {
 		t.Fatalf("creating url-less item: %v", err)
 	}
-	if _, err := d.CreateItem(ctx, list.ID, "Sans prix", &url, 1, nil, false, 0, nil, nil, nil, nil, false, nil, nil, false); err != nil {
+	priceless, err := d.CreateItem(ctx, list.ID, "Sans prix", &url, 1, nil, false, 0, nil, nil, nil, nil, false, nil, nil, false)
+	if err != nil {
 		t.Fatalf("creating price-less item: %v", err)
+	}
+	// A target price without the opt-in is not an active target price.
+	inactiveTarget, err := d.CreateItem(ctx, list.ID, "Seuil inactif", &url, 1, &price, false, 0, nil, nil, nil, nil, false, nil, &target, false)
+	if err != nil {
+		t.Fatalf("creating inactive-target item: %v", err)
+	}
+	if _, err := d.CreateItem(ctx, list.ID, "Seuil actif", &url, 1, &price, false, 0, nil, nil, nil, nil, false, nil, &target, true); err != nil {
+		t.Fatalf("creating active-target item: %v", err)
 	}
 	done, err := d.CreateItem(ctx, list.ID, "Terminé", &url, 1, &price, false, 0, nil, nil, nil, nil, false, nil, nil, false)
 	if err != nil {
@@ -176,8 +187,12 @@ func TestListItemsForPriceScan(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ListItemsForPriceScan: %v", err)
 	}
-	if len(items) != 1 || items[0].ID != eligible.ID {
-		t.Fatalf("expected exactly the eligible item, got %+v", items)
+	got := map[int64]bool{}
+	for _, it := range items {
+		got[it.ID] = true
+	}
+	if len(items) != 3 || !got[eligible.ID] || !got[priceless.ID] || !got[inactiveTarget.ID] {
+		t.Fatalf("expected the eligible, price-less and inactive-target items, got %+v", items)
 	}
 }
 

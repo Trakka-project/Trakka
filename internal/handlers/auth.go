@@ -474,7 +474,11 @@ func (app *Application) materializeInvitations(r *http.Request, user *models.Use
 // reminders_enabled, overdue_tasks_summary_enabled,
 // collaborator_actions_enabled, item_additions_enabled,
 // list_sharing_enabled (models.User.RemindersEnabled and the fields after
-// it); overdue_tasks_summary_time is an HH:MM that may be given on its own.
+// it), and the "Alertes de prix" switches — price_alerts_enabled,
+// price_drop_alerts_enabled, price_increase_alerts_enabled,
+// price_change_indicators_enabled (models.User.PriceAlertsEnabled and the
+// fields after it); overdue_tasks_summary_time is an HH:MM that may be
+// given on its own.
 func (app *Application) handleMeUpdate(w http.ResponseWriter, r *http.Request) {
 	var in struct {
 		KeepLastPage               *bool   `json:"keep_last_page"`
@@ -489,6 +493,11 @@ func (app *Application) handleMeUpdate(w http.ResponseWriter, r *http.Request) {
 		CollaboratorActionsEnabled *bool   `json:"collaborator_actions_enabled"`
 		ItemAdditionsEnabled       *bool   `json:"item_additions_enabled"`
 		ListSharingEnabled         *bool   `json:"list_sharing_enabled"`
+
+		PriceAlertsEnabled           *bool `json:"price_alerts_enabled"`
+		PriceDropAlertsEnabled       *bool `json:"price_drop_alerts_enabled"`
+		PriceIncreaseAlertsEnabled   *bool `json:"price_increase_alerts_enabled"`
+		PriceChangeIndicatorsEnabled *bool `json:"price_change_indicators_enabled"`
 	}
 	if !decodeJSON(w, r, &in) {
 		return
@@ -583,6 +592,11 @@ func (app *Application) handleMeUpdate(w http.ResponseWriter, r *http.Request) {
 		CollaboratorActionsEnabled: in.CollaboratorActionsEnabled,
 		ItemAdditionsEnabled:       in.ItemAdditionsEnabled,
 		ListSharingEnabled:         in.ListSharingEnabled,
+
+		PriceAlertsEnabled:           in.PriceAlertsEnabled,
+		PriceDropAlertsEnabled:       in.PriceDropAlertsEnabled,
+		PriceIncreaseAlertsEnabled:   in.PriceIncreaseAlertsEnabled,
+		PriceChangeIndicatorsEnabled: in.PriceChangeIndicatorsEnabled,
 	}); prefs.Any() {
 		updated, err := app.DB.UpdateUserNotificationPreferences(r.Context(), user.ID, prefs)
 		if errors.Is(err, db.ErrNotFound) {

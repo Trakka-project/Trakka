@@ -46,6 +46,10 @@ const userSettingsEls = {
   collaboratorActions: document.getElementById('user-settings-collaborator-actions'),
   itemAdditions: document.getElementById('user-settings-item-additions'),
   listSharing: document.getElementById('user-settings-list-sharing'),
+  priceDropAlerts: document.getElementById('user-settings-price-drop-alerts'),
+  priceIncreaseAlerts: document.getElementById('user-settings-price-increase-alerts'),
+  priceAlertsDisabled: document.getElementById('user-settings-price-alerts-disabled'),
+  priceIndicators: document.getElementById('user-settings-price-indicators'),
   reminderPreset: document.getElementById('user-settings-reminder-preset'),
   reminderOffset: document.getElementById('user-settings-reminder-offset'),
   reminderOffsetSuffix: document.getElementById('user-settings-reminder-offset-suffix'),
@@ -89,6 +93,14 @@ function openUserSettingsModal() {
   userSettingsEls.itemAdditions.checked = wants('item_additions_enabled');
   userSettingsEls.listSharing.checked = wants('list_sharing_enabled');
   userSettingsEls.overdueSummary.checked = Boolean(state.currentUser && state.currentUser.overdue_tasks_summary_enabled);
+  // "Alertes de prix": the same server-only, column-default fallback — drops
+  // and the visual indicators on, increases off, the master switch not
+  // engaged ("Désactiver" shows the inverse of price_alerts_enabled).
+  userSettingsEls.priceDropAlerts.checked = wants('price_drop_alerts_enabled');
+  userSettingsEls.priceIncreaseAlerts.checked = Boolean(state.currentUser && state.currentUser.price_increase_alerts_enabled);
+  userSettingsEls.priceAlertsDisabled.checked = !wants('price_alerts_enabled');
+  userSettingsEls.priceIndicators.checked = wants('price_change_indicators_enabled');
+  updatePriceAlertSwitchesState();
   userSettingsEls.overdueSummaryTime.value = (state.currentUser && state.currentUser.overdue_tasks_summary_time) || '08:00';
   updateOverdueSummaryTimeVisibility();
   // state.currentUser's own reminder_default_offset_days/_time/_at_due_time
@@ -210,6 +222,20 @@ function updateOverdueSummaryTimeVisibility() {
 
 userSettingsEls.overdueSummary.addEventListener('change', updateOverdueSummaryTimeVisibility);
 
+// "Désactiver les alertes de prix" overrides both directions: while it is
+// on they are greyed out (and left as they were, so turning alerts back on
+// restores the previous choice).
+function updatePriceAlertSwitchesState() {
+  const disabled = userSettingsEls.priceAlertsDisabled.checked;
+  for (const input of [userSettingsEls.priceDropAlerts, userSettingsEls.priceIncreaseAlerts]) {
+    input.disabled = disabled;
+    input.closest('label').classList.toggle('cursor-pointer', !disabled);
+    input.closest('label').classList.toggle('opacity-60', disabled);
+  }
+}
+
+userSettingsEls.priceAlertsDisabled.addEventListener('change', updatePriceAlertSwitchesState);
+
 userSettingsEls.reminderPreset.addEventListener('change', () => {
   updateReminderOffsetVisibility();
   // Picking "Le jour même"/"la veille" fills in its named default (0 at
@@ -269,6 +295,10 @@ userSettingsEls.form.addEventListener('submit', async (event) => {
     collaborator_actions_enabled: userSettingsEls.collaboratorActions.checked,
     item_additions_enabled: userSettingsEls.itemAdditions.checked,
     list_sharing_enabled: userSettingsEls.listSharing.checked,
+    price_alerts_enabled: !userSettingsEls.priceAlertsDisabled.checked,
+    price_drop_alerts_enabled: userSettingsEls.priceDropAlerts.checked,
+    price_increase_alerts_enabled: userSettingsEls.priceIncreaseAlerts.checked,
+    price_change_indicators_enabled: userSettingsEls.priceIndicators.checked,
     reminder_default_offset_days: reminderDefaultOffsetDays,
     reminder_default_time: reminderDefaultTime,
     reminder_default_at_due_time: reminderDefaultAtDueTime,
@@ -295,6 +325,11 @@ userSettingsEls.form.addEventListener('submit', async (event) => {
   // mirror in step immediately, rather than waiting for the next reload's
   // /me call to do it.
   setKeepLastPagePreference(keepLastPage);
+  // The visual price indicators follow state.currentUser at render time
+  // (recentPriceMovement in list_view.js): re-render whatever is on screen
+  // so turning them on or off shows right away. refreshVisibleView is
+  // defined in app.js.
+  refreshVisibleView();
   userSettingsEls.status.textContent = t('modals.userSettings.saved');
   userSettingsEls.status.hidden = false;
 });

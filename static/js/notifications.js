@@ -1,11 +1,19 @@
 'use strict';
 
-// Notification bell in the header: surfaces price_alerts (see
-// internal/handlers/price_alerts.go) — a lower price internal/scraper found
-// for one of the current house's items versus its current price — as a
-// badge count plus a drawer to accept ("Appliquer le nouveau prix", which
-// PATCHes the item's price) or reject ("Ignorer") each one. Shares `state`,
-// `els`, `apiRequest`, `showError`/`hideError`, `t`, `formatEuro`,
+// Notification bell in the header ("Alertes de prix"), with two sources:
+//
+// - price_notifications (GET /api/v1/price-notifications, see
+//   internal/handlers.notifyPriceChange): the signed-in user's own inbox of
+//   price changes on tracked items — a drop, an increase, a better price
+//   found — written whether or not push is on, so an alert never depends on
+//   push reaching this device. Opening the drawer marks the ones shown read.
+// - price_alerts (see internal/handlers/price_alerts.go): a lower price found
+//   for one of the current house's items, on its own page or on Dealabs,
+//   waiting to be accepted ("Appliquer le nouveau prix", which PATCHes the
+//   item's price) or rejected ("Ignorer").
+//
+// The badge counts the unread changes plus the pending deals. Shares
+// `state`, `els`, `apiRequest`, `showError`/`hideError`, `t`, `formatEuro`,
 // `isSafeHttpUrl`, `refreshVisibleView` with app.js/list_view.js/planning.js
 // — same classic-<script>-tags shared-scope pattern as those files.
 //
@@ -26,22 +34,134 @@ const notifEls = {
 // loadNotifications, re-rendered into the drawer whenever it's open.
 let notificationAlerts = [];
 
+// The user's price change inbox (newest first, read or not), and the ids
+// that were still unread when the drawer was last opened — those keep their
+// "Nouveau" tag for as long as the drawer stays open, even though opening it
+// already marked them read.
+let priceNotifications = [];
+let freshPriceNotificationIds = new Set();
+
+// A "deal" entry duplicates the actionable card of a pending alert for the
+// same item when that one is shown: only the card is listed then.
+function visiblePriceNotifications() {
+  const pendingItemIds = new Set(notificationAlerts.map((alert) => alert.item_id));
+  return priceNotifications.filter((n) => n.kind !== 'deal' || !pendingItemIds.has(n.item_id));
+}
+
+function unreadPriceNotifications() {
+  return visiblePriceNotifications().filter((n) => !n.read_at);
+}
+
 function updateNotificationsBadge() {
-  const count = notificationAlerts.length;
+  const count = notificationAlerts.length + unreadPriceNotifications().length;
   notifEls.badge.hidden = count === 0;
   notifEls.badge.textContent = count > 9 ? '9+' : String(count);
 }
 
+function buildNotificationsHeading(key) {
+  const li = document.createElement('li');
+  li.className = 'pt-1 text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400';
+  li.textContent = t(key);
+  return li;
+}
+
 function renderNotificationsList() {
   notifEls.list.replaceChildren();
-  if (notificationAlerts.length === 0) {
+  const changes = visiblePriceNotifications();
+  if (notificationAlerts.length === 0 && changes.length === 0) {
     const li = document.createElement('li');
     li.className = 'rounded-xl border border-dashed border-slate-200 dark:border-slate-700 p-6 text-center text-sm text-slate-500';
     li.textContent = t('notifications.empty');
     notifEls.list.appendChild(li);
     return;
   }
-  for (const alert of notificationAlerts) notifEls.list.appendChild(buildAlertRow(alert));
+  if (notificationAlerts.length > 0) {
+    notifEls.list.appendChild(buildNotificationsHeading('notifications.dealsTitle'));
+    for (const alert of notificationAlerts) notifEls.list.appendChild(buildAlertRow(alert));
+  }
+  if (changes.length > 0) {
+    notifEls.list.appendChild(buildNotificationsHeading('notifications.changesTitle'));
+    for (const n of changes) notifEls.list.appendChild(buildPriceNotificationRow(n));
+  }
+}
+
+const PRICE_NOTIFICATION_KIND = {
+  drop: { key: 'notifications.kindDrop', className: 'text-[color:var(--tk-price-drop)]' },
+  increase: { key: 'notifications.kindIncrease', className: 'text-[color:var(--tk-price-increase)]' },
+  deal: { key: 'notifications.kindDeal', className: 'text-[color:var(--tk-price-drop)]' },
+  expired: { key: 'notifications.kindExpired', className: 'text-slate-600 dark:text-slate-300' },
+};
+
+// One entry of the price change inbox: what happened, to which item, the
+// two prices, when, and — for a deal — where.
+function buildPriceNotificationRow(n) {
+  const kind = PRICE_NOTIFICATION_KIND[n.kind] || PRICE_NOTIFICATION_KIND.drop;
+  const li = document.createElement('li');
+  li.className = 'rounded-xl border border-slate-200 dark:border-slate-700 bg-white/60 dark:bg-slate-900/60 p-3';
+
+  const top = document.createElement('div');
+  top.className = 'mb-1 flex items-center justify-between gap-2';
+  const label = document.createElement('span');
+  label.className = `text-xs font-semibold ${kind.className}`;
+  label.textContent = t(kind.key);
+  top.appendChild(label);
+  if (freshPriceNotificationIds.has(n.id)) {
+    const fresh = document.createElement('span');
+    fresh.className = 'rounded-full bg-sky-500/15 px-2 py-0.5 text-[10px] font-semibold text-sky-700 dark:text-sky-300';
+    fresh.textContent = t('notifications.unread');
+    top.appendChild(fresh);
+  }
+  li.appendChild(top);
+
+  const title = document.createElement('p');
+  title.className = 'truncate text-sm font-medium text-slate-900 dark:text-slate-100';
+  title.textContent = n.item_title;
+  li.appendChild(title);
+
+  const prices = document.createElement('p');
+  prices.className = 'mt-1 flex items-center gap-2 text-sm tabular-nums';
+  const oldPrice = document.createElement('span');
+  oldPrice.className = 'text-slate-500 line-through';
+  oldPrice.textContent = formatEuro(n.old_price);
+  const arrow = document.createElement('span');
+  arrow.className = 'text-slate-500';
+  arrow.setAttribute('aria-hidden', 'true');
+  arrow.textContent = '→';
+  const newPrice = document.createElement('span');
+  newPrice.className = `font-semibold ${kind.className}`;
+  newPrice.textContent = formatEuro(n.new_price);
+  const when = document.createElement('span');
+  when.className = 'ml-auto text-xs text-slate-500';
+  when.textContent = formatNotificationDate(n.created_at);
+  if (n.kind === 'expired') {
+    // One price only: the deal's, no longer available.
+    oldPrice.textContent = t('notifications.expiredPrice', { price: formatEuro(n.old_price) });
+    oldPrice.classList.remove('line-through');
+    prices.append(oldPrice, when);
+  } else {
+    prices.append(oldPrice, arrow, newPrice, when);
+  }
+  li.appendChild(prices);
+
+  // Same defense-in-depth scheme re-check as buildAlertRow's link below.
+  if (n.source_url && isSafeHttpUrl(n.source_url)) {
+    const link = document.createElement('a');
+    link.href = n.source_url;
+    link.target = '_blank';
+    link.rel = 'noopener noreferrer';
+    link.className = 'mt-1 block truncate text-xs text-sky-600 dark:text-sky-400 hover:underline';
+    link.textContent = n.source_url;
+    li.appendChild(link);
+  }
+  return li;
+}
+
+// A short, localized day + time for an inbox entry (created_at is UTC).
+function formatNotificationDate(iso) {
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return '';
+  const lang = window.TrakkaI18n ? TrakkaI18n.getLang() : 'fr';
+  return date.toLocaleString(lang === 'en' ? 'en-GB' : 'fr-FR', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
 }
 
 function buildAlertRow(alert) {
@@ -96,6 +216,14 @@ function buildAlertRow(alert) {
     link.textContent = alert.source_url;
     li.appendChild(link);
   }
+  // A price found elsewhere (Dealabs) brings its link along when applied —
+  // the item then follows that page (db.AcceptPriceAlert): say so.
+  if (alert.changes_url) {
+    const hint = document.createElement('p');
+    hint.className = 'mb-3 text-xs text-slate-500 dark:text-slate-400';
+    hint.textContent = t('notifications.changesUrlHint');
+    li.appendChild(hint);
+  }
 
   const actions = document.createElement('div');
   actions.className = 'flex gap-2';
@@ -103,7 +231,7 @@ function buildAlertRow(alert) {
   const applyBtn = document.createElement('button');
   applyBtn.type = 'button';
   applyBtn.className = 'flex-1 rounded-xl bg-emerald-500 px-3 py-2 text-sm font-semibold text-white transition hover:bg-emerald-500 dark:hover:bg-emerald-400 active:scale-95';
-  applyBtn.textContent = t('notifications.apply');
+  applyBtn.textContent = t(alert.changes_url ? 'notifications.applyWithLink' : 'notifications.apply');
   applyBtn.addEventListener('click', () => resolveAlert(alert, 'accepted'));
 
   const ignoreBtn = document.createElement('button');
@@ -123,7 +251,15 @@ function buildAlertRow(alert) {
 // is a background refresh (house switch, offline sync completing, a tab
 // becoming visible again, ...), so a network failure just keeps the last
 // known count rather than surfacing an error banner.
+//
+// The price change inbox is the user's own, not the house's: it loads
+// whether or not a house is selected. Either request failing keeps that
+// source's last known state.
 async function loadNotifications() {
+  const inbox = apiRequest('/price-notifications').then(
+    (list) => { if (Array.isArray(list)) priceNotifications = list; },
+    () => {},
+  );
   // ensureHousesLoaded is defined in app.js, resolved lazily the same way
   // every other cross-file call in this codebase already is — see its own
   // comment for why every house-scoped loader (this one included) must
@@ -131,16 +267,37 @@ async function loadNotifications() {
   await ensureHousesLoaded();
   if (state.currentHouseId === null) {
     notificationAlerts = [];
-    updateNotificationsBadge();
-    return;
+  } else {
+    try {
+      const alerts = await apiRequest(`/price-alerts?house_id=${state.currentHouseId}&status=pending`);
+      if (Array.isArray(alerts)) notificationAlerts = alerts;
+    } catch {
+      // keep the last known alerts
+    }
   }
-  try {
-    notificationAlerts = await apiRequest(`/price-alerts?house_id=${state.currentHouseId}&status=pending`);
-  } catch {
-    return;
-  }
+  await inbox;
   updateNotificationsBadge();
-  if (!notifEls.modal.hidden) renderNotificationsList();
+  if (!notifEls.modal.hidden) {
+    renderNotificationsList();
+    markShownPriceNotificationsRead();
+  }
+}
+
+// Marks the inbox entries the drawer is showing read, server-side and
+// locally (so the badge drops them at once). They stay tagged "Nouveau"
+// until the drawer is closed. Best effort: if the request fails (offline,
+// where sw.js queues it), they are simply still unread on the next load.
+function markShownPriceNotificationsRead() {
+  const unread = unreadPriceNotifications();
+  if (unread.length === 0) return;
+  const now = new Date().toISOString();
+  for (const n of unread) {
+    freshPriceNotificationIds.add(n.id);
+    n.read_at = now;
+  }
+  renderNotificationsList();
+  updateNotificationsBadge();
+  apiRequest('/price-notifications/read', { method: 'POST', body: JSON.stringify({ ids: unread.map((n) => n.id) }) }).catch(() => {});
 }
 
 // Called from app.js's hook points (house switch, offline sync completing,
@@ -154,11 +311,13 @@ function openNotificationsModal() {
   notifEls.modal.hidden = false;
   document.body.classList.add('overflow-hidden');
   renderNotificationsList();
+  markShownPriceNotificationsRead();
 }
 
 function closeNotificationsModal() {
   notifEls.modal.hidden = true;
   document.body.classList.remove('overflow-hidden');
+  freshPriceNotificationIds = new Set();
 }
 
 notifEls.button.addEventListener('click', () => {
@@ -193,5 +352,9 @@ async function resolveAlert(alert, status) {
     if (!isNetworkError(err)) showError(err.message);
     return;
   }
+  // The inbox's "deal" entry for this item was hidden behind the card just
+  // resolved (visiblePriceNotifications): now that it would show, it is
+  // news to nobody here — mark it read rather than let it raise the badge.
+  markShownPriceNotificationsRead();
   refreshVisibleView();
 }

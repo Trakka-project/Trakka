@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 
+	"trakka/internal/db"
 	"trakka/internal/models"
 )
 
@@ -32,17 +33,20 @@ func priceAlertCondition(item *models.Item) bool {
 // On a false→true transition it sets item.PriceAlertTriggered (a
 // transient, response-only field — see models.Item.PriceAlertTriggered) so
 // the calling handler's JSON response can show an immediate in-app toast,
-// and fires a push notification to every user with access to the item's
-// list (db.ListNotificationRecipients, excluding nobody — like a recurring
+// reports true, and fires a push notification to every user with access to
+// the item's list who hasn't turned price alerts off
+// (db.ListNotificationRecipientsFor with NotifyPriceTargets — the "Alertes
+// de prix" master switch; the item's own target price is already the
+// opt-in), excluding nobody — like a recurring
 // due-date reminder, a price drop is not the result of any one person's
 // action even when a manual price edit happens to be what triggered the
 // check). Every other case (condition wasn't met, or was already true
 // before this change) is a silent no-op — this must never fail or delay
 // the request that triggered it, so delivery runs in its own detached
 // goroutine on a bounded background context, mirroring notifyListChange.
-func (app *Application) checkPriceDropAlert(item *models.Item, wasActive bool) {
+func (app *Application) checkPriceDropAlert(item *models.Item, wasActive bool) bool {
 	if wasActive || !priceAlertCondition(item) {
-		return
+		return false
 	}
 	item.PriceAlertTriggered = true
 
@@ -53,7 +57,7 @@ func (app *Application) checkPriceDropAlert(item *models.Item, wasActive bool) {
 		ctx, cancel := context.WithTimeout(context.Background(), pushSendTimeout)
 		defer cancel()
 
-		recipients, err := app.DB.ListNotificationRecipients(ctx, listID, 0)
+		recipients, err := app.DB.ListNotificationRecipientsFor(ctx, listID, 0, db.NotifyPriceTargets)
 		if err != nil {
 			app.Logger.Error("listing notification recipients for price alert", "item_id", itemID, "list_id", listID, "error", err)
 			return
@@ -69,4 +73,5 @@ func (app *Application) checkPriceDropAlert(item *models.Item, wasActive bool) {
 		}
 		app.sendToUsers(ctx, recipients, payload)
 	}()
+	return true
 }

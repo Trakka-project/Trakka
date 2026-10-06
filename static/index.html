@@ -63,7 +63,7 @@
         </div>
         <div class="relative">
           <button type="button" id="notifications-button" aria-haspopup="dialog"
-                  data-i18n-aria-label="notifications.button" aria-label="Bons plans détectés"
+                  data-i18n-aria-label="notifications.button" aria-label="Alertes de prix"
                   class="relative flex h-11 w-11 items-center justify-center rounded-full border border-slate-200 dark:border-slate-700 bg-slate-100 dark:bg-slate-800/60 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-800">
             <span aria-hidden="true" class="text-lg leading-none">🔔</span>
             <span id="notifications-badge" hidden
@@ -902,7 +902,7 @@
   <div id="notifications-modal" hidden class="fixed inset-0 z-40 flex items-end justify-center bg-slate-950/30 dark:bg-slate-950/70 p-0 sm:items-center sm:p-4">
     <div role="dialog" aria-modal="true" aria-labelledby="notifications-modal-title" class="w-full max-w-md rounded-t-2xl bg-slate-100 dark:bg-slate-800 p-5 shadow-xl sm:rounded-2xl">
       <div class="mb-4 flex items-center justify-between">
-        <h2 id="notifications-modal-title" data-i18n="notifications.title" class="text-lg font-semibold">Bons plans détectés</h2>
+        <h2 id="notifications-modal-title" data-i18n="notifications.title" class="text-lg font-semibold">Alertes de prix</h2>
         <button type="button" id="close-notifications-modal-button" data-i18n-aria-label="modals.close" aria-label="Fermer"
                 class="flex h-9 w-9 items-center justify-center rounded-lg text-slate-500 dark:text-slate-400 hover:bg-slate-300 dark:hover:bg-slate-700 hover:text-slate-900 dark:hover:text-slate-200">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" class="h-5 w-5" aria-hidden="true"><path d="M18 6L6 18M6 6l12 12"/></svg>
@@ -1373,6 +1373,73 @@
             <p id="user-settings-reminder-fallback-hint" hidden class="mt-1 text-xs text-slate-500 dark:text-slate-400" data-i18n="modals.userSettings.reminderAtDueTimeFallbackHint">Pour une tâche sans heure, le rappel arrive le jour même à cette heure.</p>
           </div>
 
+        </section>
+
+        <!-- "Alertes de prix": which price changes notify this account (users.price_*_enabled,
+             PATCH /api/v1/me, saved with the form — settings.js). The background price scans
+             run regardless of any of these, and of push: an alert always lands in the 🔔 drawer
+             too (internal/handlers.notifyPriceChange). "Désactiver" is the master switch; while
+             it is on, the two directions are greyed out. The visual indicator preference sits
+             here too, since it is about the same price changes. -->
+        <section aria-labelledby="user-settings-price-alerts-title" class="space-y-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-4 py-3">
+          <div>
+            <h3 id="user-settings-price-alerts-title" class="flex items-center gap-2 text-sm font-semibold text-slate-700 dark:text-slate-200">
+              <span aria-hidden="true">🏷️</span>
+              <span data-i18n="modals.userSettings.priceAlertsTitle">Alertes de prix</span>
+            </h3>
+            <p class="mt-0.5 text-xs font-normal text-slate-500 dark:text-slate-400" data-i18n="modals.userSettings.priceAlertsHint">Les prix de vos articles avec un lien sont vérifiés en arrière-plan, même si les notifications push sont désactivées. Les alertes s'affichent aussi dans 🔔 à l'ouverture de Trakka.</p>
+          </div>
+          <div role="group" aria-labelledby="user-settings-price-alerts-title"
+               class="divide-y divide-slate-200 dark:divide-slate-700 rounded-xl border border-slate-200 dark:border-slate-700 px-3">
+              <div class="py-3">
+                <label class="flex cursor-pointer items-center justify-between gap-3">
+                  <span class="min-w-0">
+                    <span class="block text-sm font-medium text-slate-700 dark:text-slate-200" data-i18n="modals.userSettings.priceDropAlertsLabel">Notifier en cas de baisse de prix</span>
+                    <span class="mt-0.5 block text-xs text-slate-500 dark:text-slate-400" data-i18n="modals.userSettings.priceDropAlertsHint">Le prix d'un article baisse, ou un prix plus bas est trouvé ailleurs (Dealabs)</span>
+                  </span>
+                  <span class="relative inline-flex shrink-0">
+                    <input type="checkbox" role="switch" id="user-settings-price-drop-alerts" checked class="peer sr-only">
+                    <span aria-hidden="true" class="block h-6 w-11 rounded-full bg-slate-300 dark:bg-slate-600 transition-colors peer-checked:bg-sky-500 peer-disabled:opacity-50 peer-focus-visible:ring-2 peer-focus-visible:ring-sky-500/50 peer-focus-visible:ring-offset-2 dark:peer-focus-visible:ring-offset-slate-900 after:absolute after:left-0.5 after:top-0.5 after:h-5 after:w-5 after:rounded-full after:bg-white after:shadow after:transition-transform after:content-[''] peer-checked:after:translate-x-5"></span>
+                  </span>
+                </label>
+              </div>
+              <div class="py-3">
+                <label class="flex cursor-pointer items-center justify-between gap-3">
+                  <span class="min-w-0">
+                    <span class="block text-sm font-medium text-slate-700 dark:text-slate-200" data-i18n="modals.userSettings.priceIncreaseAlertsLabel">Notifier en cas de hausse de prix</span>
+                    <span class="mt-0.5 block text-xs text-slate-500 dark:text-slate-400" data-i18n="modals.userSettings.priceIncreaseAlertsHint">Le prix d'un article augmente</span>
+                  </span>
+                  <span class="relative inline-flex shrink-0">
+                    <input type="checkbox" role="switch" id="user-settings-price-increase-alerts" class="peer sr-only">
+                    <span aria-hidden="true" class="block h-6 w-11 rounded-full bg-slate-300 dark:bg-slate-600 transition-colors peer-checked:bg-sky-500 peer-disabled:opacity-50 peer-focus-visible:ring-2 peer-focus-visible:ring-sky-500/50 peer-focus-visible:ring-offset-2 dark:peer-focus-visible:ring-offset-slate-900 after:absolute after:left-0.5 after:top-0.5 after:h-5 after:w-5 after:rounded-full after:bg-white after:shadow after:transition-transform after:content-[''] peer-checked:after:translate-x-5"></span>
+                  </span>
+                </label>
+              </div>
+              <div class="py-3">
+                <label class="flex cursor-pointer items-center justify-between gap-3">
+                  <span class="min-w-0">
+                    <span class="block text-sm font-medium text-slate-700 dark:text-slate-200" data-i18n="modals.userSettings.priceAlertsDisabledLabel">Désactiver les alertes de prix</span>
+                    <span class="mt-0.5 block text-xs text-slate-500 dark:text-slate-400" data-i18n="modals.userSettings.priceAlertsDisabledHint">Aucune alerte de prix, ni push ni dans l'application (y compris les seuils de prix). Le suivi des prix continue.</span>
+                  </span>
+                  <span class="relative inline-flex shrink-0">
+                    <input type="checkbox" role="switch" id="user-settings-price-alerts-disabled" class="peer sr-only">
+                    <span aria-hidden="true" class="block h-6 w-11 rounded-full bg-slate-300 dark:bg-slate-600 transition-colors peer-checked:bg-sky-500 peer-disabled:opacity-50 peer-focus-visible:ring-2 peer-focus-visible:ring-sky-500/50 peer-focus-visible:ring-offset-2 dark:peer-focus-visible:ring-offset-slate-900 after:absolute after:left-0.5 after:top-0.5 after:h-5 after:w-5 after:rounded-full after:bg-white after:shadow after:transition-transform after:content-[''] peer-checked:after:translate-x-5"></span>
+                  </span>
+                </label>
+              </div>
+              <div class="py-3">
+                <label class="flex cursor-pointer items-center justify-between gap-3">
+                  <span class="min-w-0">
+                    <span class="block text-sm font-medium text-slate-700 dark:text-slate-200" data-i18n="modals.userSettings.priceIndicatorsLabel">Afficher les indicateurs visuels de variation de prix</span>
+                    <span class="mt-0.5 block text-xs text-slate-500 dark:text-slate-400" data-i18n="modals.userSettings.priceIndicatorsHint">Prix en vert après une baisse, en rouge après une hausse, pendant 7 jours</span>
+                  </span>
+                  <span class="relative inline-flex shrink-0">
+                    <input type="checkbox" role="switch" id="user-settings-price-indicators" checked class="peer sr-only">
+                    <span aria-hidden="true" class="block h-6 w-11 rounded-full bg-slate-300 dark:bg-slate-600 transition-colors peer-checked:bg-sky-500 peer-disabled:opacity-50 peer-focus-visible:ring-2 peer-focus-visible:ring-sky-500/50 peer-focus-visible:ring-offset-2 dark:peer-focus-visible:ring-offset-slate-900 after:absolute after:left-0.5 after:top-0.5 after:h-5 after:w-5 after:rounded-full after:bg-white after:shadow after:transition-transform after:content-[''] peer-checked:after:translate-x-5"></span>
+                  </span>
+                </label>
+              </div>
+          </div>
         </section>
 
         <p id="user-settings-status" class="text-sm text-emerald-600 dark:text-emerald-400" role="status" hidden></p>

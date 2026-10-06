@@ -800,6 +800,45 @@ html {
   box-shadow: 0 0 0 1px rgb(14 165 233 / 0.7);
 }
 
+/* A price a background scan moved in the last few days
+   (recentPriceMovement in static/js/list_view.js, off when the user turns
+   "Afficher les indicateurs visuels de variation de prix" off): a left
+   accent bar in the direction's colour, and — the first time this page
+   shows that movement — a short glow (.item-card--price-flash) that fades
+   out. A selected card's own box-shadow (.item-card.is-selected above,
+   two classes) still wins over the accent bar. */
+.item-card--price-drop {
+  box-shadow: inset 3px 0 0 var(--tk-price-drop);
+}
+
+.item-card--price-increase {
+  box-shadow: inset 3px 0 0 var(--tk-price-increase);
+}
+
+.item-card--price-drop.item-card--price-flash {
+  animation: tk-price-drop-flash 2.4s ease-out 1;
+}
+
+.item-card--price-increase.item-card--price-flash {
+  animation: tk-price-increase-flash 2.4s ease-out 1;
+}
+
+@keyframes tk-price-drop-flash {
+  from { box-shadow: inset 3px 0 0 var(--tk-price-drop), 0 0 0 4px var(--tk-price-drop-glow); }
+  to   { box-shadow: inset 3px 0 0 var(--tk-price-drop), 0 0 0 0 transparent; }
+}
+
+@keyframes tk-price-increase-flash {
+  from { box-shadow: inset 3px 0 0 var(--tk-price-increase), 0 0 0 4px var(--tk-price-increase-glow); }
+  to   { box-shadow: inset 3px 0 0 var(--tk-price-increase), 0 0 0 0 transparent; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .item-card--price-flash {
+    animation: none !important;
+  }
+}
+
 /* Drag handle cursor + touch behavior for reorder mode's rows
    (static/js/reorder.js). `touch-action: none` on the handle specifically
    (not the whole row) is what lets the touch-drag JS fully own vertical
