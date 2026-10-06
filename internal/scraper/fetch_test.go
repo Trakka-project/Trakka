@@ -28,7 +28,7 @@ func TestFetchProductInfoSeesPriceChange(t *testing.T) {
 		cacheHeaders = append(cacheHeaders, r.Header.Get("Cache-Control")+"|"+r.Header.Get("Pragma"))
 		mu.Unlock()
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		fmt.Fprintf(w, `<html><head><title>Console de jeux</title>
+		_, _ = fmt.Fprintf(w, `<html><head><title>Console de jeux</title>
 <meta property="og:price:amount" content="%s"></head>
 <body><p class="price"><del>499,00 €</del> <span>%s €</span></p></body></html>`, current, current)
 	}))
