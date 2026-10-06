@@ -55,8 +55,16 @@ func main() {
 	// package doc for why. Capacity of 500 is generous for "what's happening
 	// right now" at the scale this app targets while staying a small,
 	// bounded amount of memory regardless of how long the process has run.
-	logHandler := logbuffer.NewHandler(slog.NewJSONHandler(os.Stdout, nil), 500)
+	var logLevel slog.Level
+	logLevelErr := logLevel.UnmarshalText([]byte(cfg.LogLevel))
+	if logLevelErr != nil {
+		logLevel = slog.LevelInfo
+	}
+	logHandler := logbuffer.NewHandler(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: logLevel}), 500)
 	logger := slog.New(logHandler)
+	if logLevelErr != nil {
+		logger.Warn("unrecognized LOG_LEVEL, using info", "value", cfg.LogLevel)
+	}
 
 	if err := cfg.Validate(); err != nil {
 		logger.Error("invalid configuration", "error", err)
@@ -151,20 +159,23 @@ func main() {
 		IdleTimeout:       60 * time.Second,
 	}
 
-	// The periodic price-drop scan runs detached from any request, on its
-	// own cancelable context, the same "never r.Context()" reasoning
+	// The periodic price scans run detached from any request, on their own
+	// cancelable context, the same "never r.Context()" reasoning
 	// scrapeProductInfo already follows — canceled only on shutdown, below.
+	// Unlike the due-reminder scan they never depend on push being
+	// configured: a price alert always reaches the in-app inbox (see
+	// handlers.notifyPriceChange), push or not.
 	priceScanCtx, cancelPriceScan := context.WithCancel(context.Background())
 	defer cancelPriceScan()
 	if cfg.PriceCheckInterval > 0 {
 		go runPriceAlertScanLoop(priceScanCtx, app, cfg.PriceCheckInterval, logger)
 	}
 
-	// The target-price scan (SCRAPE_INTERVAL) shares the same detached-context
-	// pattern — it's a distinct feature from the price-drop scan above (see
-	// config.TargetPriceScrapeInterval's doc comment for how they differ):
-	// this one re-scrapes only items with an active alert_on_price_drop
-	// threshold and writes items.price directly, with no accept/reject step.
+	// The target-price scan (SCRAPE_INTERVAL) runs the same per-item check
+	// as the scan above (handlers.trackItemPrice), on the items with an
+	// active alert_on_price_drop threshold only — which the scan above
+	// leaves out — and more often, since a user waiting on a target price
+	// wants to know soon.
 	if cfg.TargetPriceScrapeInterval > 0 {
 		go runTargetPriceScanLoop(priceScanCtx, app, cfg.TargetPriceScrapeInterval, logger)
 	}
@@ -226,8 +237,9 @@ func main() {
 	}
 }
 
-// runPriceAlertScanLoop periodically re-checks every eligible item's price
-// for a better deal (see handlers.Application.RunPriceAlertScan), stopping
+// runPriceAlertScanLoop periodically re-checks every tracked item's price —
+// following its page, recording its history, looking for a better deal
+// (see handlers.Application.RunPriceAlertScan) — stopping
 // once ctx is canceled during shutdown. It runs an initial scan right away
 // rather than waiting a full interval for the first one, so a freshly
 // deployed instance doesn't sit with an empty notification center for up to

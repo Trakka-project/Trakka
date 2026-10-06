@@ -516,8 +516,8 @@
     els.results.hidden = true;
     els.sections.hidden = false;
     els.sheet.hidden = false;
-    addedScrollLock = !document.body.classList.contains('overflow-hidden');
-    if (addedScrollLock) document.body.classList.add('overflow-hidden');
+    addedScrollLock = !TrakkaScrollLock.isLocked();
+    if (addedScrollLock) TrakkaScrollLock.lock();
     // A fine pointer means a physical keyboard is likely: start in the
     // search field. On touch, focusing it would pop the on-screen keyboard
     // over half of the grid, so the dialog itself takes focus instead.
@@ -550,7 +550,7 @@
   function close() {
     if (!isOpen()) return;
     els.sheet.hidden = true;
-    if (addedScrollLock) document.body.classList.remove('overflow-hidden');
+    if (addedScrollLock) TrakkaScrollLock.unlock();
     addedScrollLock = false;
     onSelect = null;
     if (returnFocus && typeof returnFocus.focus === 'function') returnFocus.focus();

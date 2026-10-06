@@ -108,6 +108,7 @@ const listEls = {
   itemActionsOpenLinkButton: document.getElementById('item-actions-open-link-button'),
   itemActionsCopyLinkButton: document.getElementById('item-actions-copy-link-button'),
   itemActionsShareLinkButton: document.getElementById('item-actions-share-link-button'),
+  itemActionsPriceCheckButton: document.getElementById('item-actions-price-check-button'),
   itemActionsUrgentButton: document.getElementById('item-actions-urgent-button'),
   itemActionsUrgentLabel: document.getElementById('item-actions-urgent-label'),
   itemActionsDeleteButton: document.getElementById('item-actions-delete-button'),
@@ -149,6 +150,12 @@ let labelManageItems = null;
 const PENCIL_ICON_SVG =
   '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="h-5 w-5" aria-hidden="true">' +
   '<path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4Z"/></svg>';
+
+// Static, hard-coded icon markup (never interpolates user data) for the
+// desktop "Vérifier le prix maintenant" button (see buildItemRow).
+const REFRESH_ICON_SVG =
+  '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="h-5 w-5" aria-hidden="true">' +
+  '<path d="M21 12a9 9 0 0 1-15.5 6.2L3 16"/><path d="M3 21v-5h5"/><path d="M3 12a9 9 0 0 1 15.5-6.2L21 8"/><path d="M21 3v5h-5"/></svg>';
 
 // Static, hard-coded icon markup (never interpolates user data, same rule as
 // PENCIL_ICON_SVG/TRASH_ICON_SVG) for the quantity stepper's [-]/[+] buttons.
@@ -832,12 +839,12 @@ function openSortItemsSheet() {
   if (!state.currentList) return;
   updateSortOptionChecks(state.currentList.id);
   listEls.sortItemsSheet.hidden = false;
-  document.body.classList.add('overflow-hidden');
+  TrakkaScrollLock.lock();
 }
 
 function closeSortItemsSheet() {
   listEls.sortItemsSheet.hidden = true;
-  document.body.classList.remove('overflow-hidden');
+  TrakkaScrollLock.unlock();
 }
 
 listEls.sortItemsButton.addEventListener('click', openSortItemsSheet);
@@ -873,12 +880,12 @@ for (const button of sortOptionButtons) {
 function openListOptionsSheet() {
   if (!state.currentList) return;
   listEls.listOptionsSheet.hidden = false;
-  document.body.classList.add('overflow-hidden');
+  TrakkaScrollLock.lock();
 }
 
 function closeListOptionsSheet() {
   listEls.listOptionsSheet.hidden = true;
-  document.body.classList.remove('overflow-hidden');
+  TrakkaScrollLock.unlock();
 }
 
 listEls.listOptionsButton.addEventListener('click', openListOptionsSheet);
@@ -1145,12 +1152,12 @@ function openFilterItemsSheet() {
   listEls.filterPriceMin.value = filterState.priceMin === null ? '' : filterState.priceMin;
   listEls.filterPriceMax.value = filterState.priceMax === null ? '' : filterState.priceMax;
   listEls.filterItemsSheet.hidden = false;
-  document.body.classList.add('overflow-hidden');
+  TrakkaScrollLock.lock();
 }
 
 function closeFilterItemsSheet() {
   listEls.filterItemsSheet.hidden = true;
-  document.body.classList.remove('overflow-hidden');
+  TrakkaScrollLock.unlock();
 }
 
 listEls.filterItemsButton.addEventListener('click', openFilterItemsSheet);
@@ -1600,6 +1607,79 @@ function mergeServerItem(item, updated) {
   Object.assign(item, updated);
 }
 
+// Ids of the items whose "Vérifier le prix maintenant" check is in flight:
+// their row shows 🔄 and the desktop button spins, disabled.
+const itemPriceChecksRunning = new Set();
+
+// Whether "Vérifier le prix maintenant" applies to item: it has a real http(s)
+// link to check and already exists server-side (not an offline-queued
+// local item).
+function canCheckItemPrice(item) {
+  return Boolean(item.url && isSafeHttpUrl(item.url)) && typeof item.id === 'number' && !isOfflineQueuedItem(item);
+}
+
+// "Vérifier le prix maintenant" (#item-actions-sheet, and the desktop row's
+// own button): POST /api/v1/items/{id}/price-check runs the same check as
+// the background scans for this one item — its page, then Dealabs — and can
+// take several seconds, hence the 🔄 meanwhile. The list is then reloaded
+// (refreshCurrentList, which also reloads 🔔), so the row shows the new
+// price and its ▲/▼ exactly as stored, and a toast says what happened.
+// Needs the network: a request queued offline would only run later, with no
+// one waiting for its answer.
+async function checkItemPriceNow(item) {
+  if (!canCheckItemPrice(item) || itemPriceChecksRunning.has(item.id)) return;
+  if (!navigator.onLine) {
+    window.TrakkaToast?.success(t('items.priceCheckOffline'));
+    return;
+  }
+  hideError();
+  const before = item.price;
+  itemPriceChecksRunning.add(item.id);
+  renderItems();
+  let result = null;
+  try {
+    result = await apiRequest(`/items/${item.id}/price-check`, { method: 'POST' });
+  } catch (err) {
+    if (isNetworkError(err)) window.TrakkaToast?.success(t('items.priceCheckOffline'));
+    else showError(err.message);
+  } finally {
+    itemPriceChecksRunning.delete(item.id);
+  }
+  if (!result || !result.item) {
+    renderItems();
+    return;
+  }
+  await refreshCurrentList();
+  const { message, warning } = priceCheckMessage(item.title, before, result);
+  if (warning) window.TrakkaToast?.warning(message);
+  else window.TrakkaToast?.success(message, 4000);
+}
+
+// The toast for a finished price check, from what the check read on the
+// page (result.check, see priceCheckOutcome in internal/handlers): a page
+// that couldn't be read, had no price or is an expired deal says so — it is
+// never reported as an unchanged price. Otherwise how the item's price moved,
+// then a better deal waiting in 🔔, then "unchanged" with the price read.
+function priceCheckMessage(title, before, { item, alert, check }) {
+  const status = check ? check.status : 'ok';
+  if (status === 'unreachable') {
+    return { warning: true, message: t('items.priceCheckUnreachable', { title, reason: check.error || '' }) };
+  }
+  if (status === 'no_price') return { warning: true, message: t('items.priceCheckNothing', { title }) };
+  if (status === 'deal_expired') return { warning: true, message: t('items.priceCheckDealExpired', { title }) };
+  const after = item.price;
+  if (after != null && before != null && after < before) {
+    return { message: t('items.priceCheckDropped', { title, from: formatEuro(before), to: formatEuro(after) }) };
+  }
+  if (after != null && before != null && after > before) {
+    return { message: t('items.priceCheckIncreased', { title, from: formatEuro(before), to: formatEuro(after) }) };
+  }
+  if (after != null && before == null) return { message: t('items.priceCheckFound', { title, price: formatEuro(after) }) };
+  if (alert) return { message: t('items.priceCheckDeal', { title, price: formatEuro(alert.found_price) }) };
+  const read = check && check.observed_price != null ? check.observed_price : after;
+  return { message: t('items.priceCheckUnchanged', { title, price: formatEuro(read) }) };
+}
+
 // Mirrors internal/handlers.priceAlertCondition exactly: whether item's own
 // user-set "notify me when the price drops" threshold currently holds —
 // alerting opted in, a threshold set, a price present, and that price at
@@ -1608,6 +1688,73 @@ function mergeServerItem(item, updated) {
 // card badges, whether to show the same highlighted state there.
 function priceAlertCondition(item) {
   return Boolean(item.alert_on_price_drop) && item.target_price != null && item.price != null && item.price <= item.target_price;
+}
+
+// How long a price a background scan moved (item.previous_price/
+// price_changed_at, see models.Item.PreviousPrice) stays highlighted.
+const PRICE_MOVEMENT_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
+
+// The direction a background scan recently moved item's price in — 'drop',
+// 'increase', or null when there's nothing to show: no movement recorded,
+// one older than PRICE_MOVEMENT_WINDOW_MS, a done item, or the user turned
+// "Afficher les indicateurs visuels de variation de prix" off (Paramètres,
+// users.price_change_indicators_enabled — on until /me says otherwise).
+function recentPriceMovement(item) {
+  if (state.currentUser && state.currentUser.price_change_indicators_enabled === false) return null;
+  if (item.done || item.price == null || item.previous_price == null || !item.price_changed_at) return null;
+  const changedAt = Date.parse(item.price_changed_at);
+  if (!Number.isFinite(changedAt) || Date.now() - changedAt > PRICE_MOVEMENT_WINDOW_MS) return null;
+  if (item.price < item.previous_price) return 'drop';
+  if (item.price > item.previous_price) return 'increase';
+  return null;
+}
+
+const PRICE_MOVEMENT_TEXT_CLASS = {
+  drop: 'text-[color:var(--tk-price-drop)]',
+  increase: 'text-[color:var(--tk-price-increase)]',
+};
+
+// The ▼/▲ glyph next to a moved price's own text (not the fixed-width status
+// slot, which ✨ and 🔥 can already fill), with the price before as its
+// tooltip/accessible name. In buildPriceBlock's pill it hangs just left of
+// the price (`overhang`, in the pill's own padding), taking no width: a
+// wider pill would shift that row's whole trailing group out of line with
+// its siblings (see PRICE_STATUS_SLOT_CLASS). The Compact label has no such
+// alignment to keep, so there it simply leads the text.
+function buildPriceMovementIcon(item, movement, { overhang = false } = {}) {
+  const label = t(movement === 'drop' ? 'items.priceDropped' : 'items.priceIncreased', { previous: formatEuro(item.previous_price) });
+  const icon = document.createElement('span');
+  icon.className = overhang
+    ? 'absolute right-full top-1/2 mr-px -translate-y-1/2 text-[10px]'
+    : 'mr-0.5 align-middle text-[10px]';
+  icon.textContent = movement === 'drop' ? '▼' : '▲';
+  icon.title = label;
+  icon.setAttribute('aria-label', label);
+  icon.setAttribute('role', 'img');
+  return icon;
+}
+
+// When this page first showed each movement (key: item id + when it moved).
+// The glow (.item-card--price-flash) plays once per movement: a list is
+// often rendered several times in a row (the cached copy, then the server's,
+// then after an edit), so a re-render during the glow carries it on where it
+// was, through a negative animation-delay, and one after it shows none.
+const PRICE_FLASH_MS = 2400; // base.css's tk-price-*-flash duration
+const priceMovementsFirstShown = new Map();
+
+// Adds the row-level half of the indicator (base.css's
+// .item-card--price-drop/--price-increase accent bar, plus the one-off glow)
+// to an item's <li>.
+function decoratePriceMovementRow(li, item, movement) {
+  li.classList.add(`item-card--price-${movement}`);
+  const key = `${item.id}:${item.price_changed_at}`;
+  const now = Date.now();
+  if (!priceMovementsFirstShown.has(key)) priceMovementsFirstShown.set(key, now);
+  const elapsed = now - priceMovementsFirstShown.get(key);
+  if (elapsed < PRICE_FLASH_MS) {
+    li.classList.add('item-card--price-flash');
+    li.style.animationDelay = `-${elapsed}ms`;
+  }
 }
 
 // A single eye-catching 🔥 glyph shown once an item's price has reached the
@@ -1829,14 +1976,14 @@ function openImagePreview(item) {
   listEls.imagePreviewImg.src = item.image_url;
   listEls.imagePreviewImg.alt = item.title;
   listEls.imagePreviewModal.hidden = false;
-  document.body.classList.add('overflow-hidden');
+  TrakkaScrollLock.lock();
   listEls.closeImagePreviewButton.focus();
 }
 
 function closeImagePreview() {
   listEls.imagePreviewModal.hidden = true;
   listEls.imagePreviewImg.src = '';
-  document.body.classList.remove('overflow-hidden');
+  TrakkaScrollLock.unlock();
 }
 
 listEls.closeImagePreviewButton.addEventListener('click', closeImagePreview);
@@ -1909,17 +2056,23 @@ function buildCompactPriceLabel(item) {
     // stay glued together if this row's other trailing content ever wraps.
     const wrapper = document.createElement('span');
     wrapper.className = 'flex shrink-0 items-center gap-1';
+    const movement = recentPriceMovement(item);
     const label = document.createElement('span');
-    label.className = 'text-sm font-semibold tabular-nums text-[color:var(--tk-money-total)]';
+    label.className = `text-sm font-semibold tabular-nums ${movement ? PRICE_MOVEMENT_TEXT_CLASS[movement] : 'text-[color:var(--tk-money-total)]'}`;
     label.textContent = formatEuro(lineTotal(item));
+    if (movement) label.prepend(buildPriceMovementIcon(item, movement));
     wrapper.appendChild(label);
-    if (item.price_auto) wrapper.appendChild(buildAutoPriceIcon(item));
+    if (itemPriceChecksRunning.has(item.id)) {
+      wrapper.appendChild(buildPendingPriceIcon('🔄', t('items.priceChecking'), 'animate-pulse text-sky-600 dark:text-sky-300'));
+    } else if (item.price_auto) {
+      wrapper.appendChild(buildAutoPriceIcon(item));
+    }
     return wrapper;
   }
   if (item.url && isOfflineQueuedItem(item)) {
     return buildPendingPriceIcon('⏳', t('items.priceSyncPending'), 'text-amber-600 dark:text-amber-300');
   }
-  if (item.url && item.priceScrapePending) {
+  if (item.url && (item.priceScrapePending || itemPriceChecksRunning.has(item.id))) {
     return buildPendingPriceIcon('🔄', t('items.priceDetecting'), 'animate-pulse text-sky-600 dark:text-sky-300');
   }
   return null;
@@ -2021,11 +2174,21 @@ function buildPriceBlock(item, { showPrice }) {
 
   if (item.price != null) {
     price.textContent = formatEuro(lineTotal(item));
-    if (item.price_auto) statusSlot.appendChild(buildAutoPriceIcon(item));
+    const movement = recentPriceMovement(item);
+    if (movement) {
+      price.classList.remove('text-[color:var(--tk-money-total)]');
+      price.classList.add(PRICE_MOVEMENT_TEXT_CLASS[movement], 'relative');
+      price.prepend(buildPriceMovementIcon(item, movement, { overhang: true }));
+    }
+    if (itemPriceChecksRunning.has(item.id)) {
+      statusSlot.appendChild(buildPendingPriceIcon('🔄', t('items.priceChecking'), 'animate-pulse text-sky-600 dark:text-sky-300'));
+    } else if (item.price_auto) {
+      statusSlot.appendChild(buildAutoPriceIcon(item));
+    }
     if (priceAlertCondition(item)) statusSlot.appendChild(buildPriceAlertIcon(item));
   } else if (item.url && isOfflineQueuedItem(item)) {
     statusSlot.appendChild(buildPendingPriceIcon('⏳', t('items.priceSyncPending'), 'text-amber-600 dark:text-amber-300'));
-  } else if (item.url && item.priceScrapePending) {
+  } else if (item.url && (item.priceScrapePending || itemPriceChecksRunning.has(item.id))) {
     statusSlot.appendChild(buildPendingPriceIcon('🔄', t('items.priceDetecting'), 'animate-pulse text-sky-600 dark:text-sky-300'));
   }
   // else: no price yet and nothing pending either — both cells stay empty,
@@ -2238,6 +2401,10 @@ function buildItemRow(item, { showCheckbox = true, index, showQuantity = true, s
   li.className = urgent
     ? `${shapeClasses} border-2 border-rose-500/60 bg-rose-500/5`
     : `${shapeClasses} border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/30`;
+  // Only where the row shows a price at all (showPrice — not a to-do or
+  // custom list).
+  const priceMovement = showPrice ? recentPriceMovement(item) : null;
+  if (priceMovement) decoratePriceMovementRow(li, item, priceMovement);
 
   // rowTop: checkbox/marker + thumbnail + title + edit/delete + kebab — see
   // the header comment above for why this wrapper exists and why it needs
@@ -2438,6 +2605,19 @@ function buildItemRow(item, { showCheckbox = true, index, showQuantity = true, s
   if (!selecting) {
     const actions = document.createElement('div');
     actions.className = 'item-card__actions hidden shrink-0 items-center gap-1 md:flex';
+
+    if (showPrice && canCheckItemPrice(item)) {
+      const running = itemPriceChecksRunning.has(item.id);
+      const checkBtn = document.createElement('button');
+      checkBtn.type = 'button';
+      checkBtn.setAttribute('aria-label', t('items.checkPriceAriaLabel', { title: item.title }));
+      checkBtn.title = t('modals.itemActions.checkPrice');
+      checkBtn.disabled = running;
+      checkBtn.className = `flex h-11 w-11 shrink-0 items-center justify-center rounded-lg text-slate-500 hover:bg-sky-500/10 hover:text-sky-600 dark:hover:text-sky-400 disabled:cursor-wait${running ? ' animate-spin' : ''}`;
+      checkBtn.innerHTML = REFRESH_ICON_SVG;
+      checkBtn.addEventListener('click', () => checkItemPriceNow(item));
+      actions.appendChild(checkBtn);
+    }
 
     const editBtn = document.createElement('button');
     editBtn.type = 'button';
@@ -2736,6 +2916,10 @@ async function refreshCurrentList() {
   try {
     state.currentList = await apiRequest(`/lists/${state.currentListId}`);
     renderItems();
+    // A reload can bring a price a background scan just moved (its ▲/▼):
+    // reload the 🔔 inbox with it, so the two never disagree.
+    // refreshNotifications is defined in notifications.js.
+    refreshNotifications();
   } catch (err) {
     // Offline, or a transient server error: fall back to the local mirror
     // rather than leaving the item list stuck on stale data with no
@@ -2883,6 +3067,8 @@ async function selectList(id, opts = {}) {
   state.currentList = list;
   setListActionButtonsEnabled(true);
   renderItems();
+  // Same reason as refreshCurrentList: keep 🔔 in step with the indicators.
+  refreshNotifications();
   // saveLastView is defined in app.js — see the "keep last page on launch"
   // preference there.
   saveLastView({ type: 'list', id });
@@ -3461,7 +3647,7 @@ function openEditItemModal(item, { focus } = {}) {
   listEls.editItemUrgent.checked = Boolean(item.is_urgent);
   renderEditItemLabelsPreview(item);
   listEls.editItemModal.hidden = false;
-  document.body.classList.add('overflow-hidden');
+  TrakkaScrollLock.lock();
   if (focus === 'due-date' && !listEls.editItemDueDate.closest('[data-item-field]').hidden) {
     listEls.editItemDueDate.focus();
     listEls.editItemDueDate.scrollIntoView({ block: 'center' });
@@ -3492,7 +3678,7 @@ listEls.editItemPrice.addEventListener('input', () => {
 function closeEditItemModal() {
   editingItem = null;
   listEls.editItemModal.hidden = true;
-  document.body.classList.remove('overflow-hidden');
+  TrakkaScrollLock.unlock();
 }
 
 listEls.closeEditItemModalButton.addEventListener('click', closeEditItemModal);
@@ -3527,9 +3713,10 @@ function openItemActionsSheet(item, { focusLink = false } = {}) {
   listEls.itemActionsSheetMeta.hidden = listEls.itemActionsSheetMeta.children.length === 0;
   const hasLink = Boolean(item.url && isSafeHttpUrl(item.url));
   listEls.itemActionsLinkGroup.hidden = !hasLink;
+  listEls.itemActionsPriceCheckButton.hidden = !(canCheckItemPrice(item) && fieldVisibilityFor(state.currentList?.type).price);
   listEls.itemActionsUrgentLabel.textContent = t(item.is_urgent ? 'modals.itemActions.unmarkUrgent' : 'modals.itemActions.markUrgent');
   listEls.itemActionsSheet.hidden = false;
-  document.body.classList.add('overflow-hidden');
+  TrakkaScrollLock.lock();
   if (focusLink && hasLink) {
     listEls.itemActionsOpenLinkButton.focus();
   }
@@ -3538,7 +3725,7 @@ function openItemActionsSheet(item, { focusLink = false } = {}) {
 function closeItemActionsSheet() {
   itemActionsSheetItem = null;
   listEls.itemActionsSheet.hidden = true;
-  document.body.classList.remove('overflow-hidden');
+  TrakkaScrollLock.unlock();
 }
 
 listEls.closeItemActionsSheetButton.addEventListener('click', closeItemActionsSheet);
@@ -3577,6 +3764,12 @@ listEls.itemActionsShareLinkButton.addEventListener('click', () => {
   const item = itemActionsSheetItem;
   closeItemActionsSheet();
   if (item) shareLink(item);
+});
+
+listEls.itemActionsPriceCheckButton.addEventListener('click', () => {
+  const item = itemActionsSheetItem;
+  closeItemActionsSheet();
+  if (item) checkItemPriceNow(item);
 });
 
 listEls.itemActionsUrgentButton.addEventListener('click', () => {
@@ -3834,14 +4027,14 @@ function openLabelManageSheet(items) {
   listEls.labelManageSearch.value = '';
   renderLabelManageSheetChips();
   listEls.labelManageSheet.hidden = false;
-  document.body.classList.add('overflow-hidden');
+  TrakkaScrollLock.lock();
   listEls.labelManageSearch.focus();
 }
 
 function closeLabelManageSheet() {
   labelManageItems = null;
   listEls.labelManageSheet.hidden = true;
-  document.body.classList.remove('overflow-hidden');
+  TrakkaScrollLock.unlock();
 }
 
 listEls.closeLabelManageSheetButton.addEventListener('click', closeLabelManageSheet);

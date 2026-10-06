@@ -587,13 +587,13 @@ function openSpaceCardActionsSheet(category) {
   spacesEls.spaceCardActionsPinIcon.textContent = pinned ? '📍' : '📌';
   spacesEls.spaceCardActionsPinLabel.textContent = t(pinned ? 'modals.listActions.unpinSpace' : 'modals.listActions.pinSpace');
   spacesEls.spaceCardActionsSheet.hidden = false;
-  document.body.classList.add('overflow-hidden');
+  TrakkaScrollLock.lock();
 }
 
 function closeSpaceCardActionsSheet() {
   spaceCardActionsSheetCategory = null;
   spacesEls.spaceCardActionsSheet.hidden = true;
-  document.body.classList.remove('overflow-hidden');
+  TrakkaScrollLock.unlock();
 }
 
 spacesEls.closeSpaceCardActionsSheetButton.addEventListener('click', closeSpaceCardActionsSheet);
@@ -697,7 +697,7 @@ function openCategoryModal(category, { onCreated } = {}) {
   spacesEls.deleteCategoryButton.hidden = !editingCategory;
 
   spacesEls.categoryModal.hidden = false;
-  document.body.classList.add('overflow-hidden');
+  TrakkaScrollLock.lock();
   spacesEls.categoryName.focus();
 }
 
@@ -708,7 +708,7 @@ function closeCategoryModal() {
   // the shared body scroll-lock if that other modal isn't still open —
   // otherwise closing this one would let the page scroll behind it.
   if (els.newListModal.hidden) {
-    document.body.classList.remove('overflow-hidden');
+    TrakkaScrollLock.unlock();
   }
   editingCategory = null;
   categoryCreatedCallback = null;

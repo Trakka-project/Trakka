@@ -90,7 +90,7 @@ The **overdue-tasks summary**: once a day at `overdue_tasks_summary_time` (`stri
 
 ### `PATCH /api/v1/me`
 
-Partial update of the caller's own profile preferences — `keep_last_page`, `language`, `vibrate_on_notification`, the notification types above (`reminders_enabled`, `overdue_tasks_summary_enabled`, `overdue_tasks_summary_time`, `collaborator_actions_enabled`, `item_additions_enabled`, `list_sharing_enabled`), and/or `reminder_default_offset_days`/`reminder_default_time` — following the same "absent = untouched" convention as `PATCH /api/v1/items/{id}`; any subset may be present in one request. Returns the updated user (same shape as `GET /api/v1/me`). `language` must be `"fr"` or `"en"`, or the request is rejected with `400`. `reminder_default_offset_days`/`reminder_default_time` must be given together (sending only one is rejected with `400`, since the pair is meaningless half-updated); `reminder_default_offset_days` must be ≥ 0 and `reminder_default_time` must be a real `HH:MM` time, else `400`. `reminder_default_at_due_time` may only be sent with that pair (`400` otherwise), and the pair sent without it saves `false` — so a client unaware of the at-due-time preset still saves a plain offset default. `overdue_tasks_summary_time` may be sent on its own, and must be a real, non-empty `HH:MM` time, else `400`.
+Partial update of the caller's own profile preferences — `keep_last_page`, `language`, `vibrate_on_notification`, the notification types above (`reminders_enabled`, `overdue_tasks_summary_enabled`, `overdue_tasks_summary_time`, `collaborator_actions_enabled`, `item_additions_enabled`, `list_sharing_enabled`), the [price alert](#price-tracking) switches (`price_alerts_enabled` — the master switch, `price_drop_alerts_enabled`, `price_increase_alerts_enabled`, `price_change_indicators_enabled`; plain booleans), and/or `reminder_default_offset_days`/`reminder_default_time` — following the same "absent = untouched" convention as `PATCH /api/v1/items/{id}`; any subset may be present in one request. Returns the updated user (same shape as `GET /api/v1/me`). `language` must be `"fr"` or `"en"`, or the request is rejected with `400`. `reminder_default_offset_days`/`reminder_default_time` must be given together (sending only one is rejected with `400`, since the pair is meaningless half-updated); `reminder_default_offset_days` must be ≥ 0 and `reminder_default_time` must be a real `HH:MM` time, else `400`. `reminder_default_at_due_time` may only be sent with that pair (`400` otherwise), and the pair sent without it saves `false` — so a client unaware of the at-due-time preset still saves a plain offset default. `overdue_tasks_summary_time` may be sent on its own, and must be a real, non-empty `HH:MM` time, else `400`.
 
 ```bash
 curl -b cookies.txt -X PATCH http://localhost:8080/api/v1/me \
@@ -99,6 +99,10 @@ curl -b cookies.txt -X PATCH http://localhost:8080/api/v1/me \
 # "À l'heure exacte de l'échéance", falling back to 08:30 the same day for a task without a time
 curl -b cookies.txt -X PATCH http://localhost:8080/api/v1/me \
   -H 'Content-Type: application/json' -d '{"reminder_default_offset_days": 0, "reminder_default_time": "08:30", "reminder_default_at_due_time": true}'
+
+# Price alerts in both directions, no green/red price indicators in lists
+curl -b cookies.txt -X PATCH http://localhost:8080/api/v1/me \
+  -H 'Content-Type: application/json' -d '{"price_increase_alerts_enabled": true, "price_change_indicators_enabled": false}'
 
 # No per-task reminders and no "item added" pushes; a summary of overdue tasks every morning at 07:30
 curl -b cookies.txt -X PATCH http://localhost:8080/api/v1/me \
@@ -569,7 +573,9 @@ curl -X PATCH http://localhost:8080/api/v1/items/1 -d '{"price": 12.99}'
 # => {"id": 1, ..., "price": 12.99, "target_price": 15, "alert_on_price_drop": true, "price_alert_triggered": true}
 ```
 
-In addition to the request-time paths above, a periodic background worker (`internal/handlers.RunTargetPriceScan`, every `SCRAPE_INTERVAL`, default `12h`; see [docs/DEPLOYMENT.md](DEPLOYMENT.md)) independently re-scrapes every not-done item that has a `url`, `alert_on_price_drop: true`, and a `target_price` set (`db.ListItemsForTargetPriceScan`), regardless of whether anyone has touched it recently — this is what catches a price drop on a tracked item nobody happens to edit or re-open. It waits 5 seconds between items (a fixed, not-yet-configurable delay) specifically to avoid hammering a merchant's site with a burst of near-simultaneous requests from this server's IP. Applying a newly-scraped price is a compare-and-swap against the price/url the scan read at the start of that item's check (`db.UpdateItemPriceFromScan`), so a user's own concurrent edit — or a different scan resolving the same item first — is never clobbered; a lost race is silently skipped, the same "not an error" contract every other scraper-driven path in this app follows. A price change that's actually applied runs through the exact same false→true threshold check described above, so it triggers a push notification the same way a manual edit does — there is just no HTTP response for this path to attach an in-app toast to.
+The push goes to every user with access to the item's list who hasn't turned price alerts off (`price_alerts_enabled`, see [Price tracking](#price-tracking)); the item's own threshold is already the opt-in, so the per-direction switches don't apply to it.
+
+In addition to the request-time paths above, a periodic background worker (`internal/handlers.RunTargetPriceScan`, every `SCRAPE_INTERVAL`, default `12h`; see [docs/DEPLOYMENT.md](DEPLOYMENT.md)) independently re-checks — with the same per-item check as the [price tracking](#price-tracking) scan — every not-done item that has a `url`, `alert_on_price_drop: true`, and a `target_price` set (`db.ListItemsForTargetPriceScan`), regardless of whether anyone has touched it recently — this is what catches a price drop on a tracked item nobody happens to edit or re-open. It waits 5 seconds between items (a fixed, not-yet-configurable delay) specifically to avoid hammering a merchant's site with a burst of near-simultaneous requests from this server's IP. Applying a newly-scraped price is a compare-and-swap against the price/url the scan read at the start of that item's check (`db.UpdateItemPriceFromScan`), so a user's own concurrent edit — or a different scan resolving the same item first — is never clobbered; a lost race is silently skipped, the same "not an error" contract every other scraper-driven path in this app follows. A price change that's actually applied runs through the exact same false→true threshold check described above, so it triggers a push notification the same way a manual edit does — there is just no HTTP response for this path to attach an in-app toast to.
 
 See [docs/DOC_TEST_PRICE_ALERTS.md](DOC_TEST_PRICE_ALERTS.md) for a step-by-step manual QA recipe covering this feature end to end (badge, toast, push, and the scraper-driven path).
 
@@ -615,15 +621,59 @@ curl -X PATCH http://localhost:8080/api/v1/items/1 -d '{"recurrence_rule": ""}'
 
 ### `POST /api/v1/items/{id}/price-check`
 
-Triggers an immediate, synchronous re-check of this one item's product page for a lower price than what's currently recorded — the on-demand counterpart to the periodic background scan described under "Price alerts" below. `400` if the item has no `url` or no `price` to compare against (nothing to check). `404` if not found, `403` unless the caller has **write** [access](#sharing) to the item's list. Otherwise `200` with `{"alert": null}` if nothing lower was found (or a lower price was already known via an earlier still-pending alert for this item), or `{"alert": {...}}` with the pending alert (freshly created, or the pre-existing one) if one exists.
+Runs the [price tracking](#price-tracking) check for this one item right away — the on-demand counterpart to the periodic scans, behind the "Vérifier le prix maintenant" item action (the item's actions sheet, and a 🔄 button next to ✏️/🗑️ on wide screens) — as a **manual** check: the item's own page is fetched and, if it shows a price different from the item's, that price is applied, **even a typed-in one** (the user asked for the page's price; the item follows its page from then on, `price_auto: true`). With `DEAL_SEARCH_ENABLED`, Dealabs is searched too. `400` if the item has no `url`. `404` if not found, `403` unless the caller has **write** [access](#sharing) to the item's list. Otherwise `200`:
+
+```json
+{"item": {...}, "alert": null,
+ "check": {"status": "ok", "observed_price": 419}}
+```
+
+- `item` — the item as it stands after the check (`price`, `previous_price`, `price_changed_at` updated if the page moved it).
+- `alert` — the item's pending price alert (freshly created, or one from an earlier check still pending), or `null`.
+- `check` — what the check read on the page, so an unread page is never mistaken for an unchanged price: `status` is `ok` (a price was read: `observed_price`), `unreachable` (the page couldn't be read: `error`, e.g. `"unexpected status 403"`), `no_price` (read, but no price on it) or `deal_expired` (a Dealabs deal that has expired). Only `ok` can change the item.
+
+Bounded by 10s for the page plus 8s for the deal search. With `LOG_LEVEL=debug`, every step is logged (see [docs/DEPLOYMENT.md](DEPLOYMENT.md)).
 
 ```bash
 curl -X POST http://localhost:8080/api/v1/items/1/price-check
 ```
 
+### `GET /api/v1/items/{id}/price-history`
+
+The prices observed on the item's own page over time, oldest first (last 100): `[{"price": 499, "recorded_at": "..."}, ...]`. A price is recorded when the item's price is first scraped and whenever a later check sees a different one — see [Price tracking](#price-tracking). `404` if not found, `403` unless the caller has at least read [access](#sharing) to the item's list.
+
+## Price tracking
+
+Every not-done item with a `url` (outside `custom` lists) is re-checked in the background, whether or not push notifications are configured or enabled — turning notifications off never stops price checks. Two scans share one per-item check (`internal/handlers.trackItemPrice`) on disjoint sets of items: items with an active [target price](#price-drop-alerts) every `SCRAPE_INTERVAL` (default `12h`), every other tracked item every `PRICE_CHECK_INTERVAL_HOURS` (default `24`), 5 seconds apart (see [docs/DEPLOYMENT.md](DEPLOYMENT.md)). For each item:
+
+1. **Its own page** is fetched — with `Cache-Control: no-cache`/`Pragma: no-cache`, so a CDN or proxy in front of the site serves its current copy (this server keeps no cache of its own). The price shown there is recorded in the item's [price history](#get-apiv1itemsidprice-history) when it differs from the last price recorded there (the history is what the page showed, compared with the page's previous reading — the item is compared with its own price, step 2). That page may be a Dealabs deal the user accepted (see [Price alerts](#price-alerts)): its price is then read from the deal itself, and once the deal has expired it is no longer followed — the item's list is told once (`expired`, below) that the item needs a new link.
+2. If the item's price **follows its page** — it has none yet, it was found by the scraper (`price_auto: true`), or the item has an active target price — a different price is applied. When it replaces an earlier price, the item records the movement: `previous_price` (the price before) and `price_changed_at` (when, UTC) — the list view colours a drop green and an increase red for 7 days (unless the user turned `price_change_indicators_enabled` off). A manual `price` or `url` edit clears both. The change is announced as a `drop` or an `increase` (below), and the target price re-checked.
+   In a background scan, a price the user **typed in** is not overwritten: a lower one on the page is proposed as a [price alert](#price-alerts) instead. A [manual check](#post-apiv1itemsidprice-check) applies the page's price whatever it was, and the item follows its page from then on.
+3. With `DEAL_SEARCH_ENABLED` (default on), the item's **title is searched on Dealabs** (www.dealabs.com) — only when it names a specific product: at least two words one of which has a digit (a model number: "Sony WH-1000XM5") or at least three words. Of the active, non-local deals whose title contains every word of the query, the cheapest one below the item's price — but not below half of it, which would almost always be an accessory or a different product — is proposed as a price alert, linking to the deal. Idealo, LeDenicheur and Google Shopping aren't searched: the first two block automated requests (and LeDenicheur's robots.txt disallows its search), the last has no public search API.
+
+A price alert is proposed once: not while the item already has a pending one, and never again for the same price at the same place once accepted or rejected. Accepting one switches the item to it: price **and** url (see [Price alerts](#price-alerts)).
+
+**Who is told**: every user with access to the item's list, according to their own Paramètres → "Alertes de prix" (`PATCH /api/v1/me`): `price_drop_alerts_enabled` (on by default) for a `drop` and for a better price proposed (`deal`), `price_increase_alerts_enabled` (off by default) for an `increase`, and `price_alerts_enabled` — "Désactiver les alertes de prix" when off — over all of them, over an `expired` deal and over target prices. Every user with access to the list gets an entry in their **in-app inbox** (below), shown in the 🔔 drawer, whatever their settings — the inbox applies each user's *current* settings when it is read, so it always agrees with them and with the list's ▲/▼ indicators (turning `price_increase_alerts_enabled` on shows the increases already detected, not only the next ones). Those who want that kind of alert at the time also get a push notification on whichever devices are subscribed. The inbox entry is what decouples alerts from push: with push off, never set up, or not configured on the instance, the alert is waiting the next time Trakka is opened. A scan move that reaches a target price pushes only the target price's "Bonne affaire", not a second notification about the same drop (the drop is still in the inbox).
+
+### `GET /api/v1/price-notifications`
+
+The caller's own inbox, newest first, read or not (last 50) — only the kinds they currently want (`price_alerts_enabled`, then `price_drop_alerts_enabled` for `drop`/`deal` or `price_increase_alerts_enabled` for `increase`; `expired` under the master switch alone), and only for items on lists they can still access. Read entries are deleted after 30 days, unread ones after 90.
+
+```json
+[{"id": 3, "item_id": 1, "item_title": "Console Nintendo Switch 2", "list_id": 1, "kind": "deal",
+  "old_price": 499, "new_price": 419, "source_url": "https://www.dealabs.com/bons-plans/console-nintendo-switch-2-3420521",
+  "created_at": "2026-10-06T08:17:49.024Z"}]
+```
+
+`kind` is `drop`/`increase` (the item's price moved from `old_price` to `new_price`), `deal` (`new_price` was found at `source_url` and waits as a pending price alert) or `expired` (the Dealabs deal at `source_url` the item follows has expired; `old_price` = `new_price` = its price). `read_at` is present once read.
+
+### `POST /api/v1/price-notifications/read`
+
+Marks the caller's own entries read: `{"ids": [3, 4]}` (at most 200), or `{}` for all of them. An id that isn't the caller's is ignored. `204`.
+
 ## Price alerts
 
-A price alert records a lower price found for an item's `url` than its current `price` — created either by a periodic background scan (every `PRICE_CHECK_INTERVAL_HOURS`, default 24; see [docs/DEPLOYMENT.md](DEPLOYMENT.md)) or by `POST /api/v1/items/{id}/price-check` above. Every alert starts `pending` and is resolved exactly once, either `accepted` (applies `found_price` to the item, marking it `price_auto: true`) or `rejected` (dismissed, item untouched) — see `internal/db.AcceptPriceAlert`/`RejectPriceAlert` in [CLAUDE.md](../CLAUDE.md). The frontend surfaces pending alerts as a badge count on the header's 🔔 button, with a drawer to accept/reject each one (`static/js/notifications.js`).
+A price alert records a lower price found for an item than its current `price` — on its own page (when the price was typed in, see [Price tracking](#price-tracking)) or on Dealabs — created by the background scans or by `POST /api/v1/items/{id}/price-check` above. Every alert starts `pending` and is resolved exactly once, either `accepted` or `rejected` (dismissed, item untouched) — see `internal/db.AcceptPriceAlert`/`RejectPriceAlert`. **Accepting switches the item to the alert's source**: its `price` becomes `found_price` **and** its `url` becomes `source_url`, and the price follows that page from then on (`price_auto: true`) — the next checks track the price the user chose, at the place they chose it. For a lower price on the item's own page the url doesn't change. For a Dealabs deal the url becomes the deal page: Dealabs only exposes the merchant's own link through a `/visit/` redirect its robots.txt disallows, so the deal page is the one link this server can follow — its price is read from the deal, and when the deal expires the list is told (see [Price tracking](#price-tracking)). Accepting also clears `previous_price`/`price_changed_at` (the user's choice isn't a movement at the store), keeps `image_url` (same product), and starts the new url's price history with `found_price`. A `source_url` that doesn't pass the server's url validation is refused with `409` and the item is left untouched. Each alert carries `changes_url` (read-only): whether accepting would replace the item's url, which the 🔔 drawer words as "Appliquer ce prix et ce lien".
 
 ### `GET /api/v1/price-alerts?house_id={id}`
 
@@ -633,7 +683,7 @@ A price alert records a lower price found for an item's `url` than its current `
 curl -b cookies.txt "http://localhost:8080/api/v1/price-alerts?house_id=1&status=pending"
 ```
 
-Each alert includes `item_title` and `list_id` (joined in for display and click-through, never writable) alongside `item_id`, `original_price` (a snapshot of the item's price when the alert was created), `found_price`, `source_url`, `status`, and `created_at`.
+Each alert includes `item_title`, `list_id` and `changes_url` (joined in from the item at read time, never writable) alongside `item_id`, `original_price` (a snapshot of the item's price when the alert was created), `found_price`, `source_url`, `status`, and `created_at`.
 
 ### `PATCH /api/v1/price-alerts/{id}`
 
@@ -645,7 +695,7 @@ curl -X PATCH http://localhost:8080/api/v1/price-alerts/1 -d '{"status": "accept
 curl -X PATCH http://localhost:8080/api/v1/price-alerts/1 -d '{"status": "rejected"}'
 ```
 
-`status` is required and must be `"accepted"` or `"rejected"`. `404` if not found, `403` unless the caller has **write** [access](#sharing) to the alert's item's list, `409` if the alert was already resolved (an alert can only ever be actioned once, whichever status wins the race). `200` with the updated alert otherwise.
+`status` is required and must be `"accepted"` or `"rejected"`. `404` if not found, `403` unless the caller has **write** [access](#sharing) to the alert's item's list, `409` if its `source_url` isn't a valid http(s) url (on accept) or if the alert was already resolved (an alert can only ever be actioned once, whichever status wins the race). `200` with the updated alert otherwise.
 
 ## Push notifications
 

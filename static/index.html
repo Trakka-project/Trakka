@@ -63,7 +63,7 @@
         </div>
         <div class="relative">
           <button type="button" id="notifications-button" aria-haspopup="dialog"
-                  data-i18n-aria-label="notifications.button" aria-label="Bons plans détectés"
+                  data-i18n-aria-label="notifications.button" aria-label="Alertes de prix"
                   class="relative flex h-11 w-11 items-center justify-center rounded-full border border-slate-200 dark:border-slate-700 bg-slate-100 dark:bg-slate-800/60 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-800">
             <span aria-hidden="true" class="text-lg leading-none">🔔</span>
             <span id="notifications-badge" hidden
@@ -902,7 +902,7 @@
   <div id="notifications-modal" hidden class="fixed inset-0 z-40 flex items-end justify-center bg-slate-950/30 dark:bg-slate-950/70 p-0 sm:items-center sm:p-4">
     <div role="dialog" aria-modal="true" aria-labelledby="notifications-modal-title" class="w-full max-w-md rounded-t-2xl bg-slate-100 dark:bg-slate-800 p-5 shadow-xl sm:rounded-2xl">
       <div class="mb-4 flex items-center justify-between">
-        <h2 id="notifications-modal-title" data-i18n="notifications.title" class="text-lg font-semibold">Bons plans détectés</h2>
+        <h2 id="notifications-modal-title" data-i18n="notifications.title" class="text-lg font-semibold">Alertes de prix</h2>
         <button type="button" id="close-notifications-modal-button" data-i18n-aria-label="modals.close" aria-label="Fermer"
                 class="flex h-9 w-9 items-center justify-center rounded-lg text-slate-500 dark:text-slate-400 hover:bg-slate-300 dark:hover:bg-slate-700 hover:text-slate-900 dark:hover:text-slate-200">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" class="h-5 w-5" aria-hidden="true"><path d="M18 6L6 18M6 6l12 12"/></svg>
@@ -1190,8 +1190,12 @@
   </div>
 
   <div id="user-settings-modal" hidden class="fixed inset-0 z-40 flex items-end justify-center bg-slate-950/30 dark:bg-slate-950/70 p-0 sm:items-center sm:p-4">
-    <div role="dialog" aria-modal="true" aria-labelledby="user-settings-modal-title" class="max-h-[90vh] w-full max-w-md overflow-y-auto rounded-t-2xl bg-slate-100 dark:bg-slate-800 p-5 shadow-xl sm:rounded-2xl">
-      <div class="mb-4 flex items-center justify-between">
+    <!-- Same layout as #admin-console-modal: the header (with ✕) and the tab bar never
+         scroll; only #user-settings-body does, and the "Enregistrer" footer stays pinned
+         under it. See base.css's #user-settings-* rules and settings.js's
+         setUserSettingsTab. -->
+    <div role="dialog" aria-modal="true" aria-labelledby="user-settings-modal-title" class="flex h-[90vh] max-h-[90vh] w-full max-w-md flex-col sm:h-[min(90vh,720px)] overflow-hidden rounded-t-2xl bg-slate-100 dark:bg-slate-800 p-5 shadow-xl sm:rounded-2xl">
+      <div id="user-settings-header" class="mb-3 flex shrink-0 items-center justify-between">
         <h2 id="user-settings-modal-title" data-i18n="modals.userSettings.title" class="text-lg font-semibold">Paramètres</h2>
         <button type="button" id="close-user-settings-modal-button" data-i18n-aria-label="modals.close" aria-label="Fermer"
                 class="flex h-9 w-9 items-center justify-center rounded-lg text-slate-500 dark:text-slate-400 hover:bg-slate-300 dark:hover:bg-slate-700 hover:text-slate-900 dark:hover:text-slate-200">
@@ -1199,294 +1203,397 @@
         </button>
       </div>
 
-      <button type="button" id="admin-console-button" hidden
-              class="mb-4 flex w-full items-center justify-center gap-2 rounded-xl border border-sky-300 dark:border-sky-700 bg-sky-50 dark:bg-sky-950/40 px-4 py-3 text-sm font-semibold text-sky-700 dark:text-sky-300 hover:bg-sky-100 dark:hover:bg-sky-900/40">
-        <span aria-hidden="true">🛡️</span>
-        <span>Console d'Administration</span>
-        <span id="admin-console-alert" hidden role="img" data-i18n-aria-label="modals.adminConsole.backups.alertIndicator" aria-label="Les sauvegardes nécessitent votre attention">⚠️</span>
-      </button>
-
-      <div class="mb-4 space-y-4">
-        <div class="rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-4 py-3">
-          <label for="user-settings-theme" class="block text-sm font-medium text-slate-600 dark:text-slate-300" data-i18n="modals.userSettings.appearanceLabel">Apparence</label>
-          <p class="mt-0.5 text-xs font-normal text-slate-500 dark:text-slate-400" data-i18n="modals.userSettings.appearanceHint">Choisissez l'apparence de l'application.</p>
-          <select id="user-settings-theme"
-                  class="mt-2 min-h-[44px] w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 text-sm text-slate-900 dark:text-slate-100 focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500/30">
-            <option value="light" data-i18n="header.themeLight">Clair</option>
-            <option value="dark" data-i18n="header.themeDark">Sombre</option>
-            <option value="auto" data-i18n="header.themeAuto">Système</option>
-          </select>
-        </div>
-
-        <div class="rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-4 py-3">
-          <label for="user-settings-language" class="block text-sm font-medium text-slate-600 dark:text-slate-300" data-i18n="modals.userSettings.languageLabel">Langue</label>
-          <p class="mt-0.5 text-xs font-normal text-slate-500 dark:text-slate-400" data-i18n="modals.userSettings.languageHint">Choisissez la langue de l'interface.</p>
-          <select id="user-settings-language"
-                  class="mt-2 min-h-[44px] w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 text-sm text-slate-900 dark:text-slate-100 focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500/30">
-            <option value="fr" data-i18n="header.langFr">Français</option>
-            <option value="en" data-i18n="header.langEn">English</option>
-          </select>
-        </div>
+      <div id="user-settings-tabs" role="tablist" data-i18n-aria-label="modals.userSettings.tabs.ariaLabel" aria-label="Catégories de paramètres"
+           class="mb-3 grid shrink-0 grid-cols-4 gap-1.5">
+        <button type="button" id="user-settings-tab-general" role="tab" aria-selected="true" aria-controls="user-settings-panel-general"
+                class="flex min-h-[48px] min-w-0 flex-col items-center justify-center gap-0.5 rounded-xl border px-1 py-1.5 text-[11px] font-medium leading-tight focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-500/50 sm:text-xs">
+          <span aria-hidden="true" class="text-base leading-none">⚙️</span>
+          <span data-i18n="modals.userSettings.tabs.general">Général</span>
+        </button>
+        <button type="button" id="user-settings-tab-notifications" role="tab" aria-selected="false" aria-controls="user-settings-panel-notifications"
+                class="flex min-h-[48px] min-w-0 flex-col items-center justify-center gap-0.5 rounded-xl border px-1 py-1.5 text-[11px] font-medium leading-tight focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-500/50 sm:text-xs">
+          <span aria-hidden="true" class="text-base leading-none">🔔</span>
+          <span data-i18n="modals.userSettings.tabs.notifications">Notifications</span>
+        </button>
+        <button type="button" id="user-settings-tab-prices" role="tab" aria-selected="false" aria-controls="user-settings-panel-prices"
+                class="flex min-h-[48px] min-w-0 flex-col items-center justify-center gap-0.5 rounded-xl border px-1 py-1.5 text-[11px] font-medium leading-tight focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-500/50 sm:text-xs">
+          <span aria-hidden="true" class="text-base leading-none">🏷️</span>
+          <span data-i18n="modals.userSettings.tabs.prices">Prix</span>
+        </button>
+        <button type="button" id="user-settings-tab-calendar" role="tab" aria-selected="false" aria-controls="user-settings-panel-calendar"
+                class="flex min-h-[48px] min-w-0 flex-col items-center justify-center gap-0.5 rounded-xl border px-1 py-1.5 text-[11px] font-medium leading-tight focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-500/50 sm:text-xs">
+          <span aria-hidden="true" class="text-base leading-none">📅</span>
+          <span data-i18n="modals.userSettings.tabs.calendar">Calendrier</span>
+        </button>
       </div>
 
-      <form id="user-settings-form" class="space-y-4">
-        <label class="flex cursor-pointer items-start gap-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-4 py-3 text-sm font-medium text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-800">
-          <input type="checkbox" id="user-settings-keep-last-page" checked
-                 class="mt-0.5 h-4 w-4 shrink-0 rounded border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 text-sky-500 focus:ring-sky-500/40">
-          <span>
-            <span class="block" data-i18n="modals.userSettings.keepLastPageLabel">Conserver la dernière page ouverte au lancement</span>
-            <span class="mt-0.5 block text-xs font-normal text-slate-500 dark:text-slate-400" data-i18n="modals.userSettings.keepLastPageHint">Rouvre Trakka directement sur la dernière liste ou le dernier onglet consulté, plutôt que sur le tableau de bord.</span>
-          </span>
-        </label>
+      <!-- The form spans every panel (all its fields are read by id in settings.js, so a
+           field on a hidden panel is still saved), with the submit button in the pinned
+           footer. The calendar panel's buttons act at once (type="button"). -->
+      <form id="user-settings-form" class="flex min-h-0 flex-1 flex-col">
+        <div id="user-settings-body" class="min-h-0 flex-1 overflow-y-auto">
+          <div id="user-settings-panel-general" role="tabpanel" aria-labelledby="user-settings-tab-general" class="space-y-4">
+            <button type="button" id="admin-console-button" hidden
+                    class="flex w-full items-center justify-center gap-2 rounded-xl border border-sky-300 dark:border-sky-700 bg-sky-50 dark:bg-sky-950/40 px-4 py-3 text-sm font-semibold text-sky-700 dark:text-sky-300 hover:bg-sky-100 dark:hover:bg-sky-900/40">
+              <span aria-hidden="true">🛡️</span>
+              <span>Console d'Administration</span>
+              <span id="admin-console-alert" hidden role="img" data-i18n-aria-label="modals.adminConsole.backups.alertIndicator" aria-label="Les sauvegardes nécessitent votre attention">⚠️</span>
+            </button>
 
-        <!-- "Notifications de tâches": the push opt-in (applies immediately,
-             see push.js — the form's submit handler never reads it), and the
-             vibration preference, the "Types de notifications" matrix and the
-             personal reminder default (all saved with the form, see
-             settings.js). -->
-        <section aria-labelledby="user-settings-task-notifications-title" class="space-y-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-4 py-3">
-          <div>
-            <h3 id="user-settings-task-notifications-title" class="flex items-center gap-2 text-sm font-semibold text-slate-700 dark:text-slate-200">
-              <span aria-hidden="true">🔔</span>
-              <span data-i18n="modals.userSettings.taskNotificationsTitle">Notifications de tâches</span>
-            </h3>
-            <p class="mt-0.5 text-xs font-normal text-slate-500 dark:text-slate-400" data-i18n="modals.userSettings.taskNotificationsHint">Rappels envoyés sur vos appareils avant l'échéance de vos tâches.</p>
+            <div class="rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-4 py-3">
+              <label for="user-settings-theme" class="block text-sm font-medium text-slate-600 dark:text-slate-300" data-i18n="modals.userSettings.appearanceLabel">Apparence</label>
+              <p class="mt-0.5 text-xs font-normal text-slate-500 dark:text-slate-400" data-i18n="modals.userSettings.appearanceHint">Choisissez l'apparence de l'application.</p>
+              <select id="user-settings-theme"
+                      class="mt-2 min-h-[44px] w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 text-sm text-slate-900 dark:text-slate-100 focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500/30">
+                <option value="light" data-i18n="header.themeLight">Clair</option>
+                <option value="dark" data-i18n="header.themeDark">Sombre</option>
+                <option value="auto" data-i18n="header.themeAuto">Système</option>
+              </select>
+            </div>
+
+            <div class="rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-4 py-3">
+              <label for="user-settings-language" class="block text-sm font-medium text-slate-600 dark:text-slate-300" data-i18n="modals.userSettings.languageLabel">Langue</label>
+              <p class="mt-0.5 text-xs font-normal text-slate-500 dark:text-slate-400" data-i18n="modals.userSettings.languageHint">Choisissez la langue de l'interface.</p>
+              <select id="user-settings-language"
+                      class="mt-2 min-h-[44px] w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 text-sm text-slate-900 dark:text-slate-100 focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500/30">
+                <option value="fr" data-i18n="header.langFr">Français</option>
+                <option value="en" data-i18n="header.langEn">English</option>
+              </select>
+            </div>
+
+            <label class="flex cursor-pointer items-start gap-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-4 py-3 text-sm font-medium text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-800">
+              <input type="checkbox" id="user-settings-keep-last-page" checked
+                     class="mt-0.5 h-4 w-4 shrink-0 rounded border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 text-sky-500 focus:ring-sky-500/40">
+              <span>
+                <span class="block" data-i18n="modals.userSettings.keepLastPageLabel">Conserver la dernière page ouverte au lancement</span>
+                <span class="mt-0.5 block text-xs font-normal text-slate-500 dark:text-slate-400" data-i18n="modals.userSettings.keepLastPageHint">Rouvre Trakka directement sur la dernière liste ou le dernier onglet consulté, plutôt que sur le tableau de bord.</span>
+              </span>
+            </label>
+
+            <button type="button" id="install-help-button"
+                    class="flex w-full items-center justify-center gap-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-4 py-3 text-sm font-medium text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-800">
+              <span aria-hidden="true">📱</span>
+              <span data-i18n="modals.userSettings.installHelpButton">Comment installer l'application sur mon téléphone ?</span>
+            </button>
+
+            <!-- Only shown inside the Android app (android/, docs/MOBILE_BUILD.md), whose native
+                 TrakkaApp plugin settings.js finds on this page: see refreshAndroidAppSection. -->
+            <section id="user-settings-android-app" hidden aria-labelledby="user-settings-android-app-title"
+                     class="rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-4 py-3">
+              <h3 id="user-settings-android-app-title" class="text-sm font-medium text-slate-600 dark:text-slate-300" data-i18n="modals.userSettings.androidAppTitle">Serveur de l'application</h3>
+              <p class="mt-0.5 text-xs font-normal text-slate-500 dark:text-slate-400" data-i18n="modals.userSettings.androidAppHint">L'application Android est connectée à ce serveur Trakka.</p>
+              <p id="user-settings-android-app-server" class="mt-2 break-all text-sm font-medium text-slate-900 dark:text-slate-100"></p>
+              <p id="user-settings-android-app-version" class="mt-0.5 text-xs font-normal text-slate-500 dark:text-slate-400"></p>
+              <button type="button" id="user-settings-android-app-change-button"
+                      class="mt-2 flex w-full items-center justify-center gap-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-100 dark:bg-slate-800 px-4 py-2.5 text-sm font-medium text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700">
+                <span aria-hidden="true">🔁</span>
+                <span data-i18n="modals.userSettings.androidAppChangeServer">Changer de serveur</span>
+              </button>
+            </section>
+
+            <div class="rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-4 py-3">
+              <p class="text-sm font-medium text-slate-600 dark:text-slate-300" data-i18n="modals.userSettings.updateSectionTitle">Mises à jour</p>
+              <p id="user-settings-update-version" class="mt-0.5 text-xs font-normal text-slate-500 dark:text-slate-400" data-i18n="modals.userSettings.updateVersionUnknown">Version inconnue</p>
+              <button type="button" id="user-settings-update-check-button"
+                      class="mt-2 flex w-full items-center justify-center gap-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-100 dark:bg-slate-800 px-4 py-2.5 text-sm font-medium text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700">
+                <span aria-hidden="true">🔄</span>
+                <span data-i18n="modals.userSettings.updateCheckButton">Vérifier les mises à jour</span>
+              </button>
+            </div>
           </div>
 
-          <label class="flex cursor-pointer items-start gap-3 text-sm font-medium text-slate-600 dark:text-slate-300">
-            <input type="checkbox" id="user-settings-push-toggle"
-                   class="mt-0.5 h-4 w-4 shrink-0 rounded border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 text-sky-500 focus:ring-sky-500/40">
-            <span>
-              <span id="user-settings-push-label" class="block" data-i18n="modals.userSettings.pushToggleLabel">Activer les notifications push</span>
-              <span id="user-settings-push-hint" class="mt-0.5 block text-xs font-normal text-slate-500 dark:text-slate-400" data-i18n="modals.userSettings.pushToggleHint">Recevez une notification lors des modifications sur une liste partagée et pour les rappels de vos tâches.</span>
-              <!-- Inside the Android app, the same switch turns on reminders scheduled on the
-                   phone instead (local-reminders.js): push.js swaps these texts in. -->
-              <span id="user-settings-local-reminders-label" class="block" data-i18n="modals.userSettings.localRemindersLabel" hidden>Rappels locaux (mode hors-ligne supporté)</span>
-              <span id="user-settings-local-reminders-hint" class="mt-0.5 block text-xs font-normal text-slate-500 dark:text-slate-400" data-i18n="modals.userSettings.localRemindersHint" hidden>Les rappels de vos tâches sont programmés sur ce téléphone : ils arrivent à l'heure, même sans réseau. Les modifications des listes partagées ne sont pas notifiées dans l'application.</span>
-            </span>
-          </label>
-          <p id="user-settings-push-status" class="text-xs text-slate-500 dark:text-slate-400" role="status" hidden></p>
-
-          <label id="user-settings-vibrate-row" class="flex cursor-pointer items-start gap-3 border-t border-slate-200 dark:border-slate-700 pt-3 text-sm font-medium text-slate-600 dark:text-slate-300">
-            <input type="checkbox" id="user-settings-vibrate" checked
-                   class="mt-0.5 h-4 w-4 shrink-0 rounded border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 text-sky-500 focus:ring-sky-500/40">
-            <span>
-              <span class="block" data-i18n="modals.userSettings.vibrateLabel">Activer les vibrations des notifications</span>
-              <span class="mt-0.5 block text-xs font-normal text-slate-500 dark:text-slate-400" data-i18n="modals.userSettings.vibrateHint">Une courte double vibration à la réception d'une notification (le son éventuel dépend des réglages de votre téléphone). Désactivé, les notifications arrivent sans son ni vibration. Sans effet sur iPhone et iPad.</span>
-            </span>
-          </label>
-
-          <!-- "Types de notifications": one switch per kind of notification, account-wide
-               (users.*_enabled, PATCH /api/v1/me, saved with the form — settings.js). -->
-          <div class="border-t border-slate-200 dark:border-slate-700 pt-3">
-            <h4 id="user-settings-notification-types-title" class="text-sm font-semibold text-slate-700 dark:text-slate-200" data-i18n="modals.userSettings.notificationTypesTitle">Types de notifications</h4>
-            <div role="group" aria-labelledby="user-settings-notification-types-title"
-                 class="mt-2 divide-y divide-slate-200 dark:divide-slate-700 rounded-xl border border-slate-200 dark:border-slate-700 px-3">
-              <div class="py-3">
-                <label class="flex cursor-pointer items-center justify-between gap-3">
-                  <span class="min-w-0">
-                    <span class="block text-sm font-medium text-slate-700 dark:text-slate-200" data-i18n="modals.userSettings.remindersEnabledLabel">Rappels des tâches à échéance</span>
-                    <span class="mt-0.5 block text-xs text-slate-500 dark:text-slate-400" data-i18n="modals.userSettings.remindersEnabledHint">Rappel à l'heure/jour prévu pour la tâche</span>
-                  </span>
-                  <span class="relative inline-flex shrink-0">
-                    <input type="checkbox" role="switch" id="user-settings-reminders-enabled" checked class="peer sr-only">
-                    <span aria-hidden="true" class="block h-6 w-11 rounded-full bg-slate-300 dark:bg-slate-600 transition-colors peer-checked:bg-sky-500 peer-focus-visible:ring-2 peer-focus-visible:ring-sky-500/50 peer-focus-visible:ring-offset-2 dark:peer-focus-visible:ring-offset-slate-900 after:absolute after:left-0.5 after:top-0.5 after:h-5 after:w-5 after:rounded-full after:bg-white after:shadow after:transition-transform after:content-[''] peer-checked:after:translate-x-5"></span>
-                  </span>
-                </label>
+          <div id="user-settings-panel-notifications" role="tabpanel" aria-labelledby="user-settings-tab-notifications" hidden class="space-y-4">
+            <!-- "Notifications de tâches": the push opt-in (applies immediately,
+                 see push.js — the form's submit handler never reads it), and the
+                 vibration preference, the "Types de notifications" matrix and the
+                 personal reminder default (all saved with the form, see
+                 settings.js). -->
+            <section aria-labelledby="user-settings-task-notifications-title" class="space-y-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-4 py-3">
+              <div>
+                <h3 id="user-settings-task-notifications-title" class="flex items-center gap-2 text-sm font-semibold text-slate-700 dark:text-slate-200">
+                  <span aria-hidden="true">🔔</span>
+                  <span data-i18n="modals.userSettings.taskNotificationsTitle">Notifications de tâches</span>
+                </h3>
+                <p class="mt-0.5 text-xs font-normal text-slate-500 dark:text-slate-400" data-i18n="modals.userSettings.taskNotificationsHint">Rappels envoyés sur vos appareils avant l'échéance de vos tâches.</p>
               </div>
-              <div class="py-3">
-                <label class="flex cursor-pointer items-center justify-between gap-3">
-                  <span class="min-w-0">
-                    <span class="block text-sm font-medium text-slate-700 dark:text-slate-200" data-i18n="modals.userSettings.overdueSummaryLabel">Rappel des tâches en retard / non effectuées</span>
-                    <span class="mt-0.5 block text-xs text-slate-500 dark:text-slate-400" data-i18n="modals.userSettings.overdueSummaryHint">Résumé pour les tâches échues des jours précédents</span>
-                  </span>
-                  <span class="relative inline-flex shrink-0">
-                    <input type="checkbox" role="switch" id="user-settings-overdue-summary" class="peer sr-only">
-                    <span aria-hidden="true" class="block h-6 w-11 rounded-full bg-slate-300 dark:bg-slate-600 transition-colors peer-checked:bg-sky-500 peer-focus-visible:ring-2 peer-focus-visible:ring-sky-500/50 peer-focus-visible:ring-offset-2 dark:peer-focus-visible:ring-offset-slate-900 after:absolute after:left-0.5 after:top-0.5 after:h-5 after:w-5 after:rounded-full after:bg-white after:shadow after:transition-transform after:content-[''] peer-checked:after:translate-x-5"></span>
-                  </span>
-                </label>
-                <!-- Shown only while the summary is on (settings.js). -->
-                <div id="user-settings-overdue-summary-time-row" hidden class="mt-2 flex items-center gap-2">
-                  <label for="user-settings-overdue-summary-time" class="text-xs text-slate-500 dark:text-slate-400" data-i18n="modals.userSettings.overdueSummaryTimeLabel">Heure du résumé</label>
-                  <input type="time" id="user-settings-overdue-summary-time" value="08:00"
-                         class="min-h-[44px] min-w-0 flex-1 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 text-sm text-slate-900 dark:text-slate-100 focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500/30">
+
+              <label class="flex cursor-pointer items-start gap-3 text-sm font-medium text-slate-600 dark:text-slate-300">
+                <input type="checkbox" id="user-settings-push-toggle"
+                       class="mt-0.5 h-4 w-4 shrink-0 rounded border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 text-sky-500 focus:ring-sky-500/40">
+                <span>
+                  <span id="user-settings-push-label" class="block" data-i18n="modals.userSettings.pushToggleLabel">Activer les notifications push</span>
+                  <span id="user-settings-push-hint" class="mt-0.5 block text-xs font-normal text-slate-500 dark:text-slate-400" data-i18n="modals.userSettings.pushToggleHint">Recevez une notification lors des modifications sur une liste partagée et pour les rappels de vos tâches.</span>
+                  <!-- Inside the Android app, the same switch turns on reminders scheduled on the
+                       phone instead (local-reminders.js): push.js swaps these texts in. -->
+                  <span id="user-settings-local-reminders-label" class="block" data-i18n="modals.userSettings.localRemindersLabel" hidden>Rappels locaux (mode hors-ligne supporté)</span>
+                  <span id="user-settings-local-reminders-hint" class="mt-0.5 block text-xs font-normal text-slate-500 dark:text-slate-400" data-i18n="modals.userSettings.localRemindersHint" hidden>Les rappels de vos tâches sont programmés sur ce téléphone : ils arrivent à l'heure, même sans réseau. Les modifications des listes partagées ne sont pas notifiées dans l'application.</span>
+                </span>
+              </label>
+              <p id="user-settings-push-status" class="text-xs text-slate-500 dark:text-slate-400" role="status" hidden></p>
+
+              <label id="user-settings-vibrate-row" class="flex cursor-pointer items-start gap-3 border-t border-slate-200 dark:border-slate-700 pt-3 text-sm font-medium text-slate-600 dark:text-slate-300">
+                <input type="checkbox" id="user-settings-vibrate" checked
+                       class="mt-0.5 h-4 w-4 shrink-0 rounded border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 text-sky-500 focus:ring-sky-500/40">
+                <span>
+                  <span class="block" data-i18n="modals.userSettings.vibrateLabel">Activer les vibrations des notifications</span>
+                  <span class="mt-0.5 block text-xs font-normal text-slate-500 dark:text-slate-400" data-i18n="modals.userSettings.vibrateHint">Une courte double vibration à la réception d'une notification (le son éventuel dépend des réglages de votre téléphone). Désactivé, les notifications arrivent sans son ni vibration. Sans effet sur iPhone et iPad.</span>
+                </span>
+              </label>
+
+              <!-- "Types de notifications": one switch per kind of notification, account-wide
+                   (users.*_enabled, PATCH /api/v1/me, saved with the form — settings.js). -->
+              <div class="border-t border-slate-200 dark:border-slate-700 pt-3">
+                <h4 id="user-settings-notification-types-title" class="text-sm font-semibold text-slate-700 dark:text-slate-200" data-i18n="modals.userSettings.notificationTypesTitle">Types de notifications</h4>
+                <div role="group" aria-labelledby="user-settings-notification-types-title"
+                     class="mt-2 divide-y divide-slate-200 dark:divide-slate-700 rounded-xl border border-slate-200 dark:border-slate-700 px-3">
+                  <div class="py-3">
+                    <label class="flex cursor-pointer items-center justify-between gap-3">
+                      <span class="min-w-0">
+                        <span class="block text-sm font-medium text-slate-700 dark:text-slate-200" data-i18n="modals.userSettings.remindersEnabledLabel">Rappels des tâches à échéance</span>
+                        <span class="mt-0.5 block text-xs text-slate-500 dark:text-slate-400" data-i18n="modals.userSettings.remindersEnabledHint">Rappel à l'heure/jour prévu pour la tâche</span>
+                      </span>
+                      <span class="relative inline-flex shrink-0">
+                        <input type="checkbox" role="switch" id="user-settings-reminders-enabled" checked class="peer sr-only">
+                        <span aria-hidden="true" class="block h-6 w-11 rounded-full bg-slate-300 dark:bg-slate-600 transition-colors peer-checked:bg-sky-500 peer-focus-visible:ring-2 peer-focus-visible:ring-sky-500/50 peer-focus-visible:ring-offset-2 dark:peer-focus-visible:ring-offset-slate-900 after:absolute after:left-0.5 after:top-0.5 after:h-5 after:w-5 after:rounded-full after:bg-white after:shadow after:transition-transform after:content-[''] peer-checked:after:translate-x-5"></span>
+                      </span>
+                    </label>
+                  </div>
+                  <div class="py-3">
+                    <label class="flex cursor-pointer items-center justify-between gap-3">
+                      <span class="min-w-0">
+                        <span class="block text-sm font-medium text-slate-700 dark:text-slate-200" data-i18n="modals.userSettings.overdueSummaryLabel">Rappel des tâches en retard / non effectuées</span>
+                        <span class="mt-0.5 block text-xs text-slate-500 dark:text-slate-400" data-i18n="modals.userSettings.overdueSummaryHint">Résumé pour les tâches échues des jours précédents</span>
+                      </span>
+                      <span class="relative inline-flex shrink-0">
+                        <input type="checkbox" role="switch" id="user-settings-overdue-summary" class="peer sr-only">
+                        <span aria-hidden="true" class="block h-6 w-11 rounded-full bg-slate-300 dark:bg-slate-600 transition-colors peer-checked:bg-sky-500 peer-focus-visible:ring-2 peer-focus-visible:ring-sky-500/50 peer-focus-visible:ring-offset-2 dark:peer-focus-visible:ring-offset-slate-900 after:absolute after:left-0.5 after:top-0.5 after:h-5 after:w-5 after:rounded-full after:bg-white after:shadow after:transition-transform after:content-[''] peer-checked:after:translate-x-5"></span>
+                      </span>
+                    </label>
+                    <!-- Shown only while the summary is on (settings.js). -->
+                    <div id="user-settings-overdue-summary-time-row" hidden class="mt-2 flex items-center gap-2">
+                      <label for="user-settings-overdue-summary-time" class="text-xs text-slate-500 dark:text-slate-400" data-i18n="modals.userSettings.overdueSummaryTimeLabel">Heure du résumé</label>
+                      <input type="time" id="user-settings-overdue-summary-time" value="08:00"
+                             class="min-h-[44px] min-w-0 flex-1 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 text-sm text-slate-900 dark:text-slate-100 focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500/30">
+                    </div>
+                  </div>
+                  <div class="py-3">
+                    <label class="flex cursor-pointer items-center justify-between gap-3">
+                      <span class="min-w-0">
+                        <span class="block text-sm font-medium text-slate-700 dark:text-slate-200" data-i18n="modals.userSettings.collaboratorActionsLabel">Actions des collaborateurs</span>
+                        <span class="mt-0.5 block text-xs text-slate-500 dark:text-slate-400" data-i18n="modals.userSettings.collaboratorActionsHint">Lorsqu'une autre personne coche ou décoche un item dans une liste partagée</span>
+                      </span>
+                      <span class="relative inline-flex shrink-0">
+                        <input type="checkbox" role="switch" id="user-settings-collaborator-actions" checked class="peer sr-only">
+                        <span aria-hidden="true" class="block h-6 w-11 rounded-full bg-slate-300 dark:bg-slate-600 transition-colors peer-checked:bg-sky-500 peer-focus-visible:ring-2 peer-focus-visible:ring-sky-500/50 peer-focus-visible:ring-offset-2 dark:peer-focus-visible:ring-offset-slate-900 after:absolute after:left-0.5 after:top-0.5 after:h-5 after:w-5 after:rounded-full after:bg-white after:shadow after:transition-transform after:content-[''] peer-checked:after:translate-x-5"></span>
+                      </span>
+                    </label>
+                  </div>
+                  <div class="py-3">
+                    <label class="flex cursor-pointer items-center justify-between gap-3">
+                      <span class="min-w-0">
+                        <span class="block text-sm font-medium text-slate-700 dark:text-slate-200" data-i18n="modals.userSettings.itemAdditionsLabel">Ajout d'items</span>
+                        <span class="mt-0.5 block text-xs text-slate-500 dark:text-slate-400" data-i18n="modals.userSettings.itemAdditionsHint">Notification lors de la création d'un nouvel item par un tiers</span>
+                      </span>
+                      <span class="relative inline-flex shrink-0">
+                        <input type="checkbox" role="switch" id="user-settings-item-additions" checked class="peer sr-only">
+                        <span aria-hidden="true" class="block h-6 w-11 rounded-full bg-slate-300 dark:bg-slate-600 transition-colors peer-checked:bg-sky-500 peer-focus-visible:ring-2 peer-focus-visible:ring-sky-500/50 peer-focus-visible:ring-offset-2 dark:peer-focus-visible:ring-offset-slate-900 after:absolute after:left-0.5 after:top-0.5 after:h-5 after:w-5 after:rounded-full after:bg-white after:shadow after:transition-transform after:content-[''] peer-checked:after:translate-x-5"></span>
+                      </span>
+                    </label>
+                  </div>
+                  <div class="py-3">
+                    <label class="flex cursor-pointer items-center justify-between gap-3">
+                      <span class="min-w-0">
+                        <span class="block text-sm font-medium text-slate-700 dark:text-slate-200" data-i18n="modals.userSettings.listSharingLabel">Partage de listes</span>
+                        <span class="mt-0.5 block text-xs text-slate-500 dark:text-slate-400" data-i18n="modals.userSettings.listSharingHint">Notification lorsqu'une liste vous est partagée ou qu'une invitation est reçue</span>
+                      </span>
+                      <span class="relative inline-flex shrink-0">
+                        <input type="checkbox" role="switch" id="user-settings-list-sharing" checked class="peer sr-only">
+                        <span aria-hidden="true" class="block h-6 w-11 rounded-full bg-slate-300 dark:bg-slate-600 transition-colors peer-checked:bg-sky-500 peer-focus-visible:ring-2 peer-focus-visible:ring-sky-500/50 peer-focus-visible:ring-offset-2 dark:peer-focus-visible:ring-offset-slate-900 after:absolute after:left-0.5 after:top-0.5 after:h-5 after:w-5 after:rounded-full after:bg-white after:shadow after:transition-transform after:content-[''] peer-checked:after:translate-x-5"></span>
+                      </span>
+                    </label>
+                  </div>
                 </div>
               </div>
-              <div class="py-3">
-                <label class="flex cursor-pointer items-center justify-between gap-3">
-                  <span class="min-w-0">
-                    <span class="block text-sm font-medium text-slate-700 dark:text-slate-200" data-i18n="modals.userSettings.collaboratorActionsLabel">Actions des collaborateurs</span>
-                    <span class="mt-0.5 block text-xs text-slate-500 dark:text-slate-400" data-i18n="modals.userSettings.collaboratorActionsHint">Lorsqu'une autre personne coche ou décoche un item dans une liste partagée</span>
-                  </span>
-                  <span class="relative inline-flex shrink-0">
-                    <input type="checkbox" role="switch" id="user-settings-collaborator-actions" checked class="peer sr-only">
-                    <span aria-hidden="true" class="block h-6 w-11 rounded-full bg-slate-300 dark:bg-slate-600 transition-colors peer-checked:bg-sky-500 peer-focus-visible:ring-2 peer-focus-visible:ring-sky-500/50 peer-focus-visible:ring-offset-2 dark:peer-focus-visible:ring-offset-slate-900 after:absolute after:left-0.5 after:top-0.5 after:h-5 after:w-5 after:rounded-full after:bg-white after:shadow after:transition-transform after:content-[''] peer-checked:after:translate-x-5"></span>
-                  </span>
-                </label>
+
+              <div class="border-t border-slate-200 dark:border-slate-700 pt-3">
+                <label for="user-settings-reminder-preset" class="block text-sm font-medium text-slate-600 dark:text-slate-300" data-i18n="modals.userSettings.reminderDefaultLabel">Moment du rappel</label>
+                <p class="mt-0.5 text-xs font-normal text-slate-500 dark:text-slate-400" data-i18n="modals.userSettings.reminderDefaultHint">Moment auquel vous être rappelé pour une tâche, sauf si vous le personnalisez pour cette tâche.</p>
+                <select id="user-settings-reminder-preset"
+                        class="mt-2 min-h-[44px] w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 text-sm text-slate-900 dark:text-slate-100 focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500/30">
+                  <option value="same_day" data-i18n="modals.userSettings.reminderPresetSameDay">Le jour même</option>
+                  <option value="day_before" data-i18n="modals.userSettings.reminderPresetDayBefore">La veille</option>
+                  <option value="at_due_time" data-i18n="modals.userSettings.reminderPresetAtDueTime">À l'heure exacte de l'échéance</option>
+                  <option value="custom" data-i18n="modals.userSettings.reminderPresetCustom">Personnalisé</option>
+                </select>
+                <div class="mt-2 flex items-center gap-2">
+                  <input type="number" min="0" id="user-settings-reminder-offset" hidden
+                         class="min-h-[44px] w-20 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 text-sm text-slate-900 dark:text-slate-100 focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500/30"
+                         data-i18n-aria-label="modals.userSettings.reminderOffsetAriaLabel" aria-label="Jours avant l'échéance">
+                  <span id="user-settings-reminder-offset-suffix" hidden class="text-xs text-slate-500 dark:text-slate-400" data-i18n="modals.userSettings.reminderOffsetSuffix">jour(s) avant à</span>
+                  <input type="time" id="user-settings-reminder-time"
+                         class="min-h-[44px] flex-1 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 text-sm text-slate-900 dark:text-slate-100 focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500/30"
+                         data-i18n-aria-label="modals.userSettings.reminderTimeAriaLabel" aria-label="Heure du rappel">
+                </div>
+                <p id="user-settings-reminder-fallback-hint" hidden class="mt-1 text-xs text-slate-500 dark:text-slate-400" data-i18n="modals.userSettings.reminderAtDueTimeFallbackHint">Pour une tâche sans heure, le rappel arrive le jour même à cette heure.</p>
               </div>
-              <div class="py-3">
-                <label class="flex cursor-pointer items-center justify-between gap-3">
-                  <span class="min-w-0">
-                    <span class="block text-sm font-medium text-slate-700 dark:text-slate-200" data-i18n="modals.userSettings.itemAdditionsLabel">Ajout d'items</span>
-                    <span class="mt-0.5 block text-xs text-slate-500 dark:text-slate-400" data-i18n="modals.userSettings.itemAdditionsHint">Notification lors de la création d'un nouvel item par un tiers</span>
-                  </span>
-                  <span class="relative inline-flex shrink-0">
-                    <input type="checkbox" role="switch" id="user-settings-item-additions" checked class="peer sr-only">
-                    <span aria-hidden="true" class="block h-6 w-11 rounded-full bg-slate-300 dark:bg-slate-600 transition-colors peer-checked:bg-sky-500 peer-focus-visible:ring-2 peer-focus-visible:ring-sky-500/50 peer-focus-visible:ring-offset-2 dark:peer-focus-visible:ring-offset-slate-900 after:absolute after:left-0.5 after:top-0.5 after:h-5 after:w-5 after:rounded-full after:bg-white after:shadow after:transition-transform after:content-[''] peer-checked:after:translate-x-5"></span>
-                  </span>
-                </label>
-              </div>
-              <div class="py-3">
-                <label class="flex cursor-pointer items-center justify-between gap-3">
-                  <span class="min-w-0">
-                    <span class="block text-sm font-medium text-slate-700 dark:text-slate-200" data-i18n="modals.userSettings.listSharingLabel">Partage de listes</span>
-                    <span class="mt-0.5 block text-xs text-slate-500 dark:text-slate-400" data-i18n="modals.userSettings.listSharingHint">Notification lorsqu'une liste vous est partagée ou qu'une invitation est reçue</span>
-                  </span>
-                  <span class="relative inline-flex shrink-0">
-                    <input type="checkbox" role="switch" id="user-settings-list-sharing" checked class="peer sr-only">
-                    <span aria-hidden="true" class="block h-6 w-11 rounded-full bg-slate-300 dark:bg-slate-600 transition-colors peer-checked:bg-sky-500 peer-focus-visible:ring-2 peer-focus-visible:ring-sky-500/50 peer-focus-visible:ring-offset-2 dark:peer-focus-visible:ring-offset-slate-900 after:absolute after:left-0.5 after:top-0.5 after:h-5 after:w-5 after:rounded-full after:bg-white after:shadow after:transition-transform after:content-[''] peer-checked:after:translate-x-5"></span>
-                  </span>
-                </label>
-              </div>
-            </div>
+
+            </section>
           </div>
 
-          <div class="border-t border-slate-200 dark:border-slate-700 pt-3">
-            <label for="user-settings-reminder-preset" class="block text-sm font-medium text-slate-600 dark:text-slate-300" data-i18n="modals.userSettings.reminderDefaultLabel">Moment du rappel</label>
-            <p class="mt-0.5 text-xs font-normal text-slate-500 dark:text-slate-400" data-i18n="modals.userSettings.reminderDefaultHint">Moment auquel vous être rappelé pour une tâche, sauf si vous le personnalisez pour cette tâche.</p>
-            <select id="user-settings-reminder-preset"
-                    class="mt-2 min-h-[44px] w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 text-sm text-slate-900 dark:text-slate-100 focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500/30">
-              <option value="same_day" data-i18n="modals.userSettings.reminderPresetSameDay">Le jour même</option>
-              <option value="day_before" data-i18n="modals.userSettings.reminderPresetDayBefore">La veille</option>
-              <option value="at_due_time" data-i18n="modals.userSettings.reminderPresetAtDueTime">À l'heure exacte de l'échéance</option>
-              <option value="custom" data-i18n="modals.userSettings.reminderPresetCustom">Personnalisé</option>
-            </select>
-            <div class="mt-2 flex items-center gap-2">
-              <input type="number" min="0" id="user-settings-reminder-offset" hidden
-                     class="min-h-[44px] w-20 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 text-sm text-slate-900 dark:text-slate-100 focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500/30"
-                     data-i18n-aria-label="modals.userSettings.reminderOffsetAriaLabel" aria-label="Jours avant l'échéance">
-              <span id="user-settings-reminder-offset-suffix" hidden class="text-xs text-slate-500 dark:text-slate-400" data-i18n="modals.userSettings.reminderOffsetSuffix">jour(s) avant à</span>
-              <input type="time" id="user-settings-reminder-time"
-                     class="min-h-[44px] flex-1 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 text-sm text-slate-900 dark:text-slate-100 focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500/30"
-                     data-i18n-aria-label="modals.userSettings.reminderTimeAriaLabel" aria-label="Heure du rappel">
-            </div>
-            <p id="user-settings-reminder-fallback-hint" hidden class="mt-1 text-xs text-slate-500 dark:text-slate-400" data-i18n="modals.userSettings.reminderAtDueTimeFallbackHint">Pour une tâche sans heure, le rappel arrive le jour même à cette heure.</p>
+          <div id="user-settings-panel-prices" role="tabpanel" aria-labelledby="user-settings-tab-prices" hidden class="space-y-4">
+            <!-- "Alertes de prix": which price changes notify this account (users.price_*_enabled,
+                 PATCH /api/v1/me, saved with the form — settings.js). The background price scans
+                 run regardless of any of these, and of push: an alert always lands in the 🔔 drawer
+                 too (internal/handlers.notifyPriceChange). "Désactiver" is the master switch; while
+                 it is on, the two directions are greyed out. The visual indicator preference sits
+                 here too, since it is about the same price changes. -->
+            <section aria-labelledby="user-settings-price-alerts-title" class="space-y-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-4 py-3">
+              <div>
+                <h3 id="user-settings-price-alerts-title" class="flex items-center gap-2 text-sm font-semibold text-slate-700 dark:text-slate-200">
+                  <span aria-hidden="true">🏷️</span>
+                  <span data-i18n="modals.userSettings.priceAlertsTitle">Alertes de prix</span>
+                </h3>
+                <p class="mt-0.5 text-xs font-normal text-slate-500 dark:text-slate-400" data-i18n="modals.userSettings.priceAlertsHint">Les prix de vos articles avec un lien sont vérifiés en arrière-plan, même si les notifications push sont désactivées. Les alertes s'affichent aussi dans 🔔 à l'ouverture de Trakka.</p>
+              </div>
+              <div role="group" aria-labelledby="user-settings-price-alerts-title"
+                   class="divide-y divide-slate-200 dark:divide-slate-700 rounded-xl border border-slate-200 dark:border-slate-700 px-3">
+                  <div class="py-3">
+                    <label class="flex cursor-pointer items-center justify-between gap-3">
+                      <span class="min-w-0">
+                        <span class="block text-sm font-medium text-slate-700 dark:text-slate-200" data-i18n="modals.userSettings.priceDropAlertsLabel">Notifier en cas de baisse de prix</span>
+                        <span class="mt-0.5 block text-xs text-slate-500 dark:text-slate-400" data-i18n="modals.userSettings.priceDropAlertsHint">Le prix d'un article baisse, ou un prix plus bas est trouvé ailleurs (Dealabs)</span>
+                      </span>
+                      <span class="relative inline-flex shrink-0">
+                        <input type="checkbox" role="switch" id="user-settings-price-drop-alerts" checked class="peer sr-only">
+                        <span aria-hidden="true" class="block h-6 w-11 rounded-full bg-slate-300 dark:bg-slate-600 transition-colors peer-checked:bg-sky-500 peer-disabled:opacity-50 peer-focus-visible:ring-2 peer-focus-visible:ring-sky-500/50 peer-focus-visible:ring-offset-2 dark:peer-focus-visible:ring-offset-slate-900 after:absolute after:left-0.5 after:top-0.5 after:h-5 after:w-5 after:rounded-full after:bg-white after:shadow after:transition-transform after:content-[''] peer-checked:after:translate-x-5"></span>
+                      </span>
+                    </label>
+                  </div>
+                  <div class="py-3">
+                    <label class="flex cursor-pointer items-center justify-between gap-3">
+                      <span class="min-w-0">
+                        <span class="block text-sm font-medium text-slate-700 dark:text-slate-200" data-i18n="modals.userSettings.priceIncreaseAlertsLabel">Notifier en cas de hausse de prix</span>
+                        <span class="mt-0.5 block text-xs text-slate-500 dark:text-slate-400" data-i18n="modals.userSettings.priceIncreaseAlertsHint">Le prix d'un article augmente</span>
+                      </span>
+                      <span class="relative inline-flex shrink-0">
+                        <input type="checkbox" role="switch" id="user-settings-price-increase-alerts" class="peer sr-only">
+                        <span aria-hidden="true" class="block h-6 w-11 rounded-full bg-slate-300 dark:bg-slate-600 transition-colors peer-checked:bg-sky-500 peer-disabled:opacity-50 peer-focus-visible:ring-2 peer-focus-visible:ring-sky-500/50 peer-focus-visible:ring-offset-2 dark:peer-focus-visible:ring-offset-slate-900 after:absolute after:left-0.5 after:top-0.5 after:h-5 after:w-5 after:rounded-full after:bg-white after:shadow after:transition-transform after:content-[''] peer-checked:after:translate-x-5"></span>
+                      </span>
+                    </label>
+                  </div>
+                  <div class="py-3">
+                    <label class="flex cursor-pointer items-center justify-between gap-3">
+                      <span class="min-w-0">
+                        <span class="block text-sm font-medium text-slate-700 dark:text-slate-200" data-i18n="modals.userSettings.priceAlertsDisabledLabel">Désactiver les alertes de prix</span>
+                        <span class="mt-0.5 block text-xs text-slate-500 dark:text-slate-400" data-i18n="modals.userSettings.priceAlertsDisabledHint">Aucune alerte de prix, ni push ni dans l'application (y compris les seuils de prix). Le suivi des prix continue.</span>
+                      </span>
+                      <span class="relative inline-flex shrink-0">
+                        <input type="checkbox" role="switch" id="user-settings-price-alerts-disabled" class="peer sr-only">
+                        <span aria-hidden="true" class="block h-6 w-11 rounded-full bg-slate-300 dark:bg-slate-600 transition-colors peer-checked:bg-sky-500 peer-disabled:opacity-50 peer-focus-visible:ring-2 peer-focus-visible:ring-sky-500/50 peer-focus-visible:ring-offset-2 dark:peer-focus-visible:ring-offset-slate-900 after:absolute after:left-0.5 after:top-0.5 after:h-5 after:w-5 after:rounded-full after:bg-white after:shadow after:transition-transform after:content-[''] peer-checked:after:translate-x-5"></span>
+                      </span>
+                    </label>
+                  </div>
+                  <div class="py-3">
+                    <label class="flex cursor-pointer items-center justify-between gap-3">
+                      <span class="min-w-0">
+                        <span class="block text-sm font-medium text-slate-700 dark:text-slate-200" data-i18n="modals.userSettings.priceIndicatorsLabel">Afficher les indicateurs visuels de variation de prix</span>
+                        <span class="mt-0.5 block text-xs text-slate-500 dark:text-slate-400" data-i18n="modals.userSettings.priceIndicatorsHint">Prix en vert après une baisse, en rouge après une hausse, pendant 7 jours</span>
+                      </span>
+                      <span class="relative inline-flex shrink-0">
+                        <input type="checkbox" role="switch" id="user-settings-price-indicators" checked class="peer sr-only">
+                        <span aria-hidden="true" class="block h-6 w-11 rounded-full bg-slate-300 dark:bg-slate-600 transition-colors peer-checked:bg-sky-500 peer-disabled:opacity-50 peer-focus-visible:ring-2 peer-focus-visible:ring-sky-500/50 peer-focus-visible:ring-offset-2 dark:peer-focus-visible:ring-offset-slate-900 after:absolute after:left-0.5 after:top-0.5 after:h-5 after:w-5 after:rounded-full after:bg-white after:shadow after:transition-transform after:content-[''] peer-checked:after:translate-x-5"></span>
+                      </span>
+                    </label>
+                  </div>
+              </div>
+            </section>
           </div>
 
-        </section>
+          <div id="user-settings-panel-calendar" role="tabpanel" aria-labelledby="user-settings-tab-calendar" hidden class="space-y-4">
+            <!-- "Export de calendrier": the personal iCalendar feed link (calendar-feed.js,
+                 internal/handlers/calendar_feed.go). Outside the form: its buttons act at once. -->
+            <section aria-labelledby="calendar-feed-title" class="space-y-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-4 py-3">
+              <div>
+                <h3 id="calendar-feed-title" class="flex items-center gap-2 text-sm font-semibold text-slate-700 dark:text-slate-200">
+                  <span aria-hidden="true">📅</span>
+                  <span data-i18n="modals.userSettings.calendarFeed.title">Export de calendrier (CalDAV / WebCAL)</span>
+                </h3>
+                <p class="mt-0.5 text-xs font-normal text-slate-500 dark:text-slate-400" data-i18n="modals.userSettings.calendarFeed.hint">Abonnez-vous à vos tâches avec échéance depuis Nextcloud, Google Agenda, Apple Calendrier ou Thunderbird. Votre agenda se met à jour tout seul.</p>
+              </div>
 
-        <p id="user-settings-status" class="text-sm text-emerald-600 dark:text-emerald-400" role="status" hidden></p>
+              <p id="calendar-feed-status" class="text-xs text-slate-600 dark:text-slate-300" role="status"></p>
 
-        <button type="submit" data-i18n="modals.userSettings.submit" class="w-full rounded-xl bg-sky-500 px-4 py-3 text-base font-semibold text-white transition hover:bg-sky-400 active:scale-[0.98]">Enregistrer</button>
+              <!-- Shown only right after a link is generated: the server keeps only a hash of the
+                   token, so this is the one moment it can be displayed. -->
+              <div id="calendar-feed-links" hidden class="space-y-3 rounded-lg border border-amber-300 dark:border-amber-700 bg-amber-50 dark:bg-amber-950/30 p-3">
+                <p class="text-xs font-medium text-amber-800 dark:text-amber-300" data-i18n="modals.userSettings.calendarFeed.copyNowWarning">Copiez ce lien maintenant : pour votre sécurité, il ne sera plus affiché. Toute personne qui le possède peut voir vos tâches.</p>
+                <div>
+                  <label for="calendar-feed-webcal-url" class="block text-xs font-medium text-slate-600 dark:text-slate-300" data-i18n="modals.userSettings.calendarFeed.webcalLabel">Lien WebCAL (Apple Calendrier, Nextcloud, Thunderbird)</label>
+                  <div class="mt-1 flex gap-2">
+                    <input type="text" id="calendar-feed-webcal-url" readonly
+                           class="min-h-[44px] min-w-0 flex-1 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 font-mono text-xs text-slate-900 dark:text-slate-100 focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500/30">
+                    <button type="button" id="calendar-feed-copy-webcal" data-i18n="modals.userSettings.calendarFeed.copy"
+                            class="min-h-[44px] shrink-0 rounded-xl bg-sky-500 px-3 py-2 text-sm font-semibold text-white hover:bg-sky-400">Copier l'URL</button>
+                  </div>
+                </div>
+                <div>
+                  <label for="calendar-feed-https-url" class="block text-xs font-medium text-slate-600 dark:text-slate-300" data-i18n="modals.userSettings.calendarFeed.httpsLabel">Lien HTTPS (Google Agenda)</label>
+                  <div class="mt-1 flex gap-2">
+                    <input type="text" id="calendar-feed-https-url" readonly
+                           class="min-h-[44px] min-w-0 flex-1 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 font-mono text-xs text-slate-900 dark:text-slate-100 focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500/30">
+                    <button type="button" id="calendar-feed-copy-https" data-i18n="modals.userSettings.calendarFeed.copy"
+                            class="min-h-[44px] shrink-0 rounded-xl bg-sky-500 px-3 py-2 text-sm font-semibold text-white hover:bg-sky-400">Copier l'URL</button>
+                  </div>
+                </div>
+                <a id="calendar-feed-subscribe-link" href="#"
+                   class="flex min-h-[44px] w-full items-center justify-center gap-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-4 py-2.5 text-sm font-medium text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-800">
+                  <span aria-hidden="true">➕</span>
+                  <span data-i18n="modals.userSettings.calendarFeed.subscribeHere">S'abonner sur cet appareil</span>
+                </a>
+              </div>
+
+              <div class="flex flex-wrap gap-2">
+                <button type="button" id="calendar-feed-generate-button"
+                        class="min-h-[44px] flex-1 rounded-xl bg-sky-500 px-4 py-2.5 text-sm font-semibold text-white hover:bg-sky-400 disabled:opacity-60"></button>
+                <button type="button" id="calendar-feed-disable-button" hidden
+                        class="min-h-[44px] flex-1 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-100 dark:bg-slate-800 px-4 py-2.5 text-sm font-medium text-slate-600 dark:text-slate-300 hover:bg-rose-500/10 hover:text-rose-600 dark:hover:text-rose-400 disabled:opacity-60"></button>
+              </div>
+              <p id="calendar-feed-error" hidden class="text-xs text-rose-600 dark:text-rose-400" role="alert"></p>
+
+              <details class="group border-t border-slate-200 dark:border-slate-700 pt-3">
+                <summary class="flex cursor-pointer list-none items-center justify-between text-sm font-medium text-slate-600 dark:text-slate-300">
+                  <span data-i18n="modals.userSettings.calendarFeed.howTo">Comment s'abonner ?</span>
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="h-4 w-4 transition-transform group-open:rotate-180" aria-hidden="true"><polyline points="6 9 12 15 18 9"/></svg>
+                </summary>
+                <div class="mt-3 space-y-3 text-xs text-slate-600 dark:text-slate-300">
+                  <div>
+                    <p class="font-semibold text-slate-700 dark:text-slate-200">Nextcloud</p>
+                    <p class="mt-0.5" data-i18n="modals.userSettings.calendarFeed.nextcloud">Dans l'application Agenda, cliquez sur « + Nouvel agenda » puis « Nouvel abonnement depuis un lien (lecture seule) », et collez le lien WebCAL. Votre serveur Nextcloud doit pouvoir joindre ce serveur Trakka.</p>
+                  </div>
+                  <div>
+                    <p class="font-semibold text-slate-700 dark:text-slate-200" data-i18n="modals.userSettings.calendarFeed.googleTitle">Google Agenda</p>
+                    <p class="mt-0.5" data-i18n="modals.userSettings.calendarFeed.google">Sur un ordinateur, ouvrez Google Agenda, cliquez sur « + » à côté de « Autres agendas », puis « À partir de l'URL », et collez le lien HTTPS. Google n'actualise ses abonnements que toutes les quelques heures, et ce serveur Trakka doit être accessible depuis Internet.</p>
+                  </div>
+                  <div>
+                    <p class="font-semibold text-slate-700 dark:text-slate-200" data-i18n="modals.userSettings.calendarFeed.appleTitle">Apple Calendrier</p>
+                    <p class="mt-0.5" data-i18n="modals.userSettings.calendarFeed.apple">Sur iPhone ou iPad, appuyez sur « S'abonner sur cet appareil », ou allez dans Réglages → Apps → Calendrier → Comptes de calendrier → Ajouter un compte → Autre → « Ajouter un calendrier avec abonnement ». Sur Mac : Calendrier → Fichier → « Nouvel abonnement à un calendrier… ». Décochez « Supprimer les alertes » pour garder les rappels.</p>
+                  </div>
+                  <div>
+                    <p class="font-semibold text-slate-700 dark:text-slate-200">Thunderbird</p>
+                    <p class="mt-0.5" data-i18n="modals.userSettings.calendarFeed.thunderbird">Dans l'onglet Agenda, « + Nouvel agenda » → « Sur le réseau », puis collez le lien HTTPS.</p>
+                  </div>
+                  <p data-i18n="modals.userSettings.calendarFeed.readOnlyNote">L'abonnement est en lecture seule : cochez et modifiez vos tâches dans Trakka, votre agenda suivra.</p>
+                </div>
+              </details>
+            </section>
+          </div>
+        </div>
+
+        <div id="user-settings-footer" class="mt-3 shrink-0 space-y-2 border-t border-slate-200 dark:border-slate-700 pt-3">
+          <p id="user-settings-status" class="text-sm text-emerald-600 dark:text-emerald-400" role="status" hidden></p>
+          <button type="submit" data-i18n="modals.userSettings.submit" class="w-full rounded-xl bg-sky-500 px-4 py-3 text-base font-semibold text-white transition hover:bg-sky-400 active:scale-[0.98]">Enregistrer</button>
+        </div>
       </form>
-
-      <!-- "Export de calendrier": the personal iCalendar feed link (calendar-feed.js,
-           internal/handlers/calendar_feed.go). Outside the form: its buttons act at once. -->
-      <section aria-labelledby="calendar-feed-title" class="mt-4 space-y-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-4 py-3">
-        <div>
-          <h3 id="calendar-feed-title" class="flex items-center gap-2 text-sm font-semibold text-slate-700 dark:text-slate-200">
-            <span aria-hidden="true">📅</span>
-            <span data-i18n="modals.userSettings.calendarFeed.title">Export de calendrier (CalDAV / WebCAL)</span>
-          </h3>
-          <p class="mt-0.5 text-xs font-normal text-slate-500 dark:text-slate-400" data-i18n="modals.userSettings.calendarFeed.hint">Abonnez-vous à vos tâches avec échéance depuis Nextcloud, Google Agenda, Apple Calendrier ou Thunderbird. Votre agenda se met à jour tout seul.</p>
-        </div>
-
-        <p id="calendar-feed-status" class="text-xs text-slate-600 dark:text-slate-300" role="status"></p>
-
-        <!-- Shown only right after a link is generated: the server keeps only a hash of the
-             token, so this is the one moment it can be displayed. -->
-        <div id="calendar-feed-links" hidden class="space-y-3 rounded-lg border border-amber-300 dark:border-amber-700 bg-amber-50 dark:bg-amber-950/30 p-3">
-          <p class="text-xs font-medium text-amber-800 dark:text-amber-300" data-i18n="modals.userSettings.calendarFeed.copyNowWarning">Copiez ce lien maintenant : pour votre sécurité, il ne sera plus affiché. Toute personne qui le possède peut voir vos tâches.</p>
-          <div>
-            <label for="calendar-feed-webcal-url" class="block text-xs font-medium text-slate-600 dark:text-slate-300" data-i18n="modals.userSettings.calendarFeed.webcalLabel">Lien WebCAL (Apple Calendrier, Nextcloud, Thunderbird)</label>
-            <div class="mt-1 flex gap-2">
-              <input type="text" id="calendar-feed-webcal-url" readonly
-                     class="min-h-[44px] min-w-0 flex-1 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 font-mono text-xs text-slate-900 dark:text-slate-100 focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500/30">
-              <button type="button" id="calendar-feed-copy-webcal" data-i18n="modals.userSettings.calendarFeed.copy"
-                      class="min-h-[44px] shrink-0 rounded-xl bg-sky-500 px-3 py-2 text-sm font-semibold text-white hover:bg-sky-400">Copier l'URL</button>
-            </div>
-          </div>
-          <div>
-            <label for="calendar-feed-https-url" class="block text-xs font-medium text-slate-600 dark:text-slate-300" data-i18n="modals.userSettings.calendarFeed.httpsLabel">Lien HTTPS (Google Agenda)</label>
-            <div class="mt-1 flex gap-2">
-              <input type="text" id="calendar-feed-https-url" readonly
-                     class="min-h-[44px] min-w-0 flex-1 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 font-mono text-xs text-slate-900 dark:text-slate-100 focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500/30">
-              <button type="button" id="calendar-feed-copy-https" data-i18n="modals.userSettings.calendarFeed.copy"
-                      class="min-h-[44px] shrink-0 rounded-xl bg-sky-500 px-3 py-2 text-sm font-semibold text-white hover:bg-sky-400">Copier l'URL</button>
-            </div>
-          </div>
-          <a id="calendar-feed-subscribe-link" href="#"
-             class="flex min-h-[44px] w-full items-center justify-center gap-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-4 py-2.5 text-sm font-medium text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-800">
-            <span aria-hidden="true">➕</span>
-            <span data-i18n="modals.userSettings.calendarFeed.subscribeHere">S'abonner sur cet appareil</span>
-          </a>
-        </div>
-
-        <div class="flex flex-wrap gap-2">
-          <button type="button" id="calendar-feed-generate-button"
-                  class="min-h-[44px] flex-1 rounded-xl bg-sky-500 px-4 py-2.5 text-sm font-semibold text-white hover:bg-sky-400 disabled:opacity-60"></button>
-          <button type="button" id="calendar-feed-disable-button" hidden
-                  class="min-h-[44px] flex-1 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-100 dark:bg-slate-800 px-4 py-2.5 text-sm font-medium text-slate-600 dark:text-slate-300 hover:bg-rose-500/10 hover:text-rose-600 dark:hover:text-rose-400 disabled:opacity-60"></button>
-        </div>
-        <p id="calendar-feed-error" hidden class="text-xs text-rose-600 dark:text-rose-400" role="alert"></p>
-
-        <details class="group border-t border-slate-200 dark:border-slate-700 pt-3">
-          <summary class="flex cursor-pointer list-none items-center justify-between text-sm font-medium text-slate-600 dark:text-slate-300">
-            <span data-i18n="modals.userSettings.calendarFeed.howTo">Comment s'abonner ?</span>
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="h-4 w-4 transition-transform group-open:rotate-180" aria-hidden="true"><polyline points="6 9 12 15 18 9"/></svg>
-          </summary>
-          <div class="mt-3 space-y-3 text-xs text-slate-600 dark:text-slate-300">
-            <div>
-              <p class="font-semibold text-slate-700 dark:text-slate-200">Nextcloud</p>
-              <p class="mt-0.5" data-i18n="modals.userSettings.calendarFeed.nextcloud">Dans l'application Agenda, cliquez sur « + Nouvel agenda » puis « Nouvel abonnement depuis un lien (lecture seule) », et collez le lien WebCAL. Votre serveur Nextcloud doit pouvoir joindre ce serveur Trakka.</p>
-            </div>
-            <div>
-              <p class="font-semibold text-slate-700 dark:text-slate-200" data-i18n="modals.userSettings.calendarFeed.googleTitle">Google Agenda</p>
-              <p class="mt-0.5" data-i18n="modals.userSettings.calendarFeed.google">Sur un ordinateur, ouvrez Google Agenda, cliquez sur « + » à côté de « Autres agendas », puis « À partir de l'URL », et collez le lien HTTPS. Google n'actualise ses abonnements que toutes les quelques heures, et ce serveur Trakka doit être accessible depuis Internet.</p>
-            </div>
-            <div>
-              <p class="font-semibold text-slate-700 dark:text-slate-200" data-i18n="modals.userSettings.calendarFeed.appleTitle">Apple Calendrier</p>
-              <p class="mt-0.5" data-i18n="modals.userSettings.calendarFeed.apple">Sur iPhone ou iPad, appuyez sur « S'abonner sur cet appareil », ou allez dans Réglages → Apps → Calendrier → Comptes de calendrier → Ajouter un compte → Autre → « Ajouter un calendrier avec abonnement ». Sur Mac : Calendrier → Fichier → « Nouvel abonnement à un calendrier… ». Décochez « Supprimer les alertes » pour garder les rappels.</p>
-            </div>
-            <div>
-              <p class="font-semibold text-slate-700 dark:text-slate-200">Thunderbird</p>
-              <p class="mt-0.5" data-i18n="modals.userSettings.calendarFeed.thunderbird">Dans l'onglet Agenda, « + Nouvel agenda » → « Sur le réseau », puis collez le lien HTTPS.</p>
-            </div>
-            <p data-i18n="modals.userSettings.calendarFeed.readOnlyNote">L'abonnement est en lecture seule : cochez et modifiez vos tâches dans Trakka, votre agenda suivra.</p>
-          </div>
-        </details>
-      </section>
-
-      <button type="button" id="install-help-button"
-              class="mt-4 flex w-full items-center justify-center gap-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-4 py-3 text-sm font-medium text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-800">
-        <span aria-hidden="true">📱</span>
-        <span data-i18n="modals.userSettings.installHelpButton">Comment installer l'application sur mon téléphone ?</span>
-      </button>
-
-      <!-- Only shown inside the Android app (android/, docs/MOBILE_BUILD.md), whose native
-           TrakkaApp plugin settings.js finds on this page: see refreshAndroidAppSection. -->
-      <section id="user-settings-android-app" hidden aria-labelledby="user-settings-android-app-title"
-               class="mt-4 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-4 py-3">
-        <h3 id="user-settings-android-app-title" class="text-sm font-medium text-slate-600 dark:text-slate-300" data-i18n="modals.userSettings.androidAppTitle">Serveur de l'application</h3>
-        <p class="mt-0.5 text-xs font-normal text-slate-500 dark:text-slate-400" data-i18n="modals.userSettings.androidAppHint">L'application Android est connectée à ce serveur Trakka.</p>
-        <p id="user-settings-android-app-server" class="mt-2 break-all text-sm font-medium text-slate-900 dark:text-slate-100"></p>
-        <p id="user-settings-android-app-version" class="mt-0.5 text-xs font-normal text-slate-500 dark:text-slate-400"></p>
-        <button type="button" id="user-settings-android-app-change-button"
-                class="mt-2 flex w-full items-center justify-center gap-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-100 dark:bg-slate-800 px-4 py-2.5 text-sm font-medium text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700">
-          <span aria-hidden="true">🔁</span>
-          <span data-i18n="modals.userSettings.androidAppChangeServer">Changer de serveur</span>
-        </button>
-      </section>
-
-      <div class="mt-4 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-4 py-3">
-        <p class="text-sm font-medium text-slate-600 dark:text-slate-300" data-i18n="modals.userSettings.updateSectionTitle">Mises à jour</p>
-        <p id="user-settings-update-version" class="mt-0.5 text-xs font-normal text-slate-500 dark:text-slate-400" data-i18n="modals.userSettings.updateVersionUnknown">Version inconnue</p>
-        <button type="button" id="user-settings-update-check-button"
-                class="mt-2 flex w-full items-center justify-center gap-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-100 dark:bg-slate-800 px-4 py-2.5 text-sm font-medium text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700">
-          <span aria-hidden="true">🔄</span>
-          <span data-i18n="modals.userSettings.updateCheckButton">Vérifier les mises à jour</span>
-        </button>
-      </div>
     </div>
   </div>
 
@@ -1834,6 +1941,13 @@
             <span data-i18n="modals.itemActions.shareLink">Partager le lien</span>
           </button>
         </div>
+        <!-- Shown only for an item with a link on a list that shows prices
+             (openItemActionsSheet): POST /api/v1/items/{id}/price-check. -->
+        <button type="button" id="item-actions-price-check-button" hidden
+                class="flex items-center gap-3 rounded-xl px-3 py-3 text-left text-base font-medium text-slate-900 dark:text-slate-100 hover:bg-slate-200 dark:hover:bg-slate-700">
+          <span aria-hidden="true">🔄</span>
+          <span data-i18n="modals.itemActions.checkPrice">Vérifier le prix maintenant</span>
+        </button>
         <button type="button" id="item-actions-urgent-button"
                 class="flex items-center gap-3 rounded-xl px-3 py-3 text-left text-base font-medium text-slate-900 dark:text-slate-100 hover:bg-slate-200 dark:hover:bg-slate-700">
           <span aria-hidden="true">🚨</span>
@@ -2199,6 +2313,7 @@
        later-loaded file's top-level functions/globals to exist by the time
        an internal `await` inside init() resumes is one documented example,
        see hydrateFromCache's own comment in app.js. -->
+  <script src="/js/scroll-lock.js" defer></script>
   <script src="/js/theme.js" defer></script>
   <script src="/js/i18n.js" defer></script>
   <script src="/js/db.js" defer></script>

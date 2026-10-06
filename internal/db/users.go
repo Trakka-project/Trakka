@@ -58,7 +58,8 @@ func (d *DB) CreateUser(ctx context.Context, email string, passwordHash, oidcSub
 const userSelectColumns = `id, email, display_name, created_at, is_admin, keep_last_page, language,
 		 reminder_default_offset_days, reminder_default_time, reminder_default_at_due_time,
 		 vibrate_on_notification, reminders_enabled, overdue_tasks_summary_enabled, overdue_tasks_summary_time,
-		 collaborator_actions_enabled, item_additions_enabled, list_sharing_enabled`
+		 collaborator_actions_enabled, item_additions_enabled, list_sharing_enabled,
+		 price_alerts_enabled, price_drop_alerts_enabled, price_increase_alerts_enabled, price_change_indicators_enabled`
 
 // userCredentialColumns is userSelectColumns plus the credentials
 // getUserWithCredentials scans into models.UserWithCredentials.
@@ -68,10 +69,12 @@ const userCredentialColumns = userSelectColumns + `, password_hash, oidc_subject
 // destinations for a query that selects more columns after them.
 func scanUser(row rowScanner, u *models.User, extra ...any) error {
 	var isAdmin, keepLastPage, atDueTime, vibrate, reminders, overdueSummary, collaborators, additions, sharing int
+	var priceAlerts, priceDrops, priceIncreases, priceIndicators int
 	dest := append([]any{&u.ID, &u.Email, &u.DisplayName, &u.CreatedAt, &isAdmin, &keepLastPage, &u.Language,
 		&u.ReminderDefaultOffsetDays, &u.ReminderDefaultTime, &atDueTime, &vibrate,
 		&reminders, &overdueSummary, &u.OverdueTasksSummaryTime,
-		&collaborators, &additions, &sharing}, extra...)
+		&collaborators, &additions, &sharing,
+		&priceAlerts, &priceDrops, &priceIncreases, &priceIndicators}, extra...)
 	if err := row.Scan(dest...); err != nil {
 		return err
 	}
@@ -84,6 +87,10 @@ func scanUser(row rowScanner, u *models.User, extra ...any) error {
 	u.CollaboratorActionsEnabled = collaborators != 0
 	u.ItemAdditionsEnabled = additions != 0
 	u.ListSharingEnabled = sharing != 0
+	u.PriceAlertsEnabled = priceAlerts != 0
+	u.PriceDropAlertsEnabled = priceDrops != 0
+	u.PriceIncreaseAlertsEnabled = priceIncreases != 0
+	u.PriceChangeIndicatorsEnabled = priceIndicators != 0
 	return nil
 }
 
@@ -196,12 +203,20 @@ type NotificationPreferences struct {
 	CollaboratorActionsEnabled *bool
 	ItemAdditionsEnabled       *bool
 	ListSharingEnabled         *bool
+	// Paramètres → "Alertes de prix" (models.User.PriceAlertsEnabled and
+	// the fields after it).
+	PriceAlertsEnabled           *bool
+	PriceDropAlertsEnabled       *bool
+	PriceIncreaseAlertsEnabled   *bool
+	PriceChangeIndicatorsEnabled *bool
 }
 
 // Any reports whether prefs changes anything at all.
 func (prefs NotificationPreferences) Any() bool {
 	return prefs.RemindersEnabled != nil || prefs.OverdueTasksSummaryEnabled != nil || prefs.OverdueTasksSummaryTime != nil ||
-		prefs.CollaboratorActionsEnabled != nil || prefs.ItemAdditionsEnabled != nil || prefs.ListSharingEnabled != nil
+		prefs.CollaboratorActionsEnabled != nil || prefs.ItemAdditionsEnabled != nil || prefs.ListSharingEnabled != nil ||
+		prefs.PriceAlertsEnabled != nil || prefs.PriceDropAlertsEnabled != nil || prefs.PriceIncreaseAlertsEnabled != nil ||
+		prefs.PriceChangeIndicatorsEnabled != nil
 }
 
 // nullableBoolToInt is boolToInt for an optional value, nil staying nil
@@ -228,11 +243,17 @@ func (d *DB) UpdateUserNotificationPreferences(ctx context.Context, id int64, pr
 		   overdue_tasks_summary_time = COALESCE(?, overdue_tasks_summary_time),
 		   collaborator_actions_enabled = COALESCE(?, collaborator_actions_enabled),
 		   item_additions_enabled = COALESCE(?, item_additions_enabled),
-		   list_sharing_enabled = COALESCE(?, list_sharing_enabled)
+		   list_sharing_enabled = COALESCE(?, list_sharing_enabled),
+		   price_alerts_enabled = COALESCE(?, price_alerts_enabled),
+		   price_drop_alerts_enabled = COALESCE(?, price_drop_alerts_enabled),
+		   price_increase_alerts_enabled = COALESCE(?, price_increase_alerts_enabled),
+		   price_change_indicators_enabled = COALESCE(?, price_change_indicators_enabled)
 		 WHERE id = ?`,
 		nullableBoolToInt(prefs.RemindersEnabled), nullableBoolToInt(prefs.OverdueTasksSummaryEnabled), summaryTime,
 		nullableBoolToInt(prefs.CollaboratorActionsEnabled), nullableBoolToInt(prefs.ItemAdditionsEnabled),
-		nullableBoolToInt(prefs.ListSharingEnabled), id)
+		nullableBoolToInt(prefs.ListSharingEnabled),
+		nullableBoolToInt(prefs.PriceAlertsEnabled), nullableBoolToInt(prefs.PriceDropAlertsEnabled),
+		nullableBoolToInt(prefs.PriceIncreaseAlertsEnabled), nullableBoolToInt(prefs.PriceChangeIndicatorsEnabled), id)
 	if err != nil {
 		return nil, fmt.Errorf("updating user %d notification preferences: %w", id, err)
 	}

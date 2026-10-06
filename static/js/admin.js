@@ -129,7 +129,7 @@ function openAdminConsoleModal() {
   loadAdminSettings();
   refreshBackupAlertIndicators();
   adminConsoleEls.modal.hidden = false;
-  document.body.classList.add('overflow-hidden');
+  TrakkaScrollLock.lock();
 }
 
 function closeAdminConsoleModal() {
@@ -138,7 +138,7 @@ function closeAdminConsoleModal() {
   // body scroll-lock if that one isn't still open behind it (same pattern
   // as install-help.js's closeInstallHelpModal).
   if (userSettingsEls.modal.hidden) {
-    document.body.classList.remove('overflow-hidden');
+    TrakkaScrollLock.unlock();
   }
 }
 

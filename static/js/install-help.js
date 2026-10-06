@@ -60,7 +60,7 @@ function setInstallHelpTab(os) {
 function openInstallHelpModal() {
   setInstallHelpTab(detectMobileOS());
   installHelpEls.modal.hidden = false;
-  document.body.classList.add('overflow-hidden');
+  TrakkaScrollLock.lock();
 }
 
 function closeInstallHelpModal() {
@@ -68,7 +68,7 @@ function closeInstallHelpModal() {
   // Opened from on top of the settings modal — only release the shared body
   // scroll-lock if that one isn't still open behind it.
   if (userSettingsEls.modal.hidden) {
-    document.body.classList.remove('overflow-hidden');
+    TrakkaScrollLock.unlock();
   }
 }
 

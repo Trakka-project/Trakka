@@ -543,12 +543,12 @@ function openBulkTargetMonthSheet() {
     selectionEls.targetMonthOptions.appendChild(button);
   }
   selectionEls.targetMonthSheet.hidden = false;
-  document.body.classList.add('overflow-hidden');
+  TrakkaScrollLock.lock();
 }
 
 function closeBulkTargetMonthSheet() {
   selectionEls.targetMonthSheet.hidden = true;
-  document.body.classList.remove('overflow-hidden');
+  TrakkaScrollLock.unlock();
 }
 
 selectionEls.doneButton.addEventListener('click', bulkToggleDone);

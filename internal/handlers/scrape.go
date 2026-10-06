@@ -118,6 +118,12 @@ func (app *Application) scrapeProductInfo(item *models.Item, previousURL string)
 			return
 		}
 		if info.Price != nil {
+			// The first price seen on the page starts the item's price
+			// history (see trackItemPrice), whether or not it fills in the
+			// item's price below.
+			if _, err := app.DB.RecordPriceObservation(ctx, itemID, *info.Price); err != nil {
+				app.Logger.Error("recording scraped price", "item_id", itemID, "error", err)
+			}
 			if err := app.DB.UpdateItemPriceIfMissing(ctx, itemID, url, *info.Price); err != nil {
 				app.Logger.Error("saving automatically scraped price", "item_id", itemID, "error", err)
 			} else {

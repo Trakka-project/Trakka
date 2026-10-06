@@ -57,7 +57,7 @@ function openShareModal({ kind, id, name }) {
   sharesEls.shareRoster.replaceChildren();
 
   sharesEls.shareModal.hidden = false;
-  document.body.classList.add('overflow-hidden');
+  TrakkaScrollLock.lock();
   sharesEls.shareEmail.focus();
 
   loadShareRoster();
@@ -65,7 +65,7 @@ function openShareModal({ kind, id, name }) {
 
 function closeShareModal() {
   sharesEls.shareModal.hidden = true;
-  document.body.classList.remove('overflow-hidden');
+  TrakkaScrollLock.unlock();
   sharingTarget = null;
 }
 

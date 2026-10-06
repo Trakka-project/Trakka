@@ -34,6 +34,21 @@ const userSettingsEls = {
   button: document.getElementById('user-settings-button'),
   modal: document.getElementById('user-settings-modal'),
   closeButton: document.getElementById('close-user-settings-modal-button'),
+  body: document.getElementById('user-settings-body'),
+  footer: document.getElementById('user-settings-footer'),
+  tabList: document.getElementById('user-settings-tabs'),
+  tabButtons: {
+    general: document.getElementById('user-settings-tab-general'),
+    notifications: document.getElementById('user-settings-tab-notifications'),
+    prices: document.getElementById('user-settings-tab-prices'),
+    calendar: document.getElementById('user-settings-tab-calendar'),
+  },
+  panels: {
+    general: document.getElementById('user-settings-panel-general'),
+    notifications: document.getElementById('user-settings-panel-notifications'),
+    prices: document.getElementById('user-settings-panel-prices'),
+    calendar: document.getElementById('user-settings-panel-calendar'),
+  },
   themeSelect: document.getElementById('user-settings-theme'),
   languageSelect: document.getElementById('user-settings-language'),
   form: document.getElementById('user-settings-form'),
@@ -46,6 +61,10 @@ const userSettingsEls = {
   collaboratorActions: document.getElementById('user-settings-collaborator-actions'),
   itemAdditions: document.getElementById('user-settings-item-additions'),
   listSharing: document.getElementById('user-settings-list-sharing'),
+  priceDropAlerts: document.getElementById('user-settings-price-drop-alerts'),
+  priceIncreaseAlerts: document.getElementById('user-settings-price-increase-alerts'),
+  priceAlertsDisabled: document.getElementById('user-settings-price-alerts-disabled'),
+  priceIndicators: document.getElementById('user-settings-price-indicators'),
   reminderPreset: document.getElementById('user-settings-reminder-preset'),
   reminderOffset: document.getElementById('user-settings-reminder-offset'),
   reminderOffsetSuffix: document.getElementById('user-settings-reminder-offset-suffix'),
@@ -61,8 +80,84 @@ const userSettingsEls = {
   androidAppChangeButton: document.getElementById('user-settings-android-app-change-button'),
 };
 
+// The modal's categories: one panel shown at a time under the fixed header
+// and tab bar, so only #user-settings-body ever scrolls. Same
+// aria-selected-driven styling as admin.js's setAdminConsoleTab (base.css).
+// Every panel stays inside the one form, so "Enregistrer" (pinned in the
+// footer) saves the fields of all three form-backed tabs at once; the
+// calendar tab has nothing to save, so the footer is hidden there.
+function setUserSettingsTab(tab) {
+  for (const [name, button] of Object.entries(userSettingsEls.tabButtons)) {
+    const active = name === tab;
+    button.setAttribute('aria-selected', String(active));
+    userSettingsEls.panels[name].hidden = !active;
+  }
+  userSettingsEls.footer.hidden = tab === 'calendar';
+  userSettingsEls.body.scrollTop = 0;
+}
+
+for (const [name, button] of Object.entries(userSettingsEls.tabButtons)) {
+  button.addEventListener('click', () => setUserSettingsTab(name));
+}
+
+// Arrow keys move between tabs, as on any role="tablist".
+userSettingsEls.tabList.addEventListener('keydown', (event) => {
+  const names = Object.keys(userSettingsEls.tabButtons);
+  const current = names.findIndex((name) => userSettingsEls.tabButtons[name] === document.activeElement);
+  if (current === -1) return;
+  let next;
+  if (event.key === 'ArrowRight') next = (current + 1) % names.length;
+  else if (event.key === 'ArrowLeft') next = (current - 1 + names.length) % names.length;
+  else if (event.key === 'Home') next = 0;
+  else if (event.key === 'End') next = names.length - 1;
+  else return;
+  event.preventDefault();
+  setUserSettingsTab(names[next]);
+  userSettingsEls.tabButtons[names[next]].focus();
+});
+
+// base.css's touch-action/overscroll rules only hold while
+// #user-settings-body actually overflows. On a short tab (Calendrier) it has
+// nothing to scroll, so a vertical drag on it, or on the empty space under
+// its content, skips it and pans the next scrollable thing up: the page
+// behind, which <body>'s overflow-hidden doesn't stop on iOS WebKit or the
+// Android WebView. The modal covers the whole viewport, so cancelling every
+// touchmove the panel can't absorb in its own direction leaves the page
+// nothing to react to. Horizontal and multi-finger moves are left alone
+// (touch-action already rules out a horizontal pan; pinch-zoom stays).
+let userSettingsTouchY = 0;
+userSettingsEls.modal.addEventListener('touchstart', (event) => {
+  if (event.touches.length === 1) userSettingsTouchY = event.touches[0].clientY;
+}, { passive: true });
+userSettingsEls.modal.addEventListener('touchmove', (event) => {
+  if (event.touches.length !== 1) return;
+  const y = event.touches[0].clientY;
+  const dy = y - userSettingsTouchY;
+  userSettingsTouchY = y;
+  if (dy === 0) return;
+  const body = userSettingsEls.body;
+  if (body.contains(event.target)) {
+    const canScrollUp = body.scrollTop > 0;
+    const canScrollDown = Math.ceil(body.scrollTop + body.clientHeight) < body.scrollHeight;
+    if ((dy > 0 && canScrollUp) || (dy < 0 && canScrollDown)) return;
+  }
+  if (event.cancelable) event.preventDefault();
+}, { passive: false });
+
+// A field failing the browser's own validation on submit may sit on a tab
+// that isn't shown: switch to it first, or the browser can't focus the
+// field to show its message and the save silently does nothing.
+userSettingsEls.form.addEventListener('invalid', (event) => {
+  const panel = event.target.closest('[role="tabpanel"]');
+  if (panel && panel.hidden) {
+    const tab = Object.keys(userSettingsEls.panels).find((name) => userSettingsEls.panels[name] === panel);
+    setUserSettingsTab(tab);
+  }
+}, true);
+
 function openUserSettingsModal() {
   userSettingsEls.status.hidden = true;
+  setUserSettingsTab('general');
   // TrakkaTheme/TrakkaI18n are defined in theme.js/i18n.js (loaded before
   // this file) — re-read every time the modal opens, the same "don't trust
   // a cached value" reasoning refreshPushToggleUI below already follows,
@@ -89,6 +184,14 @@ function openUserSettingsModal() {
   userSettingsEls.itemAdditions.checked = wants('item_additions_enabled');
   userSettingsEls.listSharing.checked = wants('list_sharing_enabled');
   userSettingsEls.overdueSummary.checked = Boolean(state.currentUser && state.currentUser.overdue_tasks_summary_enabled);
+  // "Alertes de prix": the same server-only, column-default fallback — drops
+  // and the visual indicators on, increases off, the master switch not
+  // engaged ("Désactiver" shows the inverse of price_alerts_enabled).
+  userSettingsEls.priceDropAlerts.checked = wants('price_drop_alerts_enabled');
+  userSettingsEls.priceIncreaseAlerts.checked = Boolean(state.currentUser && state.currentUser.price_increase_alerts_enabled);
+  userSettingsEls.priceAlertsDisabled.checked = !wants('price_alerts_enabled');
+  userSettingsEls.priceIndicators.checked = wants('price_change_indicators_enabled');
+  updatePriceAlertSwitchesState();
   userSettingsEls.overdueSummaryTime.value = (state.currentUser && state.currentUser.overdue_tasks_summary_time) || '08:00';
   updateOverdueSummaryTimeVisibility();
   // state.currentUser's own reminder_default_offset_days/_time/_at_due_time
@@ -127,7 +230,10 @@ function openUserSettingsModal() {
   // above): whether a feed link is active, and when an app last used it.
   refreshCalendarFeedSection();
   userSettingsEls.modal.hidden = false;
-  document.body.classList.add('overflow-hidden');
+  // setUserSettingsTab's own reset above ran while the modal was still
+  // display:none, where scrollTop can't be set: redo it now it's shown.
+  userSettingsEls.body.scrollTop = 0;
+  TrakkaScrollLock.lock();
 }
 
 // getAppVersion is defined in app.js.
@@ -172,7 +278,7 @@ userSettingsEls.androidAppChangeButton.addEventListener('click', () => {
 
 function closeUserSettingsModal() {
   userSettingsEls.modal.hidden = true;
-  document.body.classList.remove('overflow-hidden');
+  TrakkaScrollLock.unlock();
 }
 
 // reminderDefaultsToPreset derives which named preset ("Le jour même"/
@@ -209,6 +315,20 @@ function updateOverdueSummaryTimeVisibility() {
 }
 
 userSettingsEls.overdueSummary.addEventListener('change', updateOverdueSummaryTimeVisibility);
+
+// "Désactiver les alertes de prix" overrides both directions: while it is
+// on they are greyed out (and left as they were, so turning alerts back on
+// restores the previous choice).
+function updatePriceAlertSwitchesState() {
+  const disabled = userSettingsEls.priceAlertsDisabled.checked;
+  for (const input of [userSettingsEls.priceDropAlerts, userSettingsEls.priceIncreaseAlerts]) {
+    input.disabled = disabled;
+    input.closest('label').classList.toggle('cursor-pointer', !disabled);
+    input.closest('label').classList.toggle('opacity-60', disabled);
+  }
+}
+
+userSettingsEls.priceAlertsDisabled.addEventListener('change', updatePriceAlertSwitchesState);
 
 userSettingsEls.reminderPreset.addEventListener('change', () => {
   updateReminderOffsetVisibility();
@@ -269,6 +389,10 @@ userSettingsEls.form.addEventListener('submit', async (event) => {
     collaborator_actions_enabled: userSettingsEls.collaboratorActions.checked,
     item_additions_enabled: userSettingsEls.itemAdditions.checked,
     list_sharing_enabled: userSettingsEls.listSharing.checked,
+    price_alerts_enabled: !userSettingsEls.priceAlertsDisabled.checked,
+    price_drop_alerts_enabled: userSettingsEls.priceDropAlerts.checked,
+    price_increase_alerts_enabled: userSettingsEls.priceIncreaseAlerts.checked,
+    price_change_indicators_enabled: userSettingsEls.priceIndicators.checked,
     reminder_default_offset_days: reminderDefaultOffsetDays,
     reminder_default_time: reminderDefaultTime,
     reminder_default_at_due_time: reminderDefaultAtDueTime,
@@ -295,6 +419,15 @@ userSettingsEls.form.addEventListener('submit', async (event) => {
   // mirror in step immediately, rather than waiting for the next reload's
   // /me call to do it.
   setKeepLastPagePreference(keepLastPage);
+  // The visual price indicators follow state.currentUser at render time
+  // (recentPriceMovement in list_view.js): re-render whatever is on screen
+  // so turning them on or off shows right away. refreshVisibleView is
+  // defined in app.js.
+  refreshVisibleView();
+  // Which price alerts the 🔔 inbox shows follows these same preferences
+  // (filtered server-side when read): reload it. refreshNotifications is
+  // defined in notifications.js.
+  refreshNotifications();
   userSettingsEls.status.textContent = t('modals.userSettings.saved');
   userSettingsEls.status.hidden = false;
 });

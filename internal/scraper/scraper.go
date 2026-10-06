@@ -213,6 +213,16 @@ type ProductInfo struct {
 	// caller that wants it (e.g. suggesting a name when an item is created
 	// from a bare URL).
 	Title string
+	// PriceSource names where Price was read from ("json-ld", "og:price",
+	// "microdata", "amazon:primary", "dealabs:deal", ...) and PriceRaw the
+	// text it was parsed from — diagnostics for the debug log, never
+	// persisted.
+	PriceSource string
+	PriceRaw    string
+	// DealExpired is set when rawURL is a Dealabs deal page whose deal has
+	// expired (or was withdrawn): Price is then nil, since the price the page
+	// still shows can no longer be had. See dealabsDealState.
+	DealExpired bool
 }
 
 // setBrowserHeaders sets every header FetchProductInfo sends to make a
@@ -234,6 +244,12 @@ func setBrowserHeaders(req *http.Request) {
 	req.Header.Set("Sec-Fetch-Mode", secFetchMode)
 	req.Header.Set("Sec-Fetch-Site", secFetchSite)
 	req.Header.Set("Sec-Fetch-User", secFetchUser)
+	// Ask every cache between this server and the site (a CDN, a proxy) for
+	// a fresh copy rather than a stored one — what a browser's reload sends —
+	// so a price check sees the price the site shows now. This http.Client
+	// keeps no cache of its own.
+	req.Header.Set("Cache-Control", "no-cache")
+	req.Header.Set("Pragma", "no-cache")
 }
 
 // amazonBlockedMarkers are strings found on Amazon's own anti-bot challenge
@@ -293,16 +309,27 @@ func FetchProductInfo(ctx context.Context, rawURL string, logger *slog.Logger) (
 	}
 	setBrowserHeaders(req)
 
+	debug := func(msg string, args ...any) {
+		if logger != nil {
+			logger.Debug(msg, append([]any{"url", rawURL}, args...)...)
+		}
+	}
+
+	debug("product page request")
 	resp, err := httpClient.Do(req)
 	if err != nil {
+		debug("product page fetch failed", "error", err)
 		return nil, fmt.Errorf("fetching %s: %w", rawURL, err)
 	}
 	defer resp.Body.Close()
 
+	ct := resp.Header.Get("Content-Type")
+	debug("product page response", "status", resp.StatusCode, "final_url", resp.Request.URL.String(),
+		"content_type", ct, "age", resp.Header.Get("Age"), "cache_status", firstHeader(resp.Header, "X-Cache", "Cf-Cache-Status"))
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("fetching %s: unexpected status %d", rawURL, resp.StatusCode)
 	}
-	if ct := resp.Header.Get("Content-Type"); ct != "" && !strings.Contains(strings.ToLower(ct), "html") {
+	if ct != "" && !strings.Contains(strings.ToLower(ct), "html") {
 		return nil, fmt.Errorf("fetching %s: unexpected content-type %q", rawURL, ct)
 	}
 
@@ -316,17 +343,49 @@ func FetchProductInfo(ctx context.Context, rawURL string, logger *slog.Logger) (
 	if err != nil {
 		return nil, fmt.Errorf("parsing %s: %w", rawURL, err)
 	}
+	if isDealabsDealURL(parsed) {
+		// A deal page lists other deals' prices too: the deal's own price
+		// (and whether it is still live) comes from its page state only,
+		// never from the generic sources extractProductInfo reads.
+		info.Price, info.PriceSource, info.PriceRaw = nil, "", ""
+		if state, ok := dealabsDealState(body); ok {
+			if state.live() {
+				info.Price, info.PriceSource = state.Price, "dealabs:deal"
+				info.PriceRaw = strconv.FormatFloat(*state.Price, 'f', -1, 64)
+			} else {
+				info.DealExpired = true
+			}
+		}
+	}
+	price := "none"
+	if info.Price != nil {
+		price = strconv.FormatFloat(*info.Price, 'f', 2, 64)
+	}
+	// page_title tells a real product page from a bot wall, a consent page or
+	// a generic landing page that answered 200.
+	debug("product page parsed", "bytes", len(body), "page_title", info.Title,
+		"price_source", info.PriceSource, "price_raw", info.PriceRaw, "price", price, "deal_expired", info.DealExpired)
 	if info.Price == nil && info.ImageURL == "" && info.Title == "" {
 		return nil, fmt.Errorf("no price, image, or title found on %s", rawURL)
 	}
 	return info, nil
 }
 
+// firstHeader returns the first of keys present in h, for the debug log.
+func firstHeader(h http.Header, keys ...string) string {
+	for _, k := range keys {
+		if v := h.Get(k); v != "" {
+			return k + ": " + v
+		}
+	}
+	return ""
+}
+
 // extractProductInfo walks the parsed HTML tree once, looking for a price,
 // an image, and a title together.
 //
 // Price is resolved in priority order: on an Amazon host, Amazon's own
-// price-display markup is tried first (see resolveAmazonPrice — a-offscreen
+// price-display markup is tried first (the amazon:* price candidates — a-offscreen
 // text inside the current "buy box" price block, then any other
 // a-price/a-offscreen pair, the older priceblock_* ids, the a-color-price
 // class, and finally the buybox container's own text), since Amazon pages
@@ -385,7 +444,7 @@ func extractProductInfo(r io.Reader, pageURL *url.URL) (*ProductInfo, error) {
 	var ogPrice, ogImage, ogTitle, twitterImage, pageTitle string
 	var microdataPrice, microdataImage, amazonImage string
 	// Amazon-specific price sources, filled only when isAmazon — see
-	// resolveAmazonPrice for how these five are prioritized against each
+	// the price candidates below for how these five are prioritized against each
 	// other, and the doc comment above for how the whole set fits into the
 	// overall price-resolution order.
 	var amazonPrimaryPrice, amazonAPriceText, amazonPriceblockText, amazonColorPriceText, amazonBuyboxText, amazonDataPriceText string
@@ -527,44 +586,57 @@ func extractProductInfo(r io.Reader, pageURL *url.URL) (*ProductInfo, error) {
 
 	info := &ProductInfo{}
 
+	// Every price source, in priority order (see the doc comment above); the
+	// first that parses wins. Each is named, and keeps the raw text it was
+	// read from, for ProductInfo.PriceSource/PriceRaw — what a price check's
+	// debug log shows, so a wrong price can be traced to the markup it came
+	// from (a crossed-out price, a different offer, ...).
+	type priceCandidate struct {
+		source string
+		read   func() (raw string, price float64, ok bool)
+	}
+	// text parses a source read as text; number takes a source that already
+	// yields a number as is (re-parsing its formatted value could misread a
+	// "1.299" as a thousands separator).
+	text := func(v string) func() (string, float64, bool) {
+		return func() (string, float64, bool) {
+			p, ok := parsePriceString(v)
+			return v, p, v != "" && ok
+		}
+	}
+	number := func(get func() (float64, bool)) func() (string, float64, bool) {
+		return func() (string, float64, bool) {
+			p, ok := get()
+			return strconv.FormatFloat(p, 'f', -1, 64), p, ok
+		}
+	}
+	var candidates []priceCandidate
 	if isAmazon {
-		info.Price = resolveAmazonPrice(amazonPrimaryPrice, amazonAPriceText, amazonPriceblockText, amazonColorPriceText, amazonBuyboxText)
+		candidates = append(candidates,
+			priceCandidate{"amazon:primary", text(amazonPrimaryPrice)},
+			priceCandidate{"amazon:a-price", text(amazonAPriceText)},
+			priceCandidate{"amazon:priceblock", text(amazonPriceblockText)},
+			priceCandidate{"amazon:a-color-price", text(amazonColorPriceText)},
+			priceCandidate{"amazon:buybox", text(amazonBuyboxText)})
 	}
-	if info.Price == nil {
-		if p, ok := firstJSONPrice(ldjsonBlocks); ok {
-			info.Price = &p
-		}
+	candidates = append(candidates, priceCandidate{"json-ld", number(func() (float64, bool) { return firstJSONPrice(ldjsonBlocks) })})
+	if isAmazon {
+		candidates = append(candidates,
+			priceCandidate{"amazon:data-price", text(amazonDataPriceText)},
+			priceCandidate{"amazon:script-state", number(func() (float64, bool) { return amazonScriptStatePrice(amazonScriptBlocks) })})
 	}
-	if info.Price == nil && isAmazon && amazonDataPriceText != "" {
-		if p, ok := parsePriceString(amazonDataPriceText); ok {
-			info.Price = &p
-		}
+	twitterRaw, _ := resolveTwitterPrice(twitterLabels, twitterData)
+	candidates = append(candidates,
+		priceCandidate{"og:price", text(ogPrice)},
+		priceCandidate{"twitter:data", text(twitterRaw)},
+		priceCandidate{"microdata", text(microdataPrice)})
+	if isAmazon {
+		candidates = append(candidates, priceCandidate{"amazon:raw-body", number(func() (float64, bool) { return amazonRawBodyPrice(body) })})
 	}
-	if info.Price == nil && isAmazon {
-		if p, ok := amazonScriptStatePrice(amazonScriptBlocks); ok {
-			info.Price = &p
-		}
-	}
-	if info.Price == nil && ogPrice != "" {
-		if p, ok := parsePriceString(ogPrice); ok {
-			info.Price = &p
-		}
-	}
-	if info.Price == nil {
-		if raw, ok := resolveTwitterPrice(twitterLabels, twitterData); ok {
-			if p, ok := parsePriceString(raw); ok {
-				info.Price = &p
-			}
-		}
-	}
-	if info.Price == nil && microdataPrice != "" {
-		if p, ok := parsePriceString(microdataPrice); ok {
-			info.Price = &p
-		}
-	}
-	if info.Price == nil && isAmazon {
-		if p, ok := amazonRawBodyPrice(body); ok {
-			info.Price = &p
+	for _, c := range candidates {
+		if raw, p, ok := c.read(); ok {
+			info.Price, info.PriceSource, info.PriceRaw = &p, c.source, raw
+			break
 		}
 	}
 
@@ -690,27 +762,6 @@ func isAmazonGenericImage(rawURL string) bool {
 		}
 	}
 	return false
-}
-
-// resolveAmazonPrice picks the first non-empty, parseable candidate among
-// Amazon's own price-display sources, in the priority order Amazon actually
-// renders them in: the current "buy box" price (apexPriceToPay/
-// corePrice_desktop wrapping an a-offscreen span — Amazon's current page
-// template), any other a-price/a-offscreen pair, the older priceblock_*
-// element ids, the a-color-price class, and finally the buybox container's
-// own text. Each string is already raw page text (e.g. "14,99 €") —
-// parsePriceString handles cleaning the currency symbol/thousands
-// separators off it, same as every other price source in this file.
-func resolveAmazonPrice(primary, aPrice, priceblock, colorPrice, buybox string) *float64 {
-	for _, candidate := range [...]string{primary, aPrice, priceblock, colorPrice, buybox} {
-		if candidate == "" {
-			continue
-		}
-		if p, ok := parsePriceString(candidate); ok {
-			return &p
-		}
-	}
-	return nil
 }
 
 // amazonScriptStatePriceRe matches a price embedded in an Amazon page's

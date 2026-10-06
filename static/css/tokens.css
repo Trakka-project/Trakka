@@ -78,6 +78,14 @@
   --tk-money-spent:     #059669;
   --tk-money-remaining: #dc7120;
 
+  /* A price a background scan recently moved (static/js/list_view.js's
+   * recentPriceMovement): green when it went down, red when it went up —
+   * the price text, the row's left accent bar, and its one-off glow. */
+  --tk-price-drop:          #059669;
+  --tk-price-increase:      #e11d48;
+  --tk-price-drop-glow:     rgb(5 150 105 / 0.35);
+  --tk-price-increase-glow: rgb(225 29 72 / 0.35);
+
   color-scheme: light;
 }
 
@@ -113,6 +121,11 @@
     --tk-money-total: #f8fafc;
     --tk-money-spent: #34d399;
 
+    --tk-price-drop:          #34d399;
+    --tk-price-increase:      #fb7185;
+    --tk-price-drop-glow:     rgb(52 211 153 / 0.35);
+    --tk-price-increase-glow: rgb(251 113 133 / 0.35);
+
     color-scheme: dark;
   }
 }
@@ -135,6 +148,11 @@
 
   --tk-money-total: #f8fafc;
   --tk-money-spent: #34d399;
+
+  --tk-price-drop:          #34d399;
+  --tk-price-increase:      #fb7185;
+  --tk-price-drop-glow:     rgb(52 211 153 / 0.35);
+  --tk-price-increase-glow: rgb(251 113 133 / 0.35);
 
   color-scheme: dark;
 }

@@ -60,13 +60,42 @@ func (d *DB) ListItemsForTargetPriceScan(ctx context.Context) ([]*models.Item, e
 // since oldPrice/url were read) — not an error — and callers should treat it
 // as "nothing to report", the same way UpdateItemPriceIfMissing's callers
 // already do with a 0-rows-affected result.
+//
+// When the item already had a (different) price, that price and the time
+// of the change are recorded in previous_price/price_changed_at — the
+// movement the list view colours green or red. Filling in a price that was
+// still missing is not a movement and leaves both as they were.
 func (d *DB) UpdateItemPriceFromScan(ctx context.Context, id int64, url string, oldPrice *float64, newPrice float64) (bool, error) {
 	res, err := d.conn.ExecContext(ctx,
-		`UPDATE items SET price = ?, price_auto = 1, updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now')
+		`UPDATE items SET price = ?, price_auto = 1,
+		   previous_price = CASE WHEN price IS NULL OR price = ? THEN previous_price ELSE price END,
+		   price_changed_at = CASE WHEN price IS NULL OR price = ? THEN price_changed_at ELSE strftime('%Y-%m-%dT%H:%M:%fZ','now') END,
+		   updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now')
 		 WHERE id = ? AND url = ? AND price IS ?`,
-		newPrice, id, url, oldPrice)
+		newPrice, newPrice, newPrice, id, url, oldPrice)
 	if err != nil {
 		return false, fmt.Errorf("saving rescanned price for item %d: %w", id, err)
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return false, fmt.Errorf("reading rows affected for item %d: %w", id, err)
+	}
+	return n > 0, nil
+}
+
+// SetItemPriceFollowsPage marks an item's price as following its page
+// (price_auto = 1) without changing it — a manual price check that found
+// the page showing exactly the price the user had typed in. The same
+// compare-and-swap guard as UpdateItemPriceFromScan: nothing happens if the
+// url or the price changed since the check read them. Reports whether the
+// row was updated.
+func (d *DB) SetItemPriceFollowsPage(ctx context.Context, id int64, url string, price float64) (bool, error) {
+	res, err := d.conn.ExecContext(ctx,
+		`UPDATE items SET price_auto = 1, updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now')
+		 WHERE id = ? AND url = ? AND price IS ? AND price_auto = 0`,
+		id, url, price)
+	if err != nil {
+		return false, fmt.Errorf("marking item %d's price as following its page: %w", id, err)
 	}
 	n, err := res.RowsAffected()
 	if err != nil {

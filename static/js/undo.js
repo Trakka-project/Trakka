@@ -127,6 +127,32 @@
     setTimeout(() => toast.remove(), delay);
   }
 
+  // The same short-lived toast for something that didn't work out but needs
+  // no action right away (an amber ⚠ instead of the green ✓) — e.g. a price
+  // check that couldn't read the product page.
+  function warning(message, delay = 5000) {
+    const root = getContainer();
+    if (!root) return;
+
+    const toast = document.createElement('div');
+    toast.setAttribute('role', 'status');
+    toast.className =
+      'pointer-events-auto flex items-center gap-2 rounded-xl border border-amber-300 dark:border-amber-700 bg-slate-100 dark:bg-slate-800 py-3 px-4 text-sm text-slate-900 dark:text-slate-100 shadow-xl';
+
+    const icon = document.createElement('span');
+    icon.setAttribute('aria-hidden', 'true');
+    icon.className = 'text-amber-500';
+    icon.textContent = '⚠';
+
+    const text = document.createElement('span');
+    text.textContent = message;
+
+    toast.append(icon, text);
+    root.appendChild(toast);
+
+    setTimeout(() => toast.remove(), delay);
+  }
+
   window.TrakkaUndo = { schedule };
-  window.TrakkaToast = { success };
+  window.TrakkaToast = { success, warning };
 })();

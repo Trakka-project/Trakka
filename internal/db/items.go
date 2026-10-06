@@ -30,7 +30,8 @@ const itemSelectColumns = `items.id, items.list_id, items.title, items.url, item
 		 items.due_date, items.is_recurring, items.recurrence_rule, items.recurrence_end_date, items.is_urgent, items.recurrence_lead_minutes,
 		 items.target_price, items.alert_on_price_drop, items.labels, items.reminder_enabled, items.reminder_offset_days, items.reminder_time,
 		 items.due_time, items.next_due_date, items.reminder_at_due_time,
-		 CASE WHEN items.due_reminder_sent_for = ` + dueReminderKeyExpr + ` THEN items.notification_sent_at END`
+		 CASE WHEN items.due_reminder_sent_for = ` + dueReminderKeyExpr + ` THEN items.notification_sent_at END,
+		 items.previous_price, items.price_changed_at`
 
 func scanItem(row rowScanner) (*models.Item, error) {
 	it := &models.Item{}
@@ -55,11 +56,14 @@ func scanItem(row rowScanner) (*models.Item, error) {
 	var nextDueDate sql.NullString
 	var reminderAtDueTime int
 	var notificationSentAt sql.NullString
+	var previousPrice sql.NullFloat64
+	var priceChangedAt sql.NullString
 	if err := row.Scan(&it.ID, &it.ListID, &it.Title, &it.URL, &it.Quantity, &done,
 		&it.Position, &it.CreatedAt, &it.UpdatedAt, &price, &priceAuto, &imageURL, &targetMonth,
 		&dueDate, &isRecurring, &recurrenceRule, &recurrenceEndDate, &isUrgent, &recurrenceLeadMinutes,
 		&targetPrice, &alertOnPriceDrop, &labelsJSON, &reminderEnabled, &reminderOffsetDays, &reminderTime,
-		&dueTime, &nextDueDate, &reminderAtDueTime, &notificationSentAt); err != nil {
+		&dueTime, &nextDueDate, &reminderAtDueTime, &notificationSentAt,
+		&previousPrice, &priceChangedAt); err != nil {
 		return nil, err
 	}
 	it.Done = done != 0
@@ -96,6 +100,10 @@ func scanItem(row rowScanner) (*models.Item, error) {
 	it.NextDueDate = nullStringPtr(nextDueDate)
 	it.ReminderAtDueTime = reminderAtDueTime != 0
 	it.NotificationSentAt = nullStringPtr(notificationSentAt)
+	if previousPrice.Valid {
+		it.PreviousPrice = &previousPrice.Float64
+	}
+	it.PriceChangedAt = nullStringPtr(priceChangedAt)
 	return it, nil
 }
 
@@ -195,15 +203,23 @@ func (d *DB) GetItem(ctx context.Context, id int64) (*models.Item, error) {
 // ErrNotFound if no such item exists.
 // targetPrice/alertOnPriceDrop follow the same pass-through convention as
 // CreateItem — see its doc comment.
+//
+// A change of price or url also clears previous_price/price_changed_at (the
+// last movement a background scan recorded, see UpdateItemPriceFromScan):
+// the user's own edit is not a movement at the store. The CASE compares
+// against the row's values from before this UPDATE, as SQLite evaluates
+// every SET expression against the old row.
 func (d *DB) UpdateItem(ctx context.Context, id int64, title string, url *string, quantity int, price *float64, priceAuto bool, imageURL *string, done bool, position int, targetMonth, dueDate, recurrenceRule, recurrenceEndDate *string, isUrgent bool, recurrenceLeadMinutes *int, targetPrice *float64, alertOnPriceDrop bool) (*models.Item, error) {
 	res, err := d.conn.ExecContext(ctx,
 		`UPDATE items SET title = ?, url = ?, quantity = ?, price = ?, price_auto = ?, image_url = ?, done = ?, position = ?, target_month = ?,
 		 due_date = ?, is_recurring = ?, recurrence_rule = ?, recurrence_end_date = ?, is_urgent = ?, recurrence_lead_minutes = ?,
 		 target_price = ?, alert_on_price_drop = ?,
+		 previous_price = CASE WHEN price IS ? AND url IS ? THEN previous_price END,
+		 price_changed_at = CASE WHEN price IS ? AND url IS ? THEN price_changed_at END,
 		 updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE id = ?`,
 		title, url, quantity, price, boolToInt(priceAuto), imageURL, boolToInt(done), position, targetMonth,
 		dueDate, boolToInt(recurrenceRule != nil), recurrenceRule, recurrenceEndDate, boolToInt(isUrgent), recurrenceLeadMinutes,
-		targetPrice, boolToInt(alertOnPriceDrop), id)
+		targetPrice, boolToInt(alertOnPriceDrop), price, url, price, url, id)
 	if err != nil {
 		return nil, fmt.Errorf("updating item %d: %w", id, err)
 	}

@@ -70,6 +70,8 @@ Since the `house_members` table (below) was added, every house also needs an own
 | `reminder_offset_days` | `INTEGER` | nullable; how many whole days before `due_date` the reminder fires (`0` = same day, `1` = the day before). Always resolved to a concrete value by `internal/handlers` before being written whenever `reminder_enabled` ends up true (see `users.reminder_default_offset_days` below) — only actually `NULL` while the reminder is off |
 | `reminder_time` | `TEXT` | nullable; the wall-clock time of day (`HH:MM`, 24h, `internal/validate.TimeOfDay`) the reminder fires at, resolved the same way as `reminder_offset_days` |
 | `reminder_at_due_time` | `INTEGER NOT NULL DEFAULT 0` | 0/1 boolean (migration 21); the "at the exact due time" mode — the reminder fires at `due_date` + `due_time`, and `reminder_offset_days`/`reminder_time` are only the fallback for an item without a `due_time`. Resolved at write time like the other two |
+| `previous_price` | `REAL` | nullable (migration 28); the price before the last time a background scan moved `price` (`db.UpdateItemPriceFromScan`, only when replacing an earlier price, not when filling in a missing one). With `price_changed_at`, drives the list view's green/red price indicator. Cleared by a manual `price` or `url` edit (`UpdateItem`, a `CASE` against the row's old values) and by accepting a [price alert](API.md#price-alerts) |
+| `price_changed_at` | `TEXT` | nullable (migration 28); ISO-8601 UTC time of that movement |
 | `labels` | `TEXT NOT NULL DEFAULT '[]'` | a JSON array of strings — a freeform, user-managed set of short tags (e.g. `"Bio"`, `"Promo"`), independent of every other column. Stored as JSON rather than a normalized join table since a label has no attributes of its own worth a dedicated table for, the same reasoning `recurrence_rule`/`target_month` already established for a small freeform value with no cross-item querying need. Defaults to `'[]'` rather than `NULL` so `scanItem` never has to special-case a missing column; cleaned and deduplicated by `internal/validate.Labels` before every write via `internal/db.SetItemLabels`, a dedicated method rather than another `CreateItem`/`UpdateItem` parameter — see [API.md](API.md#labels) |
 | `created_at` | `TEXT NOT NULL` | |
 | `updated_at` | `TEXT NOT NULL` | |
@@ -98,6 +100,10 @@ Since the `house_members` table (below) was added, every house also needs an own
 | `collaborator_actions_enabled` | `INTEGER NOT NULL DEFAULT 1` | 0/1 boolean (migration 27); pushes when someone else checks off or unchecks an item on a list this account can access |
 | `item_additions_enabled` | `INTEGER NOT NULL DEFAULT 1` | 0/1 boolean (migration 27); pushes when someone else adds an item to such a list |
 | `list_sharing_enabled` | `INTEGER NOT NULL DEFAULT 1` | 0/1 boolean (migration 27); pushes when a List/Space is shared with this account or it is invited to a House |
+| `price_alerts_enabled` | `INTEGER NOT NULL DEFAULT 1` | 0/1 boolean (migration 28); master switch over every price alert — drops, increases, better prices found, target prices — push and in-app inbox alike ("Désactiver les alertes de prix" when `0`). Never stops the price scans themselves. See [API.md](API.md#price-tracking) |
+| `price_drop_alerts_enabled` | `INTEGER NOT NULL DEFAULT 1` | 0/1 boolean (migration 28); an item's price went down, or a lower price was proposed |
+| `price_increase_alerts_enabled` | `INTEGER NOT NULL DEFAULT 0` | 0/1 boolean (migration 28); an item's price went up. Off by default, unlike drops, so a tracked price doesn't notify in both directions unasked |
+| `price_change_indicators_enabled` | `INTEGER NOT NULL DEFAULT 1` | 0/1 boolean (migration 28); whether the list view colours a recently moved price (`items.previous_price`) — display only |
 | `created_at` | `TEXT NOT NULL` | ISO-8601 UTC, set by `strftime` default |
 
 `CHECK (password_hash IS NOT NULL OR oidc_subject IS NOT NULL)` — every user must have at least one way to authenticate. A unique partial index, `idx_users_oidc_identity` on `(oidc_issuer, oidc_subject) WHERE oidc_subject IS NOT NULL`, enforces that an OIDC identity is unique *within* its issuer (not globally, since two different providers could coincidentally reuse the same `sub` string).
@@ -136,11 +142,11 @@ Indexed by `user_id` (`idx_sessions_user_id`). Deleting a user cascades to delet
 | `item_id` | `INTEGER NOT NULL` | `REFERENCES items(id) ON DELETE CASCADE` |
 | `original_price` | `REAL NOT NULL` | snapshot of the item's `price` when the alert was created |
 | `found_price` | `REAL NOT NULL` | the lower price found at `source_url` |
-| `source_url` | `TEXT NOT NULL` | the item's `url` at the time it was scraped |
+| `source_url` | `TEXT NOT NULL` | where `found_price` was found: the item's `url` at the time it was scraped, or a Dealabs deal page |
 | `status` | `TEXT NOT NULL DEFAULT 'pending'` | `CHECK (status IN ('pending', 'accepted', 'rejected'))` |
 | `created_at` | `TEXT NOT NULL` | |
 
-A row here is created by `internal/handlers`' periodic or on-demand price-drop check (`internal/handlers/price_alerts.go` — see [CLAUDE.md](../CLAUDE.md)) whenever `internal/scraper.FetchProductInfo` finds a price on `item_id`'s `url` lower than its currently recorded `price`, and only if that item doesn't already have a `pending` alert (`CreatePriceAlertIfNonePending`'s `WHERE NOT EXISTS` guard) — otherwise a repeat periodic scan would spawn a fresh alert every run before the existing one is resolved. `original_price` deliberately isn't re-read from `items.price` at accept/reject time: it's what the comparison was actually made against, so it must stay fixed even if the item's price changes in the meantime. Accepting an alert (`AcceptPriceAlert`) applies `found_price` to the item (also setting `price_auto = 1`) and flips the alert to `accepted` inside a single transaction — the same "must not leave inconsistent state" reasoning as `CreateHouseWithOwner`. Once an alert leaves `pending` (either direction) it can never be re-actioned; both `AcceptPriceAlert` and `RejectPriceAlert` guard on `WHERE status = 'pending'` and return `ErrNotFound` otherwise. See [docs/API.md](API.md#price-alerts) for the resulting endpoint behavior.
+A row here is created by `internal/handlers`' periodic or on-demand price check (`trackItemPrice` in `internal/handlers/price_tracking.go`, see [API.md](API.md#price-tracking)) when `internal/scraper.FetchProductInfo` finds a lower price on the `url` of an item whose price was typed in, or `internal/scraper.SearchDealabs` finds a matching cheaper deal — only if that item has no alert for the same price at the same `source_url` yet (`HasPriceAlertForSource`, so a rejected deal isn't proposed again) and doesn't already have a `pending` alert (`CreatePriceAlertIfNonePending`'s `WHERE NOT EXISTS` guard) — otherwise a repeat periodic scan would spawn a fresh alert every run before the existing one is resolved. `original_price` deliberately isn't re-read from `items.price` at accept/reject time: it's what the comparison was actually made against, so it must stay fixed even if the item's price changes in the meantime. Accepting an alert (`AcceptPriceAlert`) applies `found_price` to the item and makes `source_url` its `url` (a switch to the deal page for a Dealabs deal), with `price_auto = 1` so the price follows that page from then on; it also clears `previous_price`/`price_changed_at`, records `found_price` in `price_history`, and flips the alert to `accepted` inside a single transaction — the same "must not leave inconsistent state" reasoning as `CreateHouseWithOwner`. Once an alert leaves `pending` (either direction) it can never be re-actioned; both `AcceptPriceAlert` and `RejectPriceAlert` guard on `WHERE status = 'pending'` and return `ErrNotFound` otherwise. See [docs/API.md](API.md#price-alerts) for the resulting endpoint behavior.
 
 ### `custom_categories`
 
@@ -246,6 +252,35 @@ One row per user who has a personal calendar feed link (see [CALENDAR_EXPORT.md]
 | `last_used_at` | `TEXT` | the last successful feed fetch, `NULL` until a calendar app first uses the link; shown in Paramètres so the user can tell whether a subscription works |
 
 Regenerating the link upserts the row with a new `token_hash` (`internal/db.SetCalendarFeedToken`), which is what revokes the old link; disabling it deletes the row.
+
+### `price_history`
+
+Every distinct price observed on an item's own `url` (migration 28): the scrape that first fills its price in, then each price check whose price differs from the last one recorded (`internal/db.RecordPriceObservation` — one `INSERT … SELECT … WHERE (last price) IS NOT ?`, so the table only grows when the price moves). It records what the page showed, whether or not that price was applied to the item. Read through `GET /api/v1/items/{id}/price-history`.
+
+| Column | Type | Notes |
+|---|---|---|
+| `id` | `INTEGER PRIMARY KEY AUTOINCREMENT` | |
+| `item_id` | `INTEGER NOT NULL` | `REFERENCES items(id) ON DELETE CASCADE`; index `idx_price_history_item` on `(item_id, recorded_at)` |
+| `price` | `REAL NOT NULL` | |
+| `recorded_at` | `TEXT NOT NULL` | ISO-8601 UTC |
+
+### `price_notifications`
+
+Each user's in-app price alert inbox, shown in the 🔔 drawer (migration 28; see [API.md](API.md#price-tracking)): one row per recipient, written by `internal/handlers.notifyPriceChange` for every user with access to the item's list, whatever their preferences — `ListPriceNotifications` filters by the user's *current* `price_*_enabled` columns when reading (a `JOIN users` + `CASE kind`), so the inbox follows the settings both ways. Written independently of push, which is what lets alerts reach a user with push off. Pruned by the daily price scan: read rows after 30 days, all rows after 90 (`PrunePriceNotifications`).
+
+| Column | Type | Notes |
+|---|---|---|
+| `id` | `INTEGER PRIMARY KEY AUTOINCREMENT` | |
+| `user_id` | `INTEGER NOT NULL` | `REFERENCES users(id) ON DELETE CASCADE`; index `idx_price_notifications_user` on `(user_id, read_at)` |
+| `item_id` | `INTEGER NOT NULL` | `REFERENCES items(id) ON DELETE CASCADE`; index `idx_price_notifications_item` |
+| `kind` | `TEXT NOT NULL` | `CHECK (kind IN ('drop', 'increase', 'deal', 'expired'))` — `expired`: the Dealabs deal the item's url points to has expired, announced once per url (`HasPriceNotification`) |
+| `old_price` | `REAL NOT NULL` | |
+| `new_price` | `REAL NOT NULL` | |
+| `source_url` | `TEXT` | where a `deal` was found, or the `expired` deal's url; `NULL` otherwise |
+| `created_at` | `TEXT NOT NULL` | ISO-8601 UTC |
+| `read_at` | `TEXT` | `NULL` while unread |
+
+Listing filters to items on lists the user can still access (the same three sources `AccessLevelForList` combines), so losing access to a list also hides what was queued about it.
 
 ## Evolving the schema
 

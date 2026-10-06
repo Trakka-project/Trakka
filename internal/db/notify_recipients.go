@@ -56,6 +56,12 @@ const (
 	NotifyCollaboratorActions NotificationKind = "collaborator_actions" // users.collaborator_actions_enabled
 	NotifyItemAdditions       NotificationKind = "item_additions"       // users.item_additions_enabled
 	NotifyListSharing         NotificationKind = "list_sharing"         // users.list_sharing_enabled
+	// The price alerts are all under users.price_alerts_enabled, the
+	// "Désactiver les alertes de prix" master switch.
+	NotifyPriceDrops     NotificationKind = "price_drops"     // + users.price_drop_alerts_enabled
+	NotifyPriceIncreases NotificationKind = "price_increases" // + users.price_increase_alerts_enabled
+	NotifyPriceTargets   NotificationKind = "price_targets"   // an item's own target price, master switch only
+	NotifyPriceDealGone  NotificationKind = "price_deal_gone" // the deal an item follows expired, master switch only
 )
 
 // wantsNotificationExpr is true for a users row that wants the kind bound to
@@ -66,6 +72,10 @@ const wantsNotificationExpr = `CASE ?
 		  WHEN 'collaborator_actions' THEN collaborator_actions_enabled
 		  WHEN 'item_additions' THEN item_additions_enabled
 		  WHEN 'list_sharing' THEN list_sharing_enabled
+		  WHEN 'price_drops' THEN price_alerts_enabled * price_drop_alerts_enabled
+		  WHEN 'price_increases' THEN price_alerts_enabled * price_increase_alerts_enabled
+		  WHEN 'price_targets' THEN price_alerts_enabled
+		  WHEN 'price_deal_gone' THEN price_alerts_enabled
 		  ELSE 0 END = 1`
 
 // ListNotificationRecipientsFor is ListNotificationRecipients narrowed to the
