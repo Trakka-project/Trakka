@@ -577,6 +577,13 @@
     },
     "userSettings": {
       "title": "Paramètres",
+      "tabs": {
+        "ariaLabel": "Catégories de paramètres",
+        "general": "Général",
+        "notifications": "Notifications",
+        "prices": "Prix",
+        "calendar": "Calendrier"
+      },
       "appearanceLabel": "Apparence",
       "appearanceHint": "Choisissez l'apparence de l'application.",
       "languageLabel": "Langue",

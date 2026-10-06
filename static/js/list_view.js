@@ -839,12 +839,12 @@ function openSortItemsSheet() {
   if (!state.currentList) return;
   updateSortOptionChecks(state.currentList.id);
   listEls.sortItemsSheet.hidden = false;
-  document.body.classList.add('overflow-hidden');
+  TrakkaScrollLock.lock();
 }
 
 function closeSortItemsSheet() {
   listEls.sortItemsSheet.hidden = true;
-  document.body.classList.remove('overflow-hidden');
+  TrakkaScrollLock.unlock();
 }
 
 listEls.sortItemsButton.addEventListener('click', openSortItemsSheet);
@@ -880,12 +880,12 @@ for (const button of sortOptionButtons) {
 function openListOptionsSheet() {
   if (!state.currentList) return;
   listEls.listOptionsSheet.hidden = false;
-  document.body.classList.add('overflow-hidden');
+  TrakkaScrollLock.lock();
 }
 
 function closeListOptionsSheet() {
   listEls.listOptionsSheet.hidden = true;
-  document.body.classList.remove('overflow-hidden');
+  TrakkaScrollLock.unlock();
 }
 
 listEls.listOptionsButton.addEventListener('click', openListOptionsSheet);
@@ -1152,12 +1152,12 @@ function openFilterItemsSheet() {
   listEls.filterPriceMin.value = filterState.priceMin === null ? '' : filterState.priceMin;
   listEls.filterPriceMax.value = filterState.priceMax === null ? '' : filterState.priceMax;
   listEls.filterItemsSheet.hidden = false;
-  document.body.classList.add('overflow-hidden');
+  TrakkaScrollLock.lock();
 }
 
 function closeFilterItemsSheet() {
   listEls.filterItemsSheet.hidden = true;
-  document.body.classList.remove('overflow-hidden');
+  TrakkaScrollLock.unlock();
 }
 
 listEls.filterItemsButton.addEventListener('click', openFilterItemsSheet);
@@ -1976,14 +1976,14 @@ function openImagePreview(item) {
   listEls.imagePreviewImg.src = item.image_url;
   listEls.imagePreviewImg.alt = item.title;
   listEls.imagePreviewModal.hidden = false;
-  document.body.classList.add('overflow-hidden');
+  TrakkaScrollLock.lock();
   listEls.closeImagePreviewButton.focus();
 }
 
 function closeImagePreview() {
   listEls.imagePreviewModal.hidden = true;
   listEls.imagePreviewImg.src = '';
-  document.body.classList.remove('overflow-hidden');
+  TrakkaScrollLock.unlock();
 }
 
 listEls.closeImagePreviewButton.addEventListener('click', closeImagePreview);
@@ -3647,7 +3647,7 @@ function openEditItemModal(item, { focus } = {}) {
   listEls.editItemUrgent.checked = Boolean(item.is_urgent);
   renderEditItemLabelsPreview(item);
   listEls.editItemModal.hidden = false;
-  document.body.classList.add('overflow-hidden');
+  TrakkaScrollLock.lock();
   if (focus === 'due-date' && !listEls.editItemDueDate.closest('[data-item-field]').hidden) {
     listEls.editItemDueDate.focus();
     listEls.editItemDueDate.scrollIntoView({ block: 'center' });
@@ -3678,7 +3678,7 @@ listEls.editItemPrice.addEventListener('input', () => {
 function closeEditItemModal() {
   editingItem = null;
   listEls.editItemModal.hidden = true;
-  document.body.classList.remove('overflow-hidden');
+  TrakkaScrollLock.unlock();
 }
 
 listEls.closeEditItemModalButton.addEventListener('click', closeEditItemModal);
@@ -3716,7 +3716,7 @@ function openItemActionsSheet(item, { focusLink = false } = {}) {
   listEls.itemActionsPriceCheckButton.hidden = !(canCheckItemPrice(item) && fieldVisibilityFor(state.currentList?.type).price);
   listEls.itemActionsUrgentLabel.textContent = t(item.is_urgent ? 'modals.itemActions.unmarkUrgent' : 'modals.itemActions.markUrgent');
   listEls.itemActionsSheet.hidden = false;
-  document.body.classList.add('overflow-hidden');
+  TrakkaScrollLock.lock();
   if (focusLink && hasLink) {
     listEls.itemActionsOpenLinkButton.focus();
   }
@@ -3725,7 +3725,7 @@ function openItemActionsSheet(item, { focusLink = false } = {}) {
 function closeItemActionsSheet() {
   itemActionsSheetItem = null;
   listEls.itemActionsSheet.hidden = true;
-  document.body.classList.remove('overflow-hidden');
+  TrakkaScrollLock.unlock();
 }
 
 listEls.closeItemActionsSheetButton.addEventListener('click', closeItemActionsSheet);
@@ -4027,14 +4027,14 @@ function openLabelManageSheet(items) {
   listEls.labelManageSearch.value = '';
   renderLabelManageSheetChips();
   listEls.labelManageSheet.hidden = false;
-  document.body.classList.add('overflow-hidden');
+  TrakkaScrollLock.lock();
   listEls.labelManageSearch.focus();
 }
 
 function closeLabelManageSheet() {
   labelManageItems = null;
   listEls.labelManageSheet.hidden = true;
-  document.body.classList.remove('overflow-hidden');
+  TrakkaScrollLock.unlock();
 }
 
 listEls.closeLabelManageSheetButton.addEventListener('click', closeLabelManageSheet);

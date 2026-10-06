@@ -800,13 +800,13 @@ els.houseSelect.addEventListener('change', async (event) => {
 function openNewHouseModal() {
   els.createHouseForm.reset();
   els.newHouseModal.hidden = false;
-  document.body.classList.add('overflow-hidden');
+  TrakkaScrollLock.lock();
   els.houseNameInput.focus();
 }
 
 function closeNewHouseModal() {
   els.newHouseModal.hidden = true;
-  document.body.classList.remove('overflow-hidden');
+  TrakkaScrollLock.unlock();
 }
 
 els.closeHouseModalButton.addEventListener('click', closeNewHouseModal);
@@ -985,13 +985,13 @@ async function loadMembers() {
 function openMembersModal() {
   els.inviteMemberForm.reset();
   els.membersModal.hidden = false;
-  document.body.classList.add('overflow-hidden');
+  TrakkaScrollLock.lock();
   loadMembers();
 }
 
 function closeMembersModal() {
   els.membersModal.hidden = true;
-  document.body.classList.remove('overflow-hidden');
+  TrakkaScrollLock.unlock();
 }
 
 els.manageMembersButton.addEventListener('click', openMembersModal);
@@ -1752,13 +1752,13 @@ function openListCardActionsSheet(list) {
   listCardActionsEls.pinIcon.textContent = pinned ? '📍' : '📌';
   listCardActionsEls.pinLabel.textContent = t(pinned ? 'modals.listActions.unpin' : 'modals.listActions.pin');
   listCardActionsEls.sheet.hidden = false;
-  document.body.classList.add('overflow-hidden');
+  TrakkaScrollLock.lock();
 }
 
 function closeListCardActionsSheet() {
   listCardActionsSheetList = null;
   listCardActionsEls.sheet.hidden = true;
-  document.body.classList.remove('overflow-hidden');
+  TrakkaScrollLock.unlock();
 }
 
 listCardActionsEls.closeButton.addEventListener('click', closeListCardActionsSheet);
@@ -1851,13 +1851,13 @@ function openListModal(list) {
   // deleted in another tab since the last time the Spaces tab was opened.
   loadCustomCategories().then(() => populateCategorySelect(els.listCategorySelect, list?.custom_category_id ?? null));
   els.newListModal.hidden = false;
-  document.body.classList.add('overflow-hidden');
+  TrakkaScrollLock.lock();
   els.listNameInput.focus();
 }
 
 function closeNewListModal() {
   els.newListModal.hidden = true;
-  document.body.classList.remove('overflow-hidden');
+  TrakkaScrollLock.unlock();
   editingList = null;
   els.newListButton.focus();
 }

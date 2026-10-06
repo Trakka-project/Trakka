@@ -123,14 +123,14 @@ function openRecurrenceEditor({ rule, start, returnFocus, onApply, onCancel }) {
     onApply,
     onCancel,
     returnFocus,
-    addedScrollLock: !document.body.classList.contains('overflow-hidden'),
+    addedScrollLock: !TrakkaScrollLock.isLocked(),
   };
   recurrenceEditorEls.start.value = start || TrakkaRecurrence.localDateISO();
   preselectStartWeekday();
   renderRecurrenceEditor();
 
   recurrenceEditorEls.sheet.hidden = false;
-  if (recurrenceEditorSession.addedScrollLock) document.body.classList.add('overflow-hidden');
+  if (recurrenceEditorSession.addedScrollLock) TrakkaScrollLock.lock();
   const checked = recurrenceEditorEls.freqButtons.find((button) => button.getAttribute('aria-checked') === 'true');
   (checked || recurrenceEditorEls.freqButtons[0]).focus();
 }
@@ -141,7 +141,7 @@ function closeRecurrenceEditor(applied) {
   const rule = applied ? recurrenceEditorRule() : null;
   recurrenceEditorSession = null;
   recurrenceEditorEls.sheet.hidden = true;
-  if (session.addedScrollLock) document.body.classList.remove('overflow-hidden');
+  if (session.addedScrollLock) TrakkaScrollLock.unlock();
 
   if (rule) {
     session.onApply?.(TrakkaRecurrence.formatRule(rule), TrakkaRecurrence.firstOccurrenceOnOrAfter(recurrenceEditorEls.start.value, rule));

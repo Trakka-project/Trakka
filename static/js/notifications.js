@@ -317,14 +317,14 @@ setInterval(() => {
 
 function openNotificationsModal() {
   notifEls.modal.hidden = false;
-  document.body.classList.add('overflow-hidden');
+  TrakkaScrollLock.lock();
   renderNotificationsList();
   markShownPriceNotificationsRead();
 }
 
 function closeNotificationsModal() {
   notifEls.modal.hidden = true;
-  document.body.classList.remove('overflow-hidden');
+  TrakkaScrollLock.unlock();
   freshPriceNotificationIds = new Set();
 }
 
