@@ -2179,8 +2179,11 @@ document.addEventListener('visibilitychange', () => {
     updateNetworkStatus();
     checkForServiceWorkerUpdate();
     // Picks up whatever the periodic backend price-drop scan found while
-    // this tab was in the background, without requiring a full reload.
+    // this tab was in the background, without requiring a full reload —
+    // in the 🔔 and on the open list's prices (applyServerPriceChanges,
+    // list_view.js).
     refreshNotifications();
+    applyServerPriceChanges();
   }
 });
 // 'focus' is a deliberate addition alongside 'visibilitychange' above, not a

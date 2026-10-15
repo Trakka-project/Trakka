@@ -78,10 +78,10 @@ No `--userns=keep-id` or extra rootless flags are needed for normal operation: t
 
 Multi-stage [Dockerfile](../Dockerfile):
 
-1. **Build stage** — `golang:1.27.0-alpine`, compiles `./cmd/server` with `CGO_ENABLED=0` to a fully static, stripped binary (`-ldflags="-s -w"`); `modernc.org/sqlite` is pure Go, so this works with no `libsqlite3`. This stage also creates the `/etc/passwd`/`/etc/group` entries for UID/GID `10001` and an empty, correctly-owned `/data` directory, since neither can be created in the shell-less runtime stage below.
+1. **Build stage** — `golang:1.27.2-alpine`, compiles `./cmd/server` with `CGO_ENABLED=0` to a fully static, stripped binary (`-ldflags="-s -w"`); `modernc.org/sqlite` is pure Go, so this works with no `libsqlite3`. This stage also creates the `/etc/passwd`/`/etc/group` entries for UID/GID `10001` and an empty, correctly-owned `/data` directory, since neither can be created in the shell-less runtime stage below.
 2. **Runtime stage** — [`gcr.io/distroless/static-debian12`](https://github.com/GoogleContainerTools/distroless), not Alpine: no shell, no package manager, nothing beyond CA certificates and the binary itself. Only the compiled `trakka` binary, `static/`, `templates/`, and the passwd/group/`/data` entries prepared in the build stage are copied in; `USER 10001:10001` (the same fixed non-root UID as before) is set explicitly rather than relying on the image's own built-in `nonroot` user (which is UID `65532`), to keep the Podman rootless-mapping behavior described below unchanged.
 
-The Go version in the build stage and the `go` directive in [go.mod](../go.mod) are intentionally kept in lockstep (both `1.27.0`) — see [CLAUDE.md](../CLAUDE.md) if you need to bump the SQLite driver or Go version. The distroless runtime tag is not part of that lockstep (it tracks Debian 12 rebuilds, not a Go version); pin it to a digest before relying on it for production reproducibility.
+The Go version in the build stage and the `go` directive in [go.mod](../go.mod) are intentionally kept in lockstep (both `1.27.2`) — see [CLAUDE.md](../CLAUDE.md) if you need to bump the SQLite driver or Go version. The distroless runtime tag is not part of that lockstep (it tracks Debian 12 rebuilds, not a Go version); pin it to a digest before relying on it for production reproducibility.
 
 ### When the build can't download Go modules
 

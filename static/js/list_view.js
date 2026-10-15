@@ -2935,6 +2935,45 @@ async function refreshCurrentList() {
   }
 }
 
+// The fields a background price scan writes on an item (see
+// internal/handlers.applyObservedPrice) — what applyServerPriceChanges
+// copies onto the open list's rows.
+const SCANNED_PRICE_FIELDS = ['price', 'price_auto', 'previous_price', 'price_changed_at'];
+
+// Brings the open list's rows up to date with prices a background scan
+// changed — run by notifications.js's poll alongside the 🔔 and when the
+// tab is shown again (app.js), so a row shows its new price and ▲/▼
+// without a reload. Unlike refreshCurrentList it only touches those fields
+// of the items already in state.currentList (an open edit modal or a
+// reorder draft keeps pointing at the same objects), re-renders only when
+// one of them actually changed, and stays silent on failure: the next
+// reload catches up.
+async function applyServerPriceChanges() {
+  const listId = state.currentListId;
+  if (listId === null) return;
+  let fresh;
+  try {
+    fresh = await apiRequest(`/lists/${listId}`);
+  } catch {
+    return;
+  }
+  if (state.currentListId !== listId || !state.currentList || !Array.isArray(fresh?.items)) return;
+  const latestById = new Map(fresh.items.map((item) => [item.id, item]));
+  let changed = false;
+  for (const item of state.currentList.items || []) {
+    const latest = latestById.get(item.id);
+    if (!latest) continue;
+    for (const key of SCANNED_PRICE_FIELDS) {
+      const value = latest[key] ?? null;
+      if ((item[key] ?? null) !== value) {
+        item[key] = value;
+        changed = true;
+      }
+    }
+  }
+  if (changed) renderItems();
+}
+
 // opts.silent suppresses the error banner on failure (a 404, or offline
 // with nothing cached) — used only by restoreLastView (app.js) when
 // reopening a list from a previous session, since a list that's since been

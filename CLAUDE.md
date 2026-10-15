@@ -29,6 +29,20 @@ make build-apk-capacitor   # optional Android APK (Capacitor), built in a contai
 
 `go test ./...` applies to whatever packages currently have tests (no custom test runner or build tag scheme). See [.claude/ci-security.md](.claude/ci-security.md) for the full local-check recipe (linters, `govulncheck`, `gosec`, `gitleaks`, Trivy) that mirrors CI.
 
+## Mandatory checks before handing over any change
+
+At the end of **every** delivery — before committing, pushing, or reporting the work as done — run all five locally, with the tool versions pinned in `.github/workflows/ci.yml`, and report each result. A failure blocks the hand-over; a tool that can't be run is reported as not run, never as passing:
+
+```bash
+go test ./...
+golangci-lint run ./...
+govulncheck ./...
+gosec ./...
+trivy fs --scanners vuln --severity CRITICAL,HIGH --ignore-unfixed --exit-code 1 .   # CI's gate; plain `trivy fs .` never fails
+```
+
+Install/version details, and the container fallback when a tool isn't installed, are in [.claude/ci-security.md](.claude/ci-security.md#mandatory-pre-hand-over-checks).
+
 ## Where to look
 
 | Working on... | Read |

@@ -2,7 +2,7 @@
 
 ## Requirements
 
-- Go 1.27.0+ (matches the `go 1.27.0` directive in [go.mod](../go.mod) and the `golang:1.27.0-alpine` build stage in the [Dockerfile](../Dockerfile))
+- Go 1.27.2+ (matches the `go 1.27.2` directive in [go.mod](../go.mod) and the `golang:1.27.2-alpine` build stage in the [Dockerfile](../Dockerfile))
 - No CGO toolchain needed — `modernc.org/sqlite` is pure Go
 
 ## Running locally
@@ -89,7 +89,7 @@ internal/logbuffer/    in-memory ring-buffer slog.Handler backing the admin cons
 internal/ical/         minimal iCalendar (RFC 5545) writer for the personal calendar feed (escaping, line folding, DATE/DURATION values)
 static/                PWA frontend served at "/": index.html, js/app.js, js/list_view.js, js/db.js, sw.js, css/tokens.css, css/base.css, manifest.json, icons/
 templates/             login.html, rendered via html/template with server-injected per-request data (OIDC-enabled flag, mode, error message)
-Dockerfile             multi-stage build (golang:1.27.0-alpine -> alpine:latest)
+Dockerfile             multi-stage build (golang:1.27.2-alpine -> alpine:latest)
 compose.yml            the trakka service on its own bridge network
 android/, Makefile     optional Android app (Capacitor shell for any Trakka server), see docs/MOBILE_BUILD.md
 docs/                  this documentation

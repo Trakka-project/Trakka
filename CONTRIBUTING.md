@@ -16,7 +16,7 @@ wins if the two ever disagree.
 
 ## Requirements
 
-- Go 1.27.0+ (see `go.mod`'s `go` directive — it must stay in sync with the
+- Go 1.27.2+ (see `go.mod`'s `go` directive — it must stay in sync with the
   `modernc.org/sqlite` version and the Dockerfile's builder image tag, see
   CLAUDE.md)
 - No CGO, no Docker/Podman required for local development — the backend is
