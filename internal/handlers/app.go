@@ -75,6 +75,12 @@ type Application struct {
 	appHandoffsOnce sync.Once
 	appHandoffsVal  *appHandoffStore
 
+	// Retried OIDC discovery (see oidc_discovery.go): one attempt at a time,
+	// and the time and error of the last one.
+	oidcDiscoveryMu   sync.Mutex
+	oidcDiscoveryLast time.Time
+	oidcDiscoveryErr  error
+
 	// pushHook, when set (tests only), receives every notification
 	// sendToUsers would deliver instead of it being sent: no test can reach
 	// a real push service, whose endpoints the SSRF guard keeps off
@@ -134,6 +140,7 @@ func (app *Application) Routes() http.Handler {
 	mux.HandleFunc("GET /healthz", app.handleHealthz)
 
 	mux.HandleFunc("GET /auth/login", app.handleLoginPage)
+	mux.HandleFunc("GET /auth/methods", app.handleAuthMethods)
 	mux.HandleFunc("POST /auth/login", app.handleLoginSubmit)
 	mux.HandleFunc("POST /auth/register", app.handleRegisterSubmit)
 	mux.HandleFunc("POST /auth/logout", app.handleLogout)
@@ -198,6 +205,8 @@ func (app *Application) Routes() http.Handler {
 	apiMux.HandleFunc("PATCH /api/v1/price-alerts/{id}", app.handlePriceAlertsUpdate)
 	apiMux.HandleFunc("GET /api/v1/price-notifications", app.handlePriceNotificationsIndex)
 	apiMux.HandleFunc("POST /api/v1/price-notifications/read", app.handlePriceNotificationsRead)
+	apiMux.HandleFunc("DELETE /api/v1/price-notifications", app.handlePriceNotificationsClear)
+	apiMux.HandleFunc("DELETE /api/v1/price-notifications/{id}", app.handlePriceNotificationsDelete)
 
 	apiMux.HandleFunc("GET /api/v1/admin/settings", app.handleAdminSettingsShow)
 	apiMux.HandleFunc("PATCH /api/v1/admin/settings", app.handleAdminSettingsUpdate)

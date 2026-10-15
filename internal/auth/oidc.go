@@ -145,7 +145,7 @@ func NewOIDCClient(ctx context.Context, issuer, clientID, clientSecret, redirect
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("discovery document request returned %d", resp.StatusCode)
+		return nil, &DiscoveryStatusError{Status: resp.StatusCode}
 	}
 
 	var provider ProviderConfig
@@ -153,7 +153,7 @@ func NewOIDCClient(ctx context.Context, issuer, clientID, clientSecret, redirect
 		return nil, fmt.Errorf("decoding discovery document: %w", err)
 	}
 	if provider.Issuer != issuer {
-		return nil, fmt.Errorf("discovery document issuer %q does not match configured issuer %q", provider.Issuer, issuer)
+		return nil, fmt.Errorf("%w: the document says %q, the configured issuer is %q", ErrIssuerMismatch, provider.Issuer, issuer)
 	}
 	if provider.AuthorizationEndpoint == "" || provider.TokenEndpoint == "" || provider.JWKSURI == "" {
 		return nil, errors.New("discovery document is missing required endpoints")

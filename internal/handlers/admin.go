@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"strconv"
 	"strings"
@@ -156,6 +157,16 @@ func (app *Application) handleAdminSettingsUpdate(w http.ResponseWriter, r *http
 		}
 	}
 
+	// Discovery only runs when the OIDC configuration itself changes (OIDC
+	// switched on, or a new issuer, client ID or secret). The admin console
+	// resends every field on each save, and re-running discovery on an
+	// unchanged configuration made every save — turning oidc_exclusive off
+	// included, the way back to password login — wait the full timeout and
+	// fail while the provider was unreachable. An unchanged configuration
+	// keeps its live client, or, if discovery has not succeeded yet, the
+	// retries already in place (oidc_discovery.go).
+	oidcChanged := next.OIDCEnabled && (!current.OIDCEnabled || next.OIDCIssuer != current.OIDCIssuer ||
+		next.OIDCClientID != current.OIDCClientID || next.OIDCClientSecret != current.OIDCClientSecret)
 	var newClient *auth.OIDCClient
 	if next.OIDCEnabled {
 		if next.OIDCIssuer == "" || next.OIDCClientID == "" || next.OIDCClientSecret == "" {
@@ -166,19 +177,24 @@ func (app *Application) handleAdminSettingsUpdate(w http.ResponseWriter, r *http
 			writeError(w, http.StatusBadRequest, "BASE_URL must be configured on the server (as an environment variable) to enable OIDC")
 			return
 		}
+	}
+	if oidcChanged {
 		ctx, cancel := context.WithTimeout(r.Context(), oidcDiscoveryTimeout)
 		defer cancel()
 		newClient, err = auth.NewOIDCClient(ctx, next.OIDCIssuer, next.OIDCClientID, next.OIDCClientSecret, app.Config.BaseURL+"/auth/oidc/callback")
 		if err != nil {
-			writeError(w, http.StatusBadRequest, "OIDC discovery failed: "+err.Error())
+			reason, hint := auth.DiscoveryFailure(err)
+			app.Logger.Warn("admin settings not saved: oidc discovery failed",
+				"issuer", next.OIDCIssuer, "reason", reason, "hint", hint, "error", err)
+			writeError(w, http.StatusBadRequest, oidcDiscoveryErrorMessage(err))
 			return
 		}
 	}
 
-	// Persist only after a successful discovery above (when enabling), so a
-	// broken issuer/client configuration is never saved — the previous,
-	// known-good settings (and OIDC client) stay in effect until a working
-	// configuration is submitted.
+	// Persist only after a successful discovery above (when the OIDC
+	// configuration changed), so a broken issuer/client configuration is
+	// never saved — the previous, known-good settings (and OIDC client) stay
+	// in effect until a working configuration is submitted.
 	updates := map[string]string{
 		settings.KeyInstanceName:     next.InstanceName,
 		settings.KeyRegistrationOpen: strconv.FormatBool(next.RegistrationOpen),
@@ -196,11 +212,23 @@ func (app *Application) handleAdminSettingsUpdate(w http.ResponseWriter, r *http
 		return
 	}
 
-	if next.OIDCEnabled {
+	switch {
+	case oidcChanged:
 		app.Auth.SetOIDC(newClient)
-	} else {
+	case !next.OIDCEnabled:
 		app.Auth.SetOIDC(nil)
 	}
 
 	writeJSON(w, http.StatusOK, adminSettingsViewFrom(next))
+}
+
+// oidcDiscoveryErrorMessage is the PATCH's 400 message when discovery of a
+// new OIDC configuration fails: the reason (a timeout spelled out as such)
+// and what to check, so the admin console shows something actionable.
+func oidcDiscoveryErrorMessage(err error) string {
+	reason, hint := auth.DiscoveryFailure(err)
+	if reason == "timeout" {
+		return fmt.Sprintf("OIDC discovery timed out after %s: %s", oidcDiscoveryTimeout, hint)
+	}
+	return fmt.Sprintf("OIDC discovery failed (%s): %v — %s", reason, err, hint)
 }

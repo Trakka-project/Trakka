@@ -56,6 +56,37 @@ func (app *Application) handlePriceNotificationsRead(w http.ResponseWriter, r *h
 	w.WriteHeader(http.StatusNoContent)
 }
 
+// handlePriceNotificationsDelete removes one of the caller's own price
+// notifications from their inbox (db.DismissPriceNotifications). Always 204,
+// like mark-read: an id that isn't the caller's, or was already removed, is
+// ignored rather than reported, so the answer can't reveal which ids exist
+// and a replayed request (sw.js's offline queue) is harmless.
+func (app *Application) handlePriceNotificationsDelete(w http.ResponseWriter, r *http.Request) {
+	id, ok := pathID(w, r)
+	if !ok {
+		return
+	}
+	user := userFromContext(r)
+	if err := app.DB.DismissPriceNotifications(r.Context(), user.ID, id); err != nil {
+		app.serverError(w, r, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// handlePriceNotificationsClear empties the caller's own price notification
+// inbox ("Tout effacer" in the 🔔 drawer). Other users' inboxes, and the
+// house's pending price_alerts (resolved through PATCH
+// /api/v1/price-alerts/{id}), are untouched.
+func (app *Application) handlePriceNotificationsClear(w http.ResponseWriter, r *http.Request) {
+	user := userFromContext(r)
+	if err := app.DB.DismissPriceNotifications(r.Context(), user.ID, 0); err != nil {
+		app.serverError(w, r, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
 // handleItemsPriceHistory returns the prices observed on an item's own page
 // over time (db.RecordPriceObservation), oldest first. Read access to the
 // item's list is enough.

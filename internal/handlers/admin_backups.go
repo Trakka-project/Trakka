@@ -406,7 +406,8 @@ func (app *Application) reloadOIDCFromSettings(ctx context.Context) {
 	defer cancel()
 	client, err := auth.NewOIDCClient(discoveryCtx, current.OIDCIssuer, current.OIDCClientID, current.OIDCClientSecret, app.Config.BaseURL+"/auth/oidc/callback")
 	if err != nil {
-		app.Logger.Error("oidc discovery failed after restore; OIDC disabled until fixed", "error", err)
+		// Retried on the next SSO sign-in (ensureOIDC, oidc_discovery.go).
+		app.Logger.Error("oidc discovery failed after restore; OIDC sign-in unavailable until it succeeds", "error", err)
 		app.Auth.SetOIDC(nil)
 		return
 	}

@@ -1,7 +1,8 @@
 'use strict';
 
 // The app's connect screen: enter or scan the address of a Trakka server, or pick a recent one.
-// Talks to the app's native TrakkaApp plugin
+// It is also the app's sign-in screen (MainActivity shows it when the server asks to sign in):
+// the server's SSO in the phone's browser, its password form, or another server. Talks to the app's native TrakkaApp plugin
 // (native/app/src/main/java/io/github/trakka_project/app/TrakkaAppPlugin.java) through the bridge
 // Capacitor injects into this page. The DOM is only built with textContent, as in Trakka itself.
 
@@ -38,6 +39,24 @@ const STRINGS = {
     notTrakkaStatus: 'Ce serveur répond (code {status}), mais ne ressemble pas à Trakka.',
     cameraDenied: "Accès à la caméra refusé : autorisez-le dans les réglages Android de l'application pour scanner un QR code.",
     noBridge: "Cette page ne fonctionne que dans l'application Android Trakka.",
+    signInTitle: 'Se connecter',
+    signInLead: 'à {host}',
+    signInLoading: 'Recherche des méthodes de connexion…',
+    sso: 'Se connecter avec {provider}',
+    passwordSignIn: 'Se connecter avec un e-mail et un mot de passe',
+    openServerPage: 'Ouvrir la page de connexion du serveur',
+    register: 'Créer un compte',
+    changeServer: 'Changer de serveur',
+    backToSignIn: 'Annuler et revenir à la connexion à {host}',
+    ssoInBrowser: 'Connexion en cours dans le navigateur : l\'application reprend la main une fois connecté.',
+    ssoFailed: "Impossible d'ouvrir la connexion SSO.",
+    signInUnknown: "{host} répond, mais n'indique pas ses méthodes de connexion (code {status}) : ouvrez sa page de connexion.",
+    signInUnknownRedirect: "{host} redirige vers {redirect} : une page de connexion le protège peut-être. Ouvrez-la pour vous connecter.",
+    signInNone: "{host} ne propose aucune méthode de connexion : ouvrez sa page de connexion.",
+    signInError_oidc_failed: 'La connexion via le fournisseur externe a échoué.',
+    signInError_oidc_unavailable: "Le fournisseur d'identité ne répond pas pour le moment. Réessayez dans quelques instants.",
+    signInError_rate_limited: 'Trop de tentatives. Réessayez dans quelques minutes.',
+    signInError: 'La connexion a échoué ({code}).',
   },
   en: {
     title: 'Connect the app',
@@ -71,6 +90,24 @@ const STRINGS = {
     notTrakkaStatus: 'This server answers (status {status}) but does not look like Trakka.',
     cameraDenied: "Camera access denied: allow it in the app's Android settings to scan a QR code.",
     noBridge: 'This page only works in the Trakka Android app.',
+    signInTitle: 'Sign in',
+    signInLead: 'to {host}',
+    signInLoading: 'Looking up the sign-in methods…',
+    sso: 'Sign in with {provider}',
+    passwordSignIn: 'Sign in with an email and a password',
+    openServerPage: "Open the server's sign-in page",
+    register: 'Create an account',
+    changeServer: 'Change server',
+    backToSignIn: 'Cancel and go back to signing in to {host}',
+    ssoInBrowser: 'Signing in in the browser: the app takes over once you are signed in.',
+    ssoFailed: 'Could not start the SSO sign-in.',
+    signInUnknown: "{host} answers but does not tell its sign-in methods (status {status}): open its sign-in page.",
+    signInUnknownRedirect: '{host} redirects to {redirect}: a sign-in page may protect it. Open it to sign in.',
+    signInNone: "{host} offers no sign-in method: open its sign-in page.",
+    signInError_oidc_failed: 'Signing in with the external provider failed.',
+    signInError_oidc_unavailable: 'The identity provider does not respond right now. Try again in a moment.',
+    signInError_rate_limited: 'Too many attempts. Try again in a few minutes.',
+    signInError: 'Signing in failed ({code}).',
   },
 };
 
@@ -121,12 +158,26 @@ const els = {
   recentSection: document.getElementById('recent-section'),
   recentList: document.getElementById('recent-list'),
   cancel: document.getElementById('cancel-button'),
+  title: document.getElementById('screen-title'),
+  lead: document.getElementById('screen-lead'),
+  signIn: document.getElementById('signin-section'),
+  signInMessage: document.getElementById('signin-message'),
+  sso: document.getElementById('sso-button'),
+  signInSeparator: document.getElementById('signin-separator'),
+  password: document.getElementById('password-button'),
+  serverPage: document.getElementById('server-page-button'),
+  signInRetry: document.getElementById('signin-retry-button'),
+  register: document.getElementById('register-button'),
+  changeServer: document.getElementById('change-server-button'),
+  backToSignIn: document.getElementById('back-to-signin-button'),
 };
 
 // A server that answers but is not recognizably Trakka, waiting for "Se connecter quand même".
 let unconfirmedServer = null;
 // Set once the app is switching to a server: the page is about to go away.
 let leaving = false;
+// {server, error?} when the server asked to sign in: the screen then starts as a sign-in screen.
+let signIn = null;
 
 function setBusy(busy, label) {
   for (const control of document.querySelectorAll('button, input')) {
@@ -188,6 +239,93 @@ async function checkAndConnect(url, { scanned = false } = {}) {
   }
 }
 
+function showSignInMessage(text, kind) {
+  els.signInMessage.textContent = text || '';
+  els.signInMessage.dataset.kind = kind || '';
+  els.signInMessage.hidden = !text;
+}
+
+function signInErrorText(code) {
+  const key = `signInError_${code}`;
+  return STRINGS[lang][key] || STRINGS.en[key] ? t(key) : t('signInError', { code });
+}
+
+// Sign-in screen, or the connect form reached from it through "Changer de serveur".
+function showSignInView(signingIn) {
+  const host = hostOf(signIn.server);
+  els.title.textContent = signingIn ? t('signInTitle') : t('title');
+  els.lead.textContent = signingIn ? t('signInLead', { host }) : t('lead');
+  els.signIn.hidden = !signingIn;
+  els.changeServer.hidden = !signingIn;
+  els.form.hidden = signingIn;
+  els.recentSection.hidden = signingIn || els.recentList.children.length === 0;
+  els.backToSignIn.hidden = signingIn;
+  els.backToSignIn.textContent = t('backToSignIn', { host });
+}
+
+async function loadSignInMethods() {
+  const host = hostOf(signIn.server);
+  for (const el of [els.sso, els.signInSeparator, els.password, els.serverPage, els.signInRetry, els.register]) {
+    el.hidden = true;
+  }
+  showSignInMessage(signIn.error ? signInErrorText(signIn.error) : t('signInLoading'), signIn.error ? 'error' : '');
+  let methods;
+  try {
+    methods = await app.getSignInMethods();
+  } catch {
+    methods = { reachable: false, reason: 'network' };
+  }
+  const notices = signIn.error ? [signInErrorText(signIn.error)] : [];
+  if (!methods.reachable) {
+    notices.push(reasonText(methods.reason, { host }));
+    els.signInRetry.hidden = false;
+  } else if (!methods.known) {
+    notices.push(
+      methods.redirectHost
+        ? t('signInUnknownRedirect', { host, redirect: methods.redirectHost })
+        : t('signInUnknown', { host, status: methods.status }),
+    );
+    els.serverPage.hidden = false;
+  } else {
+    els.sso.textContent = t('sso', { provider: methods.providerName || 'SSO' });
+    els.sso.hidden = !methods.oidc;
+    // Shown only when the server allows passwords: an SSO-only server has no password form.
+    els.password.hidden = !methods.password;
+    els.signInSeparator.hidden = !(methods.oidc && methods.password);
+    els.register.hidden = !methods.registration;
+    if (!methods.oidc && !methods.password) {
+      notices.push(t('signInNone', { host }));
+      els.serverPage.hidden = false;
+    }
+  }
+  showSignInMessage(notices.join(' '), notices.length ? 'error' : '');
+}
+
+async function signInWithSso() {
+  try {
+    await app.signInWithBrowser();
+    showSignInMessage(t('ssoInBrowser'), 'info');
+  } catch (err) {
+    if (err.code === 'no_browser') {
+      // No browser on the phone: the server's SSO sign-in in the app's WebView, as a fallback.
+      await openServerSignIn('sso');
+    } else {
+      showSignInMessage(t('ssoFailed'), 'error');
+    }
+  }
+}
+
+async function openServerSignIn(page) {
+  leaving = true;
+  setBusy(true);
+  try {
+    await app.openServerSignIn({ page });
+  } catch {
+    leaving = false;
+    setBusy(false);
+  }
+}
+
 function renderRecent(recent, current) {
   const items = recent.map((server) => {
     const host = hostOf(server);
@@ -226,11 +364,21 @@ function renderRecent(recent, current) {
     return item;
   });
   els.recentList.replaceChildren(...items);
-  els.recentSection.hidden = items.length === 0;
+  els.recentSection.hidden = items.length === 0 || (signIn !== null && !els.signIn.hidden);
 }
 
 async function refresh() {
   const state = await app.getConnectState();
+  const wasSigningIn = signIn !== null;
+  signIn = state.signIn || null;
+  if (wasSigningIn && !signIn) {
+    // Its server was just forgotten: back to a plain connect screen.
+    applyTranslations();
+    els.signIn.hidden = true;
+    els.changeServer.hidden = true;
+    els.backToSignIn.hidden = true;
+    els.form.hidden = false;
+  }
   renderRecent(state.recent || [], state.server);
   els.cancel.hidden = !state.canCancel;
   if (state.canCancel) {
@@ -282,5 +430,26 @@ if (!app) {
   });
   els.retry.addEventListener('click', () => app.reopenServer());
   els.cancel.addEventListener('click', () => app.reopenServer());
-  refresh();
+  els.sso.addEventListener('click', signInWithSso);
+  els.password.addEventListener('click', () => openServerSignIn('password'));
+  els.serverPage.addEventListener('click', () => openServerSignIn('password'));
+  els.register.addEventListener('click', () => openServerSignIn('register'));
+  els.signInRetry.addEventListener('click', () => {
+    signIn = { server: signIn.server };
+    loadSignInMethods();
+  });
+  els.changeServer.addEventListener('click', () => {
+    showSignInView(false);
+    els.url.focus();
+  });
+  els.backToSignIn.addEventListener('click', () => {
+    showMessage('');
+    showSignInView(true);
+  });
+  refresh().then(() => {
+    if (signIn) {
+      showSignInView(true);
+      loadSignInMethods();
+    }
+  });
 }

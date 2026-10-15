@@ -6,7 +6,9 @@
 //   internal/handlers.notifyPriceChange): the signed-in user's own inbox of
 //   price changes on tracked items — a drop, an increase, a better price
 //   found — written whether or not push is on, so an alert never depends on
-//   push reaching this device. Opening the drawer marks the ones shown read.
+//   push reaching this device. Opening the drawer marks the ones shown read;
+//   each entry's ✕ removes it, "Tout effacer" removes them all (DELETE
+//   /api/v1/price-notifications[/{id}] — the user's own entries only).
 // - price_alerts (see internal/handlers/price_alerts.go): a lower price found
 //   for one of the current house's items, on its own page or on Dealabs,
 //   waiting to be accepted ("Appliquer le nouveau prix", which PATCHes the
@@ -27,6 +29,7 @@ const notifEls = {
   badge: document.getElementById('notifications-badge'),
   modal: document.getElementById('notifications-modal'),
   closeButton: document.getElementById('close-notifications-modal-button'),
+  clearButton: document.getElementById('clear-notifications-button'),
   list: document.getElementById('notifications-list'),
 };
 
@@ -40,6 +43,11 @@ let notificationAlerts = [];
 // already marked them read.
 let priceNotifications = [];
 let freshPriceNotificationIds = new Set();
+
+// Ids removed in this page's lifetime: a load that was already in flight
+// when one was removed (the 60 s poll), or an offline read while the DELETE
+// still sits in sw.js's queue, must not bring it back.
+const dismissedPriceNotificationIds = new Set();
 
 // A "deal" entry duplicates the actionable card of a pending alert for the
 // same item when that one is shown: only the card is listed then.
@@ -68,6 +76,7 @@ function buildNotificationsHeading(key) {
 function renderNotificationsList() {
   notifEls.list.replaceChildren();
   const changes = visiblePriceNotifications();
+  updateClearNotificationsButton();
   if (notificationAlerts.length === 0 && changes.length === 0) {
     const li = document.createElement('li');
     li.className = 'rounded-xl border border-dashed border-slate-200 dark:border-slate-700 p-6 text-center text-sm text-slate-500';
@@ -98,6 +107,7 @@ function buildPriceNotificationRow(n) {
   const kind = PRICE_NOTIFICATION_KIND[n.kind] || PRICE_NOTIFICATION_KIND.drop;
   const li = document.createElement('li');
   li.className = 'rounded-xl border border-slate-200 dark:border-slate-700 bg-white/60 dark:bg-slate-900/60 p-3';
+  li.dataset.priceNotificationId = String(n.id);
 
   const top = document.createElement('div');
   top.className = 'mb-1 flex items-center justify-between gap-2';
@@ -105,12 +115,25 @@ function buildPriceNotificationRow(n) {
   label.className = `text-xs font-semibold ${kind.className}`;
   label.textContent = t(kind.key);
   top.appendChild(label);
+  const trailing = document.createElement('div');
+  trailing.className = 'flex shrink-0 items-center gap-1';
   if (freshPriceNotificationIds.has(n.id)) {
     const fresh = document.createElement('span');
     fresh.className = 'rounded-full bg-sky-500/15 px-2 py-0.5 text-[10px] font-semibold text-sky-700 dark:text-sky-300';
     fresh.textContent = t('notifications.unread');
-    top.appendChild(fresh);
+    trailing.appendChild(fresh);
   }
+  const removeBtn = document.createElement('button');
+  removeBtn.type = 'button';
+  // Always shown (no hover-only reveal: a phone has no hover), with a 44px
+  // touch target whose negative margins keep the row as compact as before.
+  removeBtn.className = '-my-3 -mr-2.5 flex h-11 w-11 items-center justify-center rounded-lg text-slate-500 dark:text-slate-400 transition hover:bg-rose-500/10 hover:text-rose-600 dark:hover:text-rose-400 active:bg-rose-500/10 active:text-rose-600 dark:active:text-rose-400';
+  removeBtn.setAttribute('aria-label', t('notifications.remove'));
+  removeBtn.title = t('notifications.remove');
+  removeBtn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" class="h-5 w-5" aria-hidden="true"><path d="M18 6L6 18M6 6l12 12"/></svg>';
+  removeBtn.addEventListener('click', () => dismissPriceNotification(n, li));
+  trailing.appendChild(removeBtn);
+  top.appendChild(trailing);
   li.appendChild(top);
 
   const title = document.createElement('p');
@@ -257,7 +280,7 @@ function buildAlertRow(alert) {
 // source's last known state.
 async function loadNotifications() {
   const inbox = apiRequest('/price-notifications').then(
-    (list) => { if (Array.isArray(list)) priceNotifications = list; },
+    (list) => { if (Array.isArray(list)) priceNotifications = list.filter((n) => !dismissedPriceNotificationIds.has(n.id)); },
     () => {},
   );
   // ensureHousesLoaded is defined in app.js, resolved lazily the same way
@@ -331,6 +354,7 @@ function closeNotificationsModal() {
   notifEls.modal.hidden = true;
   TrakkaScrollLock.unlock();
   freshPriceNotificationIds = new Set();
+  disarmClearNotifications();
 }
 
 notifEls.button.addEventListener('click', () => {
@@ -338,6 +362,7 @@ notifEls.button.addEventListener('click', () => {
   loadNotifications();
 });
 notifEls.closeButton.addEventListener('click', closeNotificationsModal);
+notifEls.clearButton.addEventListener('click', onClearNotificationsClick);
 notifEls.modal.addEventListener('click', (event) => {
   if (event.target === notifEls.modal) closeNotificationsModal();
 });
@@ -370,4 +395,114 @@ async function resolveAlert(alert, status) {
   // news to nobody here — mark it read rather than let it raise the badge.
   markShownPriceNotificationsRead();
   refreshVisibleView();
+}
+
+// Slides an entry out and folds its height away (base.css's
+// .notification-row--leaving) before `done` re-renders the list without
+// it. The current height is pinned first so max-height has something to
+// transition from. Under prefers-reduced-motion it goes at once.
+const NOTIFICATION_LEAVE_MS = 290;
+
+function animateNotificationRowsOut(rows, done) {
+  if (rows.length === 0 || window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+    done();
+    return;
+  }
+  for (const row of rows) row.style.maxHeight = `${row.offsetHeight}px`;
+  // Forces the pinned height to apply before the class changes it.
+  void rows[0].offsetHeight;
+  for (const row of rows) row.classList.add('notification-row--leaving');
+  setTimeout(done, NOTIFICATION_LEAVE_MS);
+}
+
+// Removing is optimistic (the entry leaves at once), rolled back if the
+// server refuses — the same pattern as resolveAlert. Offline, sw.js queues
+// the DELETE and replays it later; the server ignores an id that isn't the
+// caller's or is already gone, so a replay is harmless.
+async function dismissPriceNotification(n, row) {
+  hideError();
+  dismissedPriceNotificationIds.add(n.id);
+  priceNotifications = priceNotifications.filter((p) => p.id !== n.id);
+  updateNotificationsBadge();
+  row.inert = true;
+  animateNotificationRowsOut([row], () => {
+    if (!notifEls.modal.hidden) renderNotificationsList();
+  });
+
+  try {
+    await apiRequest(`/price-notifications/${n.id}`, { method: 'DELETE' });
+  } catch (err) {
+    dismissedPriceNotificationIds.delete(n.id);
+    priceNotifications = [...priceNotifications, n].sort(byNewestPriceNotification);
+    renderNotificationsList();
+    updateNotificationsBadge();
+    if (!isNetworkError(err)) showError(err.message);
+  }
+}
+
+function byNewestPriceNotification(a, b) {
+  return b.created_at.localeCompare(a.created_at) || b.id - a.id;
+}
+
+// "Tout effacer" empties the user's inbox (the "Variations de prix"
+// section). The pending deal cards above it belong to the whole house and
+// keep their own Appliquer/Ignorer buttons, so they stay. A first click
+// arms the button ("Confirmer ?"), a second one within
+// NOTIFICATIONS_CLEAR_CONFIRM_MS clears — no native confirm(), the same
+// two-step pattern as admin.js's buildConfirmableDeleteButton.
+const NOTIFICATIONS_CLEAR_CONFIRM_MS = 4000;
+let clearNotificationsTimer = null;
+
+// Shown only while the drawer lists at least one inbox entry (a "deal"
+// entry hidden behind its pending card doesn't count, though clearing
+// removes it too).
+function updateClearNotificationsButton() {
+  const hasEntries = visiblePriceNotifications().length > 0;
+  notifEls.clearButton.hidden = !hasEntries;
+  notifEls.clearButton.title = t('notifications.clearAllLabel');
+  if (!hasEntries) disarmClearNotifications();
+}
+
+function disarmClearNotifications() {
+  if (clearNotificationsTimer === null) return;
+  clearTimeout(clearNotificationsTimer);
+  clearNotificationsTimer = null;
+  notifEls.clearButton.textContent = t('notifications.clearAll');
+  notifEls.clearButton.classList.remove('bg-rose-500/10', 'text-rose-600', 'dark:text-rose-400');
+  notifEls.clearButton.classList.add('text-slate-600', 'dark:text-slate-300');
+}
+
+function onClearNotificationsClick() {
+  if (clearNotificationsTimer === null) {
+    notifEls.clearButton.textContent = t('notifications.clearAllConfirm');
+    notifEls.clearButton.classList.remove('text-slate-600', 'dark:text-slate-300');
+    notifEls.clearButton.classList.add('bg-rose-500/10', 'text-rose-600', 'dark:text-rose-400');
+    clearNotificationsTimer = setTimeout(disarmClearNotifications, NOTIFICATIONS_CLEAR_CONFIRM_MS);
+    return;
+  }
+  disarmClearNotifications();
+  clearPriceNotifications();
+}
+
+async function clearPriceNotifications() {
+  hideError();
+  const removed = priceNotifications;
+  for (const n of removed) dismissedPriceNotificationIds.add(n.id);
+  priceNotifications = [];
+  updateNotificationsBadge();
+  const rows = [...notifEls.list.querySelectorAll('[data-price-notification-id]')];
+  for (const row of rows) row.inert = true;
+  animateNotificationRowsOut(rows, () => {
+    if (!notifEls.modal.hidden) renderNotificationsList();
+  });
+
+  try {
+    await apiRequest('/price-notifications', { method: 'DELETE' });
+  } catch (err) {
+    for (const n of removed) dismissedPriceNotificationIds.delete(n.id);
+    priceNotifications = [...removed, ...priceNotifications].sort(byNewestPriceNotification);
+    renderNotificationsList();
+    updateNotificationsBadge();
+    if (!isNetworkError(err)) showError(err.message);
+  }
 }

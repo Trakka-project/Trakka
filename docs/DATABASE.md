@@ -279,6 +279,7 @@ Each user's in-app price alert inbox, shown in the 🔔 drawer (migration 28; se
 | `source_url` | `TEXT` | where a `deal` was found, or the `expired` deal's url; `NULL` otherwise |
 | `created_at` | `TEXT NOT NULL` | ISO-8601 UTC |
 | `read_at` | `TEXT` | `NULL` while unread |
+| `dismissed_at` | `TEXT` | Migration 29. Set when the user removes the entry from their inbox (`DELETE /api/v1/price-notifications[/{id}]`, `DismissPriceNotifications`, which also sets `read_at`); `ListPriceNotifications` leaves such rows out. A soft delete so `HasPriceNotification` still sees an `expired` announcement the user removed; pruned like any read row |
 
 Listing filters to items on lists the user can still access (the same three sources `AccessLevelForList` combines), so losing access to a list also hides what was queued about it.
 

@@ -238,7 +238,11 @@
     "applyWithLink": "Apply this price and link",
     "changesUrlHint": "The item's link will be replaced with this one, and its price tracked on that page.",
     "kindExpired": "⌛ Deal expired",
-    "expiredPrice": "{price} — no longer available"
+    "expiredPrice": "{price} — no longer available",
+    "clearAll": "Clear all",
+    "clearAllConfirm": "Confirm?",
+    "clearAllLabel": "Clear all price changes",
+    "remove": "Remove this alert"
   },
   "urgent": {
     "tabTitle": "Urgent",

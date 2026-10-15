@@ -89,6 +89,10 @@ func main() {
 	}
 
 	var oidcClient *auth.OIDCClient
+	// Set when discovery failed: the provider may simply not be up yet (a
+	// compose stack starting Trakka before its identity provider), so it is
+	// retried below until it answers (handlers.RetryOIDCDiscovery).
+	retryOIDCDiscovery := false
 	if resolvedSettings.OIDCEnabled {
 		switch {
 		case resolvedSettings.OIDCIssuer == "" || resolvedSettings.OIDCClientID == "" || resolvedSettings.OIDCClientSecret == "":
@@ -106,8 +110,11 @@ func main() {
 			// unavailable — so this logs and continues rather than exiting.
 			oidcClient, err = auth.NewOIDCClient(context.Background(), resolvedSettings.OIDCIssuer, resolvedSettings.OIDCClientID, resolvedSettings.OIDCClientSecret, cfg.BaseURL+"/auth/oidc/callback")
 			if err != nil {
-				logger.Error("oidc discovery failed at startup; starting with OIDC disabled", "error", err)
+				reason, hint := auth.DiscoveryFailure(err)
+				logger.Error("oidc discovery failed at startup; retrying in the background",
+					"issuer", resolvedSettings.OIDCIssuer, "reason", reason, "hint", hint, "error", err)
 				oidcClient = nil
+				retryOIDCDiscovery = true
 			}
 		}
 	}
@@ -204,6 +211,10 @@ func main() {
 	// is a cheap once-a-minute settings read that does nothing until an
 	// admin switches automatic backups on from the console.
 	go runBackupSchedulerLoop(priceScanCtx, backups)
+
+	if retryOIDCDiscovery {
+		go app.RetryOIDCDiscovery(priceScanCtx)
+	}
 
 	serverErrs := make(chan error, 1)
 	go func() {

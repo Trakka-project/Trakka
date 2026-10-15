@@ -432,6 +432,83 @@ func TestHandlePriceNotifications(t *testing.T) {
 	}
 }
 
+// TestHandlePriceNotificationsDelete: a user removes their own inbox
+// entries, one or all, never someone else's; a removed entry no longer
+// lists, and an expired deal it announced is still not announced again.
+func TestHandlePriceNotificationsDelete(t *testing.T) {
+	app := newTestApplication(t)
+	ctx := context.Background()
+	owner, friend, item := trackedItemFixture(t, app, true)
+	expiredURL := "https://www.dealabs.com/bons-plans/casque-123"
+	for _, kind := range []string{db.PriceNotificationDrop, db.PriceNotificationDrop} {
+		if err := app.DB.CreatePriceNotifications(ctx, []int64{owner.ID, friend.ID}, item.ID, kind, 100, 90, nil); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := app.DB.CreatePriceNotifications(ctx, []int64{owner.ID}, item.ID, db.PriceNotificationExpired, 70, 70, &expiredURL); err != nil {
+		t.Fatal(err)
+	}
+
+	remove := func(user *models.User, id int64) {
+		t.Helper()
+		rec := httptest.NewRecorder()
+		idStr := strconv.FormatInt(id, 10)
+		req := httptest.NewRequest(http.MethodDelete, "/api/v1/price-notifications/"+idStr, nil)
+		req.SetPathValue("id", idStr)
+		app.handlePriceNotificationsDelete(rec, withUser(req, user))
+		if rec.Code != http.StatusNoContent {
+			t.Fatalf("delete %d: %d %s", id, rec.Code, rec.Body.String())
+		}
+	}
+
+	ownerList := priceNotificationsOf(t, app, owner.ID)
+	friendList := priceNotificationsOf(t, app, friend.ID)
+	if len(ownerList) != 3 || len(friendList) != 2 {
+		t.Fatalf("setup: owner %d, friend %d entries", len(ownerList), len(friendList))
+	}
+
+	// The friend can't remove the owner's entry: ignored, not an error.
+	remove(friend, ownerList[1].ID)
+	if got := priceNotificationsOf(t, app, owner.ID); len(got) != 3 {
+		t.Fatalf("the friend removed the owner's entry: %+v", got)
+	}
+
+	// The owner removes one, and again (an offline replay): still 204.
+	remove(owner, ownerList[1].ID)
+	remove(owner, ownerList[1].ID)
+	got := priceNotificationsOf(t, app, owner.ID)
+	if len(got) != 2 || got[0].ID != ownerList[0].ID || got[1].ID != ownerList[2].ID {
+		t.Fatalf("after removing one: %+v", got)
+	}
+
+	bad := httptest.NewRecorder()
+	badReq := httptest.NewRequest(http.MethodDelete, "/api/v1/price-notifications/abc", nil)
+	badReq.SetPathValue("id", "abc")
+	app.handlePriceNotificationsDelete(bad, withUser(badReq, owner))
+	if bad.Code != http.StatusBadRequest {
+		t.Fatalf("invalid id: %d, want 400", bad.Code)
+	}
+
+	// "Tout effacer" empties the owner's inbox, and only theirs.
+	rec := httptest.NewRecorder()
+	app.handlePriceNotificationsClear(rec, withUser(httptest.NewRequest(http.MethodDelete, "/api/v1/price-notifications", nil), owner))
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("clear: %d %s", rec.Code, rec.Body.String())
+	}
+	if got := priceNotificationsOf(t, app, owner.ID); len(got) != 0 {
+		t.Fatalf("owner's inbox after clearing: %+v", got)
+	}
+	if got := priceNotificationsOf(t, app, friend.ID); len(got) != 2 || got[0].ReadAt != nil {
+		t.Fatalf("clearing touched the friend's inbox: %+v", got)
+	}
+
+	// The removed expired-deal entry still counts as announced.
+	told, err := app.DB.HasPriceNotification(ctx, item.ID, db.PriceNotificationExpired, expiredURL)
+	if err != nil || !told {
+		t.Fatalf("HasPriceNotification after dismissal = %v, %v; want true", told, err)
+	}
+}
+
 func mustListHouseID(t *testing.T, app *Application, listID int64) int64 {
 	t.Helper()
 	list, err := app.DB.GetList(context.Background(), listID)

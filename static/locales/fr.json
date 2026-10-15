@@ -238,7 +238,11 @@
     "applyWithLink": "Appliquer ce prix et ce lien",
     "changesUrlHint": "Le lien de l'article sera remplacé par celui-ci, et son prix suivi sur cette page.",
     "kindExpired": "⌛ Bon plan expiré",
-    "expiredPrice": "{price} — n'est plus disponible"
+    "expiredPrice": "{price} — n'est plus disponible",
+    "clearAll": "Tout effacer",
+    "clearAllConfirm": "Confirmer ?",
+    "clearAllLabel": "Effacer toutes les variations de prix",
+    "remove": "Supprimer cette alerte"
   },
   "urgent": {
     "tabTitle": "Urgent",

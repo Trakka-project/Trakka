@@ -20,7 +20,7 @@ import java.util.concurrent.Executors;
 
 /**
  * The app's own native API, which pages reach as {@code window.Capacitor.Plugins.TrakkaApp}: the
- * connect screen (android/www) drives it, Trakka's settings (static/js/settings.js) use
+ * connect screen (android/www), which is also the app's sign-in screen, drives it, Trakka's settings (static/js/settings.js) use
  * {@code getServer} and {@code changeServer}, and its sign-in page (static/js/login.js)
  * {@code signInWithBrowser}. Whatever can point the app to another server is
  * refused while a server's pages are shown, so no page can send the app elsewhere: only the user
@@ -102,13 +102,15 @@ public class TrakkaAppPlugin extends Plugin {
     /**
      * Runs the server's SSO sign-in in the phone's browser, where an identity provider can ask for
      * a passkey or a security key (see {@link BrowserSignIn}); MainActivity takes the session back.
-     * For Trakka's sign-in page (static/js/login.js), which falls back to the WebView on rejection.
+     * For Trakka's sign-in page (static/js/login.js) and the app's sign-in screen, which fall back
+     * to the WebView on rejection.
      */
     @PluginMethod
     public void signInWithBrowser(PluginCall call) {
-        String server = activity().server();
+        MainActivity.SignInRequest signIn = MainActivity.pendingSignIn;
+        String server = activity().isConnectScreen() ? (signIn == null ? null : signIn.server) : activity().server();
         if (server == null) {
-            call.unavailable("Only available on a server's pages");
+            call.unavailable("Only available on a server's pages or its sign-in screen");
             return;
         }
         try {
@@ -137,6 +139,16 @@ public class TrakkaAppPlugin extends Plugin {
         state.put("server", store.current());
         state.put("recent", new JSArray(store.recent()));
         state.put("canCancel", activity().canCancelChange());
+        MainActivity.SignInRequest signIn = MainActivity.pendingSignIn;
+        // Gone once its server is forgotten.
+        if (signIn != null && signIn.server.equals(store.current())) {
+            JSObject details = new JSObject();
+            details.put("server", signIn.server);
+            if (signIn.error != null) {
+                details.put("error", signIn.error);
+            }
+            state.put("signIn", details);
+        }
         MainActivity.LoadError error = MainActivity.pendingError;
         if (error != null) {
             JSObject details = new JSObject();
@@ -147,6 +159,52 @@ public class TrakkaAppPlugin extends Plugin {
             state.put("error", details);
         }
         call.resolve(state);
+    }
+
+    /** {@link ServerProbe#authMethods} for the server of the sign-in screen. */
+    @PluginMethod
+    public void getSignInMethods(PluginCall call) {
+        if (!onConnectScreen(call)) {
+            return;
+        }
+        MainActivity.SignInRequest signIn = MainActivity.pendingSignIn;
+        if (signIn == null) {
+            call.reject("No sign-in asked for", "no_sign_in");
+            return;
+        }
+        network.execute(() -> call.resolve(ServerProbe.authMethods(signIn.server)));
+    }
+
+    /**
+     * Leaves the sign-in screen for one of the server's own pages: "password" (its sign-in form),
+     * "register" (its account creation form) or "sso" (its SSO sign-in in the WebView, when the
+     * phone has no browser).
+     */
+    @PluginMethod
+    public void openServerSignIn(PluginCall call) {
+        if (!onConnectScreen(call)) {
+            return;
+        }
+        if (MainActivity.pendingSignIn == null) {
+            call.reject("No sign-in asked for", "no_sign_in");
+            return;
+        }
+        String page = call.getString("page", "password");
+        String path;
+        switch (page) {
+            case "register":
+                path = "/auth/login?mode=register";
+                break;
+            case "sso":
+                path = "/auth/oidc/login";
+                break;
+            default:
+                path = "/auth/login";
+        }
+        MainActivity.pendingServerSignInPath = path;
+        MainActivity.pendingSignIn = null;
+        call.resolve();
+        activity().restart();
     }
 
     /** {@link ServerProbe#check} for an address as typed or scanned. */
@@ -170,6 +228,7 @@ public class TrakkaAppPlugin extends Plugin {
         String origin = normalizedUrl(call);
         if (origin != null) {
             MainActivity.pendingError = null;
+            MainActivity.pendingSignIn = null;
             store.connect(origin);
             call.resolve();
             activity().restart();
@@ -199,6 +258,7 @@ public class TrakkaAppPlugin extends Plugin {
             return;
         }
         MainActivity.pendingError = null;
+        MainActivity.pendingSignIn = null;
         store.setChangeRequested(false);
         call.resolve();
         activity().restart();
