@@ -57,6 +57,8 @@ env:
   # tools here that are Go modules rather than GitHub Actions.
   GOVULNCHECK_VERSION: v1.7.0
   GOSEC_VERSION: v2.29.0
+  # golang.org/x/tools gosec is built against — see "Install gosec" below.
+  GOSEC_X_TOOLS_VERSION: v0.50.0
   GOLANGCI_LINT_VERSION: v2.14.0
   GITLEAKS_VERSION: v8.28.0
 
@@ -169,7 +171,21 @@ jobs:
         run: govulncheck ./...
 
       - name: Install gosec
-        run: go install github.com/securego/gosec/v2/cmd/gosec@${{ env.GOSEC_VERSION }}
+        # gosec v2.29.0 (the latest release) requires golang.org/x/tools
+        # v0.49.0, whose importer can't read Go 1.27.2's export data ("export
+        # data version 5 is greater than maximum supported version 4"): every
+        # package then fails to type-check and gosec exits 1 without
+        # analyzing anything. So it's built here, in a throwaway module,
+        # against GOSEC_X_TOOLS_VERSION — the x/tools golangci-lint v2.14.0
+        # ships, which reads it — both still exact, checksum-verified pins.
+        # Go back to a plain `go install …@${GOSEC_VERSION}` once a gosec
+        # release requires x/tools >= v0.50.0.
+        working-directory: ${{ runner.temp }}
+        run: |
+          mkdir gosec-build && cd gosec-build
+          go mod init gosec-build
+          go get "github.com/securego/gosec/v2/cmd/gosec@${GOSEC_VERSION}" "golang.org/x/tools@${GOSEC_X_TOOLS_VERSION}"
+          go build -o "$(go env GOPATH)/bin/gosec" github.com/securego/gosec/v2/cmd/gosec
 
       - name: Run gosec (Go source SAST)
         run: gosec -fmt=sarif -out=gosec-results.sarif ./...

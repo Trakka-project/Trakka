@@ -31,12 +31,13 @@ make build-apk-capacitor   # optional Android APK (Capacitor), built in a contai
 
 ## Mandatory checks before handing over any change
 
-At the end of **every** delivery — before committing, pushing, or reporting the work as done — run all four locally, with the tool versions pinned in `.github/workflows/ci.yml`, and report each result. A failure blocks the hand-over; a tool that can't be run is reported as not run, never as passing:
+At the end of **every** delivery — before committing, pushing, or reporting the work as done — run all five locally, with the tool versions pinned in `.github/workflows/ci.yml`, and report each result. A failure blocks the hand-over; a tool that can't be run is reported as not run, never as passing:
 
 ```bash
 go test ./...
 golangci-lint run ./...
 govulncheck ./...
+gosec ./...
 trivy fs --scanners vuln --severity CRITICAL,HIGH --ignore-unfixed --exit-code 1 .   # CI's gate; plain `trivy fs .` never fails
 ```
 

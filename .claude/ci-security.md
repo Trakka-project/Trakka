@@ -57,14 +57,15 @@ A second workflow builds the Android app ([docs/MOBILE_BUILD.md](../docs/MOBILE_
 
 ### Mandatory pre-hand-over checks
 
-Standing rule (also in the root `CLAUDE.md`): every delivery ends with `go test ./...`, `golangci-lint run ./...`, `govulncheck ./...` and `trivy fs --scanners vuln --severity CRITICAL,HIGH --ignore-unfixed --exit-code 1 .` run locally, each result reported, before anything is committed, pushed or called done. Use the versions pinned in `ci.yml`'s `env:` block — a different golangci-lint or govulncheck can pass locally and fail in CI, or the reverse. The Trivy flags are CI's own (`trivy-action`'s `severity`/`ignore-unfixed`/`exit-code`); without `--exit-code 1` Trivy only prints and never fails.
+Standing rule (also in the root `CLAUDE.md`): every delivery ends with `go test ./...`, `golangci-lint run ./...`, `govulncheck ./...`, `gosec ./...` and `trivy fs --scanners vuln --severity CRITICAL,HIGH --ignore-unfixed --exit-code 1 .` run locally, each result reported, before anything is committed, pushed or called done. Use the versions pinned in `ci.yml`'s `env:` block — a different golangci-lint, govulncheck or gosec can pass locally and fail in CI, or the reverse. The Trivy flags are CI's own (`trivy-action`'s `severity`/`ignore-unfixed`/`exit-code`); without `--exit-code 1` Trivy only prints and never fails.
 
 When a tool isn't installed (none of these are needed to build Trakka):
 - `govulncheck`: `go run golang.org/x/vuln/cmd/govulncheck@<GOVULNCHECK_VERSION> ./...`
 - `golangci-lint`: the prebuilt release binary for `GOLANGCI_LINT_VERSION` from `https://github.com/golangci/golangci-lint/releases` (what `golangci-lint-action` itself installs).
+- `gosec`: build it the way CI's "Install gosec" step does (see below) — a plain `go install …gosec@v2.29.0` reproduces CI's old failure.
 - `trivy`: `podman run --rm -v "$PWD:/src:ro,z" docker.io/aquasec/trivy:latest fs --scanners vuln --severity CRITICAL,HIGH --ignore-unfixed --exit-code 1 --skip-dirs /src/vendor /src`
 
-**Bumping Go also means checking golangci-lint.** golangci-lint type-checks against the export data of the Go toolchain running it; a release older than the toolchain fails on every package with `typecheck` errors like `export data version 5 is greater than maximum supported version 4` (Go 1.27.2 vs golangci-lint v2.13.2 — fixed by v2.14.0). Whenever `go.mod`'s `go` directive moves, run the pinned golangci-lint against it and bump `GOLANGCI_LINT_VERSION` in the same change if it fails.
+**Bumping Go also means checking golangci-lint and gosec.** Both type-check against the export data of the Go toolchain running them, through the `golang.org/x/tools` they were built with; one too old fails on every package — golangci-lint with `typecheck` errors like `export data version 5 is greater than maximum supported version 4`, gosec with `Error building the SSA representation of the package …: package … has type errors` and exit code 1 (both seen on Go 1.27.2 with `x/tools` v0.49.0). Whenever `go.mod`'s `go` directive moves, run both pinned tools against it and fix them in the same change if they fail. golangci-lint: bump `GOLANGCI_LINT_VERSION` (v2.13.2 → v2.14.0 fixed it). gosec: no release was recent enough (v2.29.0, the latest, requires `x/tools` v0.49.0), so CI builds it in a throwaway module against `GOSEC_X_TOOLS_VERSION` (v0.50.0, golangci-lint v2.14.0's) — return to a plain `go install` once a gosec release requires `x/tools` ≥ v0.50.0, and drop `GOSEC_X_TOOLS_VERSION`.
 
 ### Running the same checks locally
 
@@ -80,8 +81,12 @@ CGO_ENABLED=1 go test -v -race -cover ./...                 # -race needs a C to
 go install golang.org/x/vuln/cmd/govulncheck@v1.7.0         # match GOVULNCHECK_VERSION in ci.yml
 govulncheck ./...
 
-go install github.com/securego/gosec/v2/cmd/gosec@v2.29.0   # match GOSEC_VERSION in ci.yml
-gosec ./...
+# gosec: built like CI's "Install gosec" step — GOSEC_VERSION against
+# GOSEC_X_TOOLS_VERSION (see "Bumping Go" above for why not a plain go install)
+(d=$(mktemp -d) && cd "$d" && go mod init gosec-build \
+  && go get github.com/securego/gosec/v2/cmd/gosec@v2.29.0 golang.org/x/tools@v0.50.0 \
+  && go build -o "$(go env GOPATH)/bin/gosec" github.com/securego/gosec/v2/cmd/gosec)
+gosec ./...                                                 # must exit 0 with no "type errors" line
 
 go install github.com/zricethezav/gitleaks/v8@v8.28.0       # match GITLEAKS_VERSION in ci.yml
 gitleaks detect --source . --redact                         # secret scan (full git history)
