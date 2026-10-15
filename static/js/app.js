@@ -2056,8 +2056,122 @@ function showUpdateBanner() {
 }
 
 els.updateReloadButton?.addEventListener('click', () => {
-  window.location.reload();
+  els.updateReloadButton.disabled = true;
+  applyUpdateNow();
 });
+
+// Deletes every Cache Storage entry this origin holds (SHELL_CACHE/
+// RUNTIME_CACHE of every version, see sw.js). IndexedDB — the offline mirror
+// and the pending write queue (db.js) — is a separate store and deliberately
+// left alone: dropping it could lose edits made offline that haven't reached
+// the server yet. Neither purge below touches the session cookie either.
+async function deleteAllCaches() {
+  if (!('caches' in window)) return;
+  const keys = await caches.keys();
+  await Promise.all(keys.map((key) => caches.delete(key)));
+}
+
+// Re-downloads every same-origin asset this page loaded (index.html, every
+// /js and /css file, locales, emoji data, icons) with cache: 'reload', which
+// bypasses the browser's HTTP cache *and* overwrites its entry with the fresh
+// response. Emptying Cache Storage alone isn't enough: an Android WebView
+// kept heuristically fresh copies of old JS/CSS in its HTTP cache (static
+// files used to be served with no Cache-Control at all), and the reload
+// would otherwise pick those straight back up. Called right *after*
+// deleteAllCaches: while a worker still controls the page, its cache-first
+// handleShellRequest (sw.js) would otherwise answer from the old cache and
+// only hit the network in the background, racing the reload; on a cache miss
+// it waits for the network and stores the fresh copy instead. Best-effort
+// and capped at REFRESH_ASSETS_TIMEOUT_MS so one slow file can't leave the
+// button dead.
+const REFRESH_ASSETS_TIMEOUT_MS = 8000;
+
+async function refetchLoadedAssets() {
+  const urls = new Set(['/', '/index.html', window.location.pathname]);
+  for (const entry of performance.getEntriesByType('resource')) {
+    let url;
+    try {
+      url = new URL(entry.name);
+    } catch {
+      continue;
+    }
+    if (url.origin !== window.location.origin) continue;
+    if (url.pathname.startsWith('/api/') || url.pathname.startsWith('/auth/') || url.pathname === '/healthz') continue;
+    urls.add(url.pathname + url.search);
+  }
+  const refresh = Promise.all([...urls].map((url) => fetch(url, { cache: 'reload', credentials: 'same-origin' }).catch(() => {})));
+  await Promise.race([refresh, new Promise((resolve) => setTimeout(resolve, REFRESH_ASSETS_TIMEOUT_MS))]);
+}
+
+// Resolves once a new worker takes control of this page, or after timeoutMs,
+// whichever comes first — a worker that never activates must not leave the
+// update button stuck.
+function waitForControllerChange(timeoutMs) {
+  return new Promise((resolve) => {
+    const done = () => {
+      clearTimeout(timer);
+      navigator.serviceWorker.removeEventListener('controllerchange', done);
+      resolve();
+    };
+    const timer = setTimeout(done, timeoutMs);
+    navigator.serviceWorker.addEventListener('controllerchange', done);
+  });
+}
+
+// The update banner's "Mettre à jour": switch to the new worker, empty every
+// cache, refresh the HTTP cache, then reload — so the page that comes back is
+// guaranteed to run the new release's JS/CSS rather than whatever an older
+// cache layer still held. The registration is kept (unlike resetAppCache
+// below): unregistering would also drop the Web Push subscription, and the
+// worker that just took over is already the new one. trakka-precache asks it
+// to refill SHELL_CACHE so the app stays fully usable offline afterwards.
+// Offline, a purge would leave nothing to reload from, so it only reloads.
+async function applyUpdateNow() {
+  if (!navigator.onLine || !('serviceWorker' in navigator)) {
+    window.location.reload();
+    return;
+  }
+  try {
+    const registration = swRegistration || (await navigator.serviceWorker.getRegistration());
+    if (registration && registration.waiting) {
+      const switched = waitForControllerChange(3000);
+      registration.waiting.postMessage({ type: 'SKIP_WAITING' });
+      await switched;
+    }
+    await deleteAllCaches();
+    await refetchLoadedAssets();
+    navigator.serviceWorker.controller?.postMessage({ type: 'trakka-precache' });
+  } catch (err) {
+    console.warn('Purge du cache avant mise à jour incomplète :', err);
+  }
+  window.location.reload();
+}
+
+// Paramètres → "Vider le cache de l'application": the rescue path for a
+// client that looks out of date or misbehaves. Unregisters every service
+// worker, empties Cache Storage, refreshes the HTTP cache and reloads from
+// the network; registerServiceWorker then installs a fresh worker on the
+// next load, which precaches the current release (sw.js's precacheShell).
+// Unregistering also drops the Web Push subscription, so push.js is told to
+// subscribe again once the new worker is ready (rememberPushForReset).
+// Returns 'offline' without touching anything when there's no network to
+// reload from; otherwise the page reloads and nothing after it matters.
+async function resetAppCache() {
+  if (!navigator.onLine) return 'offline';
+  try {
+    if ('serviceWorker' in navigator) {
+      const registrations = await navigator.serviceWorker.getRegistrations();
+      await rememberPushForReset(registrations);
+      await Promise.all(registrations.map((registration) => registration.unregister()));
+    }
+    await deleteAllCaches();
+    await refetchLoadedAssets();
+  } catch (err) {
+    console.warn('Purge du cache de l’application incomplète :', err);
+  }
+  window.location.reload();
+  return 'reloading';
+}
 
 // A browser only checks sw.js for changes on its own schedule (typically a
 // real navigation/reload) — a long-lived installed PWA session that's never

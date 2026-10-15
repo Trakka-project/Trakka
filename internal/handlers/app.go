@@ -243,25 +243,21 @@ func (app *Application) Routes() http.Handler {
 	// here.
 	mux.HandleFunc("GET /api/v1/calendar/feed.ics", app.handleCalendarFeed)
 	fileServer := http.FileServer(staticFileSystem{http.Dir(app.StaticDir)})
-	// GET /sw.js is a more specific pattern than the catch-all "/" below, so
-	// the Go 1.22+ ServeMux resolves every request for it here regardless of
-	// registration order. Every browser-side update-detection mechanism this
-	// app relies on (static/js/app.js's watchForServiceWorkerUpdate/
-	// checkForServiceWorkerUpdate, the visibilitychange/focus/interval
-	// triggers, and the manual "Vérifier les mises à jour" button) ultimately
-	// depends on registration.update() actually fetching a fresh copy of this
-	// exact file to byte-compare against the installed one — without an
-	// explicit no-cache header, a browser's own heuristic HTTP caching (or an
-	// intermediate proxy/mobile carrier cache) can serve back a stale,
-	// already-cached copy instead, silently defeating that comparison and
-	// leaving a phone "stuck" on an old version no matter how often it
-	// checks. no-cache (not no-store) still lets the browser keep a cached
-	// copy but forces it to revalidate with the server first every time.
-	mux.HandleFunc("GET /sw.js", func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Cache-Control", "no-cache")
-		fileServer.ServeHTTP(w, r)
-	})
-	mux.Handle("/", fileServer)
+	// Every static file, sw.js first among them, is served with an explicit
+	// Cache-Control: no-cache (see revalidateStatic). Every browser-side
+	// update-detection mechanism this app relies on (static/js/app.js's
+	// watchForServiceWorkerUpdate/checkForServiceWorkerUpdate, the
+	// visibilitychange/focus/interval triggers, and the manual "Vérifier les
+	// mises à jour" button) ultimately depends on registration.update()
+	// actually fetching a fresh copy of sw.js to byte-compare against the
+	// installed one — without that header, a browser's own heuristic HTTP
+	// caching (or an intermediate proxy/mobile carrier cache) can serve back
+	// a stale, already-cached copy instead, silently defeating that
+	// comparison and leaving a phone "stuck" on an old version no matter how
+	// often it checks. And detecting the update isn't enough on its own: the
+	// JS/CSS/HTML the new worker then precaches, and that the page reloads,
+	// must not come back from a stale HTTP cache either.
+	mux.Handle("/", revalidateStatic(fileServer))
 
 	var handler http.Handler = mux
 	// Cross-origin write rejection wraps everything (both /auth/... and
@@ -293,6 +289,24 @@ func baseURLHost(baseURL string) string {
 		return ""
 	}
 	return strings.ToLower(parsed.Hostname())
+}
+
+// revalidateStatic sets Cache-Control: no-cache on the static assets
+// (index.html, /js, /css, /locales, /emoji, /icons, manifest.json, sw.js).
+// Without any Cache-Control, http.FileServer's responses carry only
+// Last-Modified, from which browsers derive a heuristic freshness lifetime
+// (typically 10% of the file's age): the Android WebView kept serving a
+// previous release's JS/CSS from its HTTP cache for days after a deploy,
+// even to a brand-new service worker precaching the new version. no-cache
+// still allows caching but forces a revalidation each time, which the file
+// server answers with a body-less 304 when nothing changed (If-Modified-
+// Since against the file's mtime) — cheap, and in normal use the service
+// worker's own cache answers first anyway.
+func revalidateStatic(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Cache-Control", "no-cache")
+		next.ServeHTTP(w, r)
+	})
 }
 
 // staticFileSystem wraps http.Dir to remove two behaviors of the bare

@@ -1303,6 +1303,18 @@
                 <span aria-hidden="true">🔄</span>
                 <span data-i18n="modals.userSettings.updateCheckButton">Vérifier les mises à jour</span>
               </button>
+              <!-- Rescue path for a stale or broken client (resetAppCache in
+                   app.js): unregisters the service worker, empties every
+                   cache and reloads from the network. Local data and the
+                   offline write queue (IndexedDB) are kept. -->
+              <div class="mt-3 border-t border-slate-200 dark:border-slate-700 pt-3">
+                <button type="button" id="user-settings-reset-cache-button"
+                        class="flex w-full items-center justify-center gap-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-100 dark:bg-slate-800 px-4 py-2.5 text-sm font-medium text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 disabled:opacity-60">
+                  <span aria-hidden="true">🧹</span>
+                  <span data-i18n="modals.userSettings.resetCacheButton">Vider le cache de l'application</span>
+                </button>
+                <p class="mt-1.5 text-xs font-normal text-slate-500 dark:text-slate-400" data-i18n="modals.userSettings.resetCacheHint">À utiliser si l'affichage ne semble pas à jour ou en cas de dysfonctionnement.</p>
+              </div>
             </div>
           </div>
 
