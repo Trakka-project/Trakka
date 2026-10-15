@@ -112,7 +112,7 @@
       },
       members: {
         title: 'Membres de la Maison',
-        invitePlaceholder: 'Email de la personne à inviter',
+        invitePlaceholder: "Saisir l'adresse e-mail à inviter…",
         inviteSubmit: 'Inviter',
       },
       editItem: {

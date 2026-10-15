@@ -316,7 +316,8 @@
     },
     "members": {
       "title": "Membres de la Maison",
-      "invitePlaceholder": "Email de la personne à inviter",
+      "invitePlaceholder": "Saisir l'adresse e-mail à inviter…",
+      "searchPlaceholder": "Nom, prénom ou e-mail à inviter…",
       "inviteSubmit": "Inviter",
       "pendingBadge": "invitation en attente",
       "ownerBadge": "propriétaire"
@@ -324,7 +325,8 @@
     "share": {
       "titleList": "Partager la liste",
       "titleSpace": "Partager l'espace",
-      "emailPlaceholder": "Email de la personne",
+      "emailPlaceholder": "Saisir une adresse e-mail…",
+      "searchPlaceholder": "Nom, prénom ou adresse e-mail…",
       "permissionRead": "Lecture seule",
       "permissionWrite": "Édition",
       "submit": "Partager",
@@ -704,6 +706,9 @@
         "step3": "Sélectionnez « Installer l'application » ou « Ajouter à l'écran d'accueil ».",
         "step4": "Confirmez l'installation."
       }
+    },
+    "userSearch": {
+      "suggestionsLabel": "Suggestions de personnes"
     }
   },
   "bulk": {

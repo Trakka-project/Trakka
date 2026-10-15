@@ -114,6 +114,16 @@ curl -b cookies.txt -X PATCH http://localhost:8080/api/v1/me \
 
 **CSRF**: `/auth/login`/`/auth/register` each require the `csrf_token` form field described above — a double-submit token, minted and set as an HttpOnly `trakka_csrf` cookie by `GET /auth/login`, that the submitted form field must match (`internal/handlers/csrf.go`). This defends specifically against "login CSRF" (a cross-site POST silently signing a victim into an attacker-controlled account) — a threat `SameSite` alone can't prevent here, since neither of these requests carries a pre-existing session cookie for `SameSite` to withhold. Every subsequent state-changing call instead goes through `/api/v1/...`, protected by the session cookie's `SameSite=Lax` attribute plus an `Origin`/`Sec-Fetch-Site` check (`requireSameOriginWrite`, same file): a cross-site request never carries the session cookie, and the same middleware also rejects a cross-site `/auth/logout` POST, which carries no session cookie either but would still be a nuisance if forgeable.
 
+### `GET /api/v1/config`
+
+Instance-wide settings any signed-in user's frontend needs (as opposed to the admin-only [`GET /api/v1/admin/settings`](#admin-settings)). Read once by `static/js/user-search.js` to adapt the [sharing autocomplete](#get-apiv1userssearch).
+
+```json
+{ "saas_mode": false }
+```
+
+`saas_mode` (`bool`) mirrors the `SAAS_MODE` env var (default `false`, see [docs/DEPLOYMENT.md](DEPLOYMENT.md#configuration-environment-variables)): `false` for a self-hosted household/group, `true` for a multi-tenant deployment where accounts don't know each other. Env-only — not editable from the admin console.
+
 ## Health
 
 ### `GET /healthz`
@@ -372,6 +382,39 @@ curl -X PUT http://localhost:8080/api/v1/lists/1/reorder \
 Beyond house membership, a [Space](#custom-categories) or an individual [List](#lists) can be shared directly with one other user by email, granting `read` or `write` access to it without adding them to the whole parent house. A user's effective access level to a list is the highest of: house membership (always `write`), a `list_shares` grant on the list itself, and a `space_shares` grant on the list's attached custom category, if any. See the "granular sharing" design in [CLAUDE.md](../CLAUDE.md) and [docs/DATABASE.md](DATABASE.md#space_shares-and-list_shares) for the full model.
 
 Sharing a **Space** is its owner's call alone (the same person who can rename/delete it) — `custom_categories` has no other notion of membership. Sharing a **List** requires actual membership of its house, not merely write access granted through another share, so access can never be used to extend itself further.
+
+### `GET /api/v1/users/search`
+
+Autocomplete for the "invite by email" fields — the share modal and the House members modal (`static/js/user-search.js`). Suggests accounts matching `q`; picking one only fills in its email address, which is then submitted to the share/invite endpoint as usual. Never returns the caller. At most 10 results.
+
+What `q` may match depends on the instance's deployment mode ([`GET /api/v1/config`](#get-apiv1config)'s `saas_mode`):
+
+| | Self-hosted (`saas_mode: false`, default) | SaaS (`saas_mode: true`) |
+|---|---|---|
+| Matched against | display name **and** email address | email address **only** |
+| Among | every account on the instance | the caller's **contacts** only: co-members of their houses, recipients of shares on their houses' lists or their own spaces, and the house members/space owner behind anything shared with them |
+| Matching | every whitespace-separated term of `q` must appear (case-insensitively, anywhere) in the name or the address — `jean`, `dupont`, `dupont jean`, `jean@exa` all find "Jean Dupont" | `q` must appear (case-insensitively, anywhere) in the address |
+| Result | `id`, `email`, `display_name` | `id`, `email` (no `display_name`) |
+
+Trakka stores one `display_name` per account rather than separate first/last names; matching every term anywhere in it is what makes both "Prénom Nom" and "Nom Prénom" work.
+
+SaaS mode never suggests a stranger, **not even by their exact address**: the search would otherwise tell any user whether an arbitrary address has an account, the very oracle [docs/AUDIT.md](AUDIT.md) L-06 closed on the share/invite endpoints. A stranger is still invited by typing their full address, through those endpoints' unchanged, non-disclosing invitation flow.
+
+```bash
+curl -b cookies.txt 'http://localhost:8080/api/v1/users/search?q=dupont'
+```
+
+```json
+[
+  { "id": 2, "email": "jean.dupont@example.com", "display_name": "Jean Dupont" }
+]
+```
+
+| Query | Notes |
+|---|---|
+| `q` | trimmed; fewer than 2 characters → `200 []`; over 254 bytes → `400`. `%` and `_` match literally. |
+
+Rate-limited per account to 60 searches per minute (`429` with `Retry-After`), so the autocomplete can't be used to bulk-scrape whatever it is allowed to reveal. The frontend debounces keystrokes (250 ms) and stays well under that.
 
 Both share types expose the same three endpoints, swapping `/custom-categories/{id}` for `/lists/{id}`:
 

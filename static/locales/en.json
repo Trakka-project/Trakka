@@ -316,7 +316,8 @@
     },
     "members": {
       "title": "House Members",
-      "invitePlaceholder": "Email of the person to invite",
+      "invitePlaceholder": "Enter the email address to invite…",
+      "searchPlaceholder": "Name or email to invite…",
       "inviteSubmit": "Invite",
       "pendingBadge": "invitation pending",
       "ownerBadge": "owner"
@@ -324,7 +325,8 @@
     "share": {
       "titleList": "Share list",
       "titleSpace": "Share space",
-      "emailPlaceholder": "Email of the person",
+      "emailPlaceholder": "Enter an email address…",
+      "searchPlaceholder": "First name, last name or email…",
       "permissionRead": "Read-only",
       "permissionWrite": "Edit",
       "submit": "Share",
@@ -704,6 +706,9 @@
         "step3": "Select \"Install app\" or \"Add to Home screen\".",
         "step4": "Confirm the installation."
       }
+    },
+    "userSearch": {
+      "suggestionsLabel": "People suggestions"
     }
   },
   "bulk": {
