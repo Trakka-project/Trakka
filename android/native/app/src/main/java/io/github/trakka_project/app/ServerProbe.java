@@ -1,5 +1,6 @@
 package io.github.trakka_project.app;
 
+import android.text.Html;
 import com.getcapacitor.JSObject;
 import java.io.IOException;
 import java.io.InputStream;
@@ -8,6 +9,8 @@ import java.net.MalformedURLException;
 import java.net.SocketTimeoutException;
 import java.net.URL;
 import java.net.UnknownHostException;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import javax.net.ssl.SSLException;
 import org.json.JSONException;
 import org.json.JSONObject;
@@ -21,6 +24,9 @@ import org.json.JSONObject;
 final class ServerProbe {
 
     private static final int TIMEOUT_MS = 10_000;
+
+    // The SSO button of templates/login.html, for a server older than GET /auth/methods.
+    private static final Pattern SSO_BUTTON = Pattern.compile("id=\"oidc-login-link\"[^>]*>\\s*Se connecter avec\\s+([^<]*?)\\s*</a>");
 
     private ServerProbe() {}
 
@@ -60,6 +66,106 @@ final class ServerProbe {
             if (connection != null) {
                 connection.disconnect();
             }
+        }
+        return result;
+    }
+
+    /**
+     * The sign-in methods the server offers, for the app's native sign-in screen: {server,
+     * reachable, known: true, password, oidc, providerName, registration} as GET /auth/methods
+     * reports them, {server, reachable, known: false, status, redirectHost} when the server
+     * answers something else (an authentication proxy's portal, for one), {server, reachable:
+     * false, reason} when it could not be reached.
+     */
+    static JSObject authMethods(String origin) {
+        JSObject result = new JSObject();
+        result.put("server", origin);
+        try {
+            HttpURLConnection connection = open(origin + "/auth/methods", "application/json");
+            try {
+                int status = connection.getResponseCode();
+                result.put("reachable", true);
+                if (status == 200) {
+                    try (InputStream in = connection.getInputStream()) {
+                        JSONObject methods = new JSONObject(Streams.readUtf8(in, 16 * 1024));
+                        return known(
+                            result,
+                            methods.optBoolean("password"),
+                            methods.optBoolean("oidc"),
+                            methods.optString("oidc_provider_name"),
+                            methods.optBoolean("registration")
+                        );
+                    } catch (JSONException e) {
+                        // Not Trakka's answer: a portal's page, most likely.
+                        return unknown(result, origin, connection, status);
+                    }
+                }
+                if (status != 404) {
+                    return unknown(result, origin, connection, status);
+                }
+            } finally {
+                connection.disconnect();
+            }
+            // A Trakka server older than /auth/methods: read its sign-in page instead.
+            connection = open(origin + "/auth/login", "text/html");
+            try {
+                int status = connection.getResponseCode();
+                if (status != 200) {
+                    return unknown(result, origin, connection, status);
+                }
+                String page;
+                try (InputStream in = connection.getInputStream()) {
+                    page = Streams.readUtf8(in, 256 * 1024);
+                }
+                Matcher sso = SSO_BUTTON.matcher(page);
+                boolean oidc = sso.find();
+                String providerName = oidc ? Html.fromHtml(sso.group(1), Html.FROM_HTML_MODE_LEGACY).toString().trim() : "";
+                return known(
+                    result,
+                    page.contains("action=\"/auth/login\""),
+                    oidc,
+                    "SSO".equals(providerName) ? "" : providerName,
+                    page.contains("/auth/login?mode=register")
+                );
+            } finally {
+                connection.disconnect();
+            }
+        } catch (UnknownHostException e) {
+            unreachable(result, "unknown_host");
+        } catch (SSLException e) {
+            unreachable(result, "tls");
+        } catch (SocketTimeoutException e) {
+            unreachable(result, "timeout");
+        } catch (IOException e) {
+            unreachable(result, "unreachable");
+        }
+        return result;
+    }
+
+    private static HttpURLConnection open(String url, String accept) throws IOException {
+        HttpURLConnection connection = (HttpURLConnection) new URL(url).openConnection();
+        connection.setInstanceFollowRedirects(false);
+        connection.setConnectTimeout(TIMEOUT_MS);
+        connection.setReadTimeout(TIMEOUT_MS);
+        connection.setRequestProperty("Accept", accept);
+        return connection;
+    }
+
+    private static JSObject known(JSObject result, boolean password, boolean oidc, String providerName, boolean registration) {
+        result.put("known", true);
+        result.put("password", password);
+        result.put("oidc", oidc);
+        result.put("providerName", providerName == null ? "" : providerName);
+        result.put("registration", registration);
+        return result;
+    }
+
+    private static JSObject unknown(JSObject result, String origin, HttpURLConnection connection, int status) {
+        result.put("known", false);
+        result.put("status", status);
+        String redirectHost = redirectHost(origin, connection.getHeaderField("Location"));
+        if (redirectHost != null) {
+            result.put("redirectHost", redirectHost);
         }
         return result;
     }

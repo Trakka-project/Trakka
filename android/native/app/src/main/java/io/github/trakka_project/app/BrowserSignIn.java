@@ -61,6 +61,13 @@ final class BrowserSignIn {
         return Uri.parse(server + "/auth/oidc/login").buildUpon().appendQueryParameter("app_challenge", challenge(verifier)).build();
     }
 
+    /** The server of the sign-in in progress, if one was started recently enough to finish. */
+    @Nullable
+    String pendingServer() {
+        long age = System.currentTimeMillis() - prefs.getLong(KEY_STARTED_AT, 0);
+        return age < 0 || age > MAX_AGE_MS ? null : prefs.getString(KEY_SERVER, null);
+    }
+
     /** Whether url is the end of a sign-in, whichever app it was meant for. */
     static boolean isReturn(@Nullable Uri url) {
         return url != null && RETURN_SCHEME.equals(url.getScheme()) && RETURN_HOST.equals(url.getHost());

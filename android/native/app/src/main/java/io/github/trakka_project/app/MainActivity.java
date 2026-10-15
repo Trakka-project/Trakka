@@ -1,6 +1,7 @@
 package io.github.trakka_project.app;
 
 import android.content.Intent;
+import android.graphics.Bitmap;
 import android.net.Uri;
 import android.net.http.SslError;
 import android.os.Bundle;
@@ -32,6 +33,7 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
+import java.util.regex.Pattern;
 import org.json.JSONException;
 import org.json.JSONObject;
 
@@ -40,6 +42,11 @@ import org.json.JSONObject;
  * app (android/www, served at https://localhost) or the Trakka server chosen there, loaded straight
  * from that server as a browser would, with its own headers. Which of the two is decided when the
  * activity is created, so switching between them recreates it ({@link #restart()}).
+ *
+ * <p>Signing in happens on the connect screen too: when the server sends the WebView to its
+ * sign-in page, the activity shows the app's own sign-in screen instead ({@link #pendingSignIn}),
+ * which offers the server's methods (SSO through the browser, its password page) and a way to
+ * change server.
  */
 public class MainActivity extends BridgeActivity {
 
@@ -49,6 +56,28 @@ public class MainActivity extends BridgeActivity {
      */
     @Nullable
     static volatile LoadError pendingError;
+
+    /**
+     * The server whose sign-in page was asked for, which the connect screen shows as the app's own
+     * sign-in screen. In memory only, like {@link #pendingError}: the next launch opens the server,
+     * which asks again.
+     */
+    @Nullable
+    static volatile SignInRequest pendingSignIn;
+
+    /**
+     * Set by the sign-in screen's "password" or "create an account" choice (or its SSO without a
+     * browser): the server's own page to open, which the next server activity then shows instead
+     * of going back to the sign-in screen.
+     */
+    @Nullable
+    static volatile String pendingServerSignInPath;
+
+    /** The end of an SSO sign-in that came back to the connect screen, for the server to finish. */
+    @Nullable
+    static volatile Uri pendingSignInReturn;
+
+    private static final Pattern ERROR_CODE = Pattern.compile("[a-z_]{1,64}");
 
     // Past this, a slow server shows its own loading state rather than the splash screen.
     private static final long SPLASH_MAX_MS = 2500;
@@ -60,6 +89,9 @@ public class MainActivity extends BridgeActivity {
     private String server;
     private volatile boolean firstPagePainted;
     private boolean restarting;
+    /** True while the server's own sign-in pages are shown, as the user chose on the sign-in screen. */
+    private boolean serverSignInAllowed;
+    private boolean sawServerSignIn;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -67,7 +99,11 @@ public class MainActivity extends BridgeActivity {
         store = new ServerStore(this);
         browserSignIn = new BrowserSignIn(this);
         ReminderChannels.create(this);
-        server = store.changeRequested() || pendingError != null ? null : store.current();
+        SignInRequest signIn = pendingSignIn;
+        if (signIn != null && !signIn.server.equals(store.current())) {
+            pendingSignIn = signIn = null;
+        }
+        server = store.changeRequested() || pendingError != null || signIn != null ? null : store.current();
         if (server != null && !WebViewFeature.isFeatureSupported(WebViewFeature.DOCUMENT_START_SCRIPT)) {
             // Without it, Capacitor would proxy the server's pages to insert its bridge, and drop
             // their response headers on the way (Trakka's Content-Security-Policy among them).
@@ -99,6 +135,19 @@ public class MainActivity extends BridgeActivity {
         );
         webView.postDelayed(() -> firstPagePainted = true, SPLASH_MAX_MS);
         getOnBackPressedDispatcher().addCallback(this, new BackCallback());
+        if (server != null) {
+            String signInPath = pendingServerSignInPath;
+            pendingServerSignInPath = null;
+            if (signInPath != null) {
+                serverSignInAllowed = true;
+                webView.loadUrl(server + signInPath);
+            }
+            Uri signInReturn = pendingSignInReturn;
+            pendingSignInReturn = null;
+            if (signInReturn != null) {
+                finishSignIn(signInReturn);
+            }
+        }
         // Android may have stopped the app while an SSO sign-in went on in the browser.
         handleSignInReturn(getIntent());
     }
@@ -123,6 +172,9 @@ public class MainActivity extends BridgeActivity {
         handleSignInReturn(intent);
         // The launcher shortcut (ChangeServerActivity) asked for the connect screen.
         if (server != null && store.changeRequested()) {
+            restart();
+        } else if (server == null && pendingSignIn != null && store.changeRequested()) {
+            pendingSignIn = null;
             restart();
         }
     }
@@ -158,7 +210,8 @@ public class MainActivity extends BridgeActivity {
 
     /**
      * The end of an SSO sign-in run in the browser (TrakkaAppPlugin#signInWithBrowser), which
-     * Android brings back here: the WebView then opens the session it hands over.
+     * Android brings back here: the WebView then opens the session it hands over. A sign-in
+     * started from the sign-in screen comes back to it, which then opens the server to finish.
      */
     private void handleSignInReturn(@Nullable Intent intent) {
         Uri url = intent == null ? null : intent.getData();
@@ -167,9 +220,24 @@ public class MainActivity extends BridgeActivity {
         }
         // Once only: a recreated activity is given the same intent again.
         setIntent(new Intent(intent).setData(null));
-        if (server == null || bridge == null) {
+        if (bridge == null) {
             return;
         }
+        if (server == null) {
+            String current = store.current();
+            if (current != null && current.equals(browserSignIn.pendingServer())) {
+                pendingSignInReturn = url;
+                pendingSignIn = null;
+                pendingError = null;
+                store.setChangeRequested(false);
+                restart();
+            }
+            return;
+        }
+        finishSignIn(url);
+    }
+
+    private void finishSignIn(Uri url) {
         BrowserSignIn.Next next = browserSignIn.finish(url, server);
         if (next == null) {
             return;
@@ -180,6 +248,33 @@ public class MainActivity extends BridgeActivity {
         } else {
             webView.loadUrl(next.url);
         }
+    }
+
+    /**
+     * Shows the app's sign-in screen instead of the server's sign-in page, unless the user chose
+     * that page there. True when it does, the page being left behind.
+     */
+    private boolean showSignInScreen(Uri url) {
+        if (server == null || restarting || !sameOrigin(url, server)) {
+            return false;
+        }
+        String path = String.valueOf(url.getPath());
+        if (!path.startsWith("/auth/")) {
+            // Past the server's sign-in pages, signed in: its next sign-in page is for the app's
+            // screen again (after signing out, for one).
+            if (sawServerSignIn) {
+                serverSignInAllowed = false;
+            }
+            return false;
+        }
+        sawServerSignIn = true;
+        if (serverSignInAllowed || !path.equals("/auth/login") || url.getQueryParameter("mode") != null) {
+            return false;
+        }
+        String error = url.getQueryParameter("error");
+        pendingSignIn = new SignInRequest(server, error != null && ERROR_CODE.matcher(error).matches() ? error : null);
+        restart();
+        return true;
     }
 
     private void showLoadError(Uri url, String reason, int status) {
@@ -269,6 +364,20 @@ public class MainActivity extends BridgeActivity {
         }
     }
 
+    /** The server whose sign-in page was asked for, and the error it came with, if any. */
+    static final class SignInRequest {
+
+        final String server;
+
+        @Nullable
+        final String error;
+
+        SignInRequest(String server, @Nullable String error) {
+            this.server = server;
+            this.error = error;
+        }
+    }
+
     private final class TrakkaWebViewClient extends BridgeWebViewClient {
 
         TrakkaWebViewClient(Bridge bridge) {
@@ -276,8 +385,21 @@ public class MainActivity extends BridgeActivity {
         }
 
         @Override
+        public void onPageStarted(WebView view, String url, Bitmap favicon) {
+            super.onPageStarted(view, url, favicon);
+            // Covers what shouldOverrideUrlLoading doesn't see: pages loaded by the app itself, and
+            // redirects answering a form POST (signing out).
+            if (url != null && showSignInScreen(Uri.parse(url))) {
+                view.stopLoading();
+            }
+        }
+
+        @Override
         public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) {
             Uri url = request.getUrl();
+            if (request.isForMainFrame() && showSignInScreen(url)) {
+                return true;
+            }
             if (
                 server != null &&
                 request.isForMainFrame() &&
@@ -361,7 +483,11 @@ public class MainActivity extends BridgeActivity {
         @Override
         public void handleOnBackPressed() {
             WebView webView = bridge.getWebView();
-            if (canGoBackInApp(webView)) {
+            if (serverSignInAllowed && onServerSignInPage(webView)) {
+                // Back from the server's sign-in page chosen on the sign-in screen: to that screen.
+                pendingSignIn = new SignInRequest(server, null);
+                restart();
+            } else if (canGoBackInApp(webView)) {
                 webView.goBack();
             } else if (canCancelChange()) {
                 store.setChangeRequested(false);
@@ -372,6 +498,11 @@ public class MainActivity extends BridgeActivity {
                 getOnBackPressedDispatcher().onBackPressed();
                 setEnabled(true);
             }
+        }
+
+        private boolean onServerSignInPage(WebView webView) {
+            Uri current = Uri.parse(String.valueOf(webView.getUrl()));
+            return server != null && sameOrigin(current, server) && String.valueOf(current.getPath()).startsWith("/auth/");
         }
 
         // Going back to a sign-in page, or to an identity provider's after an SSO sign-in, would

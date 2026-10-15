@@ -73,6 +73,7 @@ const userSettingsEls = {
   status: document.getElementById('user-settings-status'),
   updateVersion: document.getElementById('user-settings-update-version'),
   updateCheckButton: document.getElementById('user-settings-update-check-button'),
+  resetCacheButton: document.getElementById('user-settings-reset-cache-button'),
   installHelpButton: document.getElementById('install-help-button'),
   androidAppSection: document.getElementById('user-settings-android-app'),
   androidAppServer: document.getElementById('user-settings-android-app-server'),
@@ -490,5 +491,17 @@ userSettingsEls.updateCheckButton.addEventListener('click', async () => {
     if (toastKey) TrakkaToast.success(t(toastKey));
   } finally {
     userSettingsEls.updateCheckButton.disabled = false;
+  }
+});
+
+// resetAppCache is defined in app.js. On success the page reloads mid-call,
+// so the only outcome handled here is 'offline' — purging with no network to
+// reload from would leave the app with nothing to show.
+userSettingsEls.resetCacheButton?.addEventListener('click', async () => {
+  userSettingsEls.resetCacheButton.disabled = true;
+  const outcome = await resetAppCache();
+  if (outcome === 'offline') {
+    TrakkaToast.warning(t('modals.userSettings.resetCacheOffline'));
+    userSettingsEls.resetCacheButton.disabled = false;
   }
 });

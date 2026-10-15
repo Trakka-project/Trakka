@@ -236,3 +236,48 @@ if (pushEls.toggle) {
     }
   });
 }
+
+// The "Vider le cache de l'application" reset in Paramètres (resetAppCache,
+// app.js) unregisters the service worker, and a Web Push subscription lives
+// on that registration: the browser cancels it along with it. This flag
+// carries "push was on" across the reload so the fresh worker subscribes
+// again, without the user having to find the toggle. The stale endpoint the
+// server still holds is dropped on its next send (ErrSubscriptionGone, see
+// internal/handlers.sendToUsers).
+const PUSH_RESUBSCRIBE_STORAGE_KEY = 'trakka:resubscribePushAfterReset';
+
+async function rememberPushForReset(registrations) {
+  try {
+    for (const registration of registrations) {
+      if (registration.pushManager && (await registration.pushManager.getSubscription())) {
+        localStorage.setItem(PUSH_RESUBSCRIBE_STORAGE_KEY, '1');
+        return;
+      }
+    }
+  } catch {
+    // Storage or PushManager unavailable: push simply stays off until the
+    // user turns the toggle back on — never a reason to block the reset.
+  }
+}
+
+async function restorePushAfterReset() {
+  let pending = false;
+  try {
+    pending = localStorage.getItem(PUSH_RESUBSCRIBE_STORAGE_KEY) === '1';
+    localStorage.removeItem(PUSH_RESUBSCRIBE_STORAGE_KEY);
+  } catch {
+    return;
+  }
+  if (!pending || !isPushSupported() || Notification.permission !== 'granted') return;
+  try {
+    // Waiting for the new worker first also lets every deferred script
+    // (local-reminders.js's localNotificationsPlugin included) finish loading.
+    await navigator.serviceWorker.ready;
+    if (usesLocalReminders()) return;
+    await enablePush();
+  } catch (err) {
+    console.warn('Réabonnement aux notifications push impossible :', err);
+  }
+}
+
+restorePushAfterReset();

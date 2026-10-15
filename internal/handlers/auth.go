@@ -36,6 +36,7 @@ var loginErrorMessages = map[string]string{ // #nosec G101 -- these are user-fac
 	"invalid_credentials": "Email ou mot de passe incorrect.",
 	"email_taken":         "Un compte existe déjà avec cet email.",
 	"oidc_failed":         "La connexion via le fournisseur externe a échoué.",
+	"oidc_unavailable":    "Le fournisseur d'identité ne répond pas pour le moment. Réessayez dans quelques instants.",
 	"weak_password":       "Le mot de passe doit contenir au moins 8 caractères.",
 	"password_too_long":   "Le mot de passe ne doit pas dépasser 72 caractères.",
 	"rate_limited":        "Trop de tentatives. Réessayez dans quelques minutes.",
@@ -75,7 +76,7 @@ func (app *Application) handleLoginPage(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	data := loginPageData{
-		OIDCEnabled:      app.Auth.OIDC() != nil,
+		OIDCEnabled:      app.Auth.OIDC() != nil || app.oidcConfigured(current),
 		RegistrationOpen: current.RegistrationOpen,
 		OIDCExclusive:    exclusive,
 		OIDCProviderName: current.OIDCProviderName,
@@ -90,13 +91,51 @@ func (app *Application) handleLoginPage(w http.ResponseWriter, r *http.Request) 
 	}
 }
 
+// authMethods is what GET /auth/methods answers: the sign-in choices
+// templates/login.html offers, for the Android app's native sign-in screen
+// (android/www), which shows them without loading the server's page.
+// Nothing here is beyond what the public sign-in page already shows.
+type authMethods struct {
+	Password         bool   `json:"password"`
+	OIDC             bool   `json:"oidc"`
+	OIDCProviderName string `json:"oidc_provider_name"`
+	Registration     bool   `json:"registration"`
+}
+
+func (app *Application) handleAuthMethods(w http.ResponseWriter, r *http.Request) {
+	current, err := settings.Resolve(r.Context(), app.DB, app.Config)
+	if err != nil {
+		app.serverError(w, r, err)
+		return
+	}
+	exclusive, err := app.oidcExclusive(r, current)
+	if err != nil {
+		app.serverError(w, r, err)
+		return
+	}
+	oidcEnabled := app.Auth.OIDC() != nil || app.oidcConfigured(current)
+	providerName := ""
+	if oidcEnabled {
+		providerName = current.OIDCProviderName
+	}
+	writeJSON(w, http.StatusOK, authMethods{
+		Password:         !exclusive,
+		OIDC:             oidcEnabled,
+		OIDCProviderName: providerName,
+		Registration:     current.RegistrationOpen && !exclusive,
+	})
+}
+
 // oidcExclusive reports whether local password login and registration are
 // disabled. It re-checks the admin PATCH's lockout safeguard on every call:
-// if OIDC isn't live (e.g. discovery failed at boot) or no admin is linked
-// to the configured issuer any more, local login comes back instead of
-// locking every administrator out.
+// if OIDC is no longer configured (switched off, incomplete settings, no
+// BASE_URL) or no admin is linked to the configured issuer any more, local
+// login comes back instead of locking every administrator out. A provider
+// that is merely unreachable (discovery failed at boot, retried in the
+// background: oidc_discovery.go) does not bring passwords back: the admin
+// turned them off, and the SSO button keeps retrying.
 func (app *Application) oidcExclusive(r *http.Request, current settings.Values) (bool, error) {
-	if !current.OIDCExclusive || app.Auth.OIDC() == nil {
+	if !current.OIDCExclusive || (app.Auth.OIDC() == nil && !app.oidcConfigured(current)) {
 		return false, nil
 	}
 	n, err := app.DB.CountOIDCAdmins(r.Context(), current.OIDCIssuer)
@@ -269,9 +308,28 @@ func (app *Application) finishLogin(w http.ResponseWriter, r *http.Request, user
 const oidcFlowCookieName = "trakka_oidc_flow"
 
 func (app *Application) handleOIDCLogin(w http.ResponseWriter, r *http.Request) {
-	oidcClient := app.Auth.OIDC()
+	current, err := settings.Resolve(r.Context(), app.DB, app.Config)
+	if err != nil {
+		app.serverError(w, r, err)
+		return
+	}
+	oidcClient, err := app.ensureOIDC(r.Context(), current)
 	if oidcClient == nil {
-		http.NotFound(w, r)
+		if errors.Is(err, errOIDCNotConfigured) {
+			http.NotFound(w, r)
+			return
+		}
+		// Configured, but the provider still can't be reached: logged on
+		// every attempt, so that whoever runs the server sees why.
+		reason, hint := auth.DiscoveryFailure(err)
+		app.Logger.Error("oidc sign-in unavailable: the identity provider's discovery failed",
+			"issuer", current.OIDCIssuer, "reason", reason, "hint", hint, "error", err,
+			"from_app", r.URL.Query().Get("app_challenge") != "")
+		if r.URL.Query().Get("app_challenge") != "" {
+			appSSOReturn(w, r, url.Values{"error": {"oidc_unavailable"}})
+			return
+		}
+		http.Redirect(w, r, "/auth/login?error=oidc_unavailable", http.StatusFound)
 		return
 	}
 

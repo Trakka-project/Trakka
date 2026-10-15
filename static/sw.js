@@ -8,8 +8,8 @@ importScripts('/js/db.js', '/js/recurrence.js');
 
 // Bump both on any change to APP_SHELL's contents so activate()
 // evicts the old cache instead of serving stale assets forever.
-const SHELL_CACHE = 'trakka-shell-v126';
-const RUNTIME_CACHE = 'trakka-runtime-v120';
+const SHELL_CACHE = 'trakka-shell-v129';
+const RUNTIME_CACHE = 'trakka-runtime-v123';
 const KNOWN_CACHES = [SHELL_CACHE, RUNTIME_CACHE];
 
 const APP_SHELL = [
@@ -85,12 +85,19 @@ const SYNC_TAG = 'trakka-sync-queue';
 // installed, so a reload after the banner appears really does pick up the
 // new assets.
 self.addEventListener('install', (event) => {
-  event.waitUntil(
-    caches.open(SHELL_CACHE)
-      .then((cache) => cache.addAll(APP_SHELL).then(() => cache))
-      .then(() => self.skipWaiting())
-  );
+  event.waitUntil(precacheShell().then(() => self.skipWaiting()));
 });
+
+// cache: 'reload' makes every precache fetch bypass the browser's own HTTP
+// cache. Without it, cache.addAll() could fill a brand-new SHELL_CACHE with
+// the *previous* release's JS/CSS still sitting in the HTTP disk cache (the
+// Android WebView in particular kept heuristically cached copies), so a
+// version bump installed a new worker serving old assets — the bug that had
+// users reinstalling the Android app to see new features.
+function precacheShell() {
+  return caches.open(SHELL_CACHE)
+    .then((cache) => cache.addAll(APP_SHELL.map((url) => new Request(url, { cache: 'reload' }))));
+}
 
 // Only ever deletes entries from the Cache Storage API (KNOWN_CACHES,
 // declared above) — never touches IndexedDB, which is a completely
@@ -99,12 +106,18 @@ self.addEventListener('install', (event) => {
 // on activation without losing the offline mirror/sync queue db.js
 // maintains; see db.js's own onupgradeneeded/onversionchange handling for
 // how *that* store evolves safely across versions instead.
+//
+// clients.claim() takes over every open tab/WebView immediately, so they
+// stop being served by the previous worker's (now deleted) cache. It runs
+// even if evicting a stale cache fails: a leftover old cache only wastes
+// space, whereas a skipped claim would leave open clients on the old worker.
 self.addEventListener('activate', (event) => {
   event.waitUntil(
     caches.keys()
       .then((keys) => Promise.all(
         keys.filter((key) => !KNOWN_CACHES.includes(key)).map((key) => caches.delete(key))
       ))
+      .catch(() => {})
       .then(() => self.clients.claim())
       .then(() => flushQueue())
   );
@@ -123,6 +136,18 @@ self.addEventListener('sync', (event) => {
 self.addEventListener('message', (event) => {
   if (event.data && event.data.type === 'flush-queue') {
     event.waitUntil(flushQueue());
+  }
+  // Both posted by app.js's applyUpdateNow (the update banner's "Mettre à
+  // jour" button). SKIP_WAITING is for a worker that is still 'waiting'
+  // (install already calls skipWaiting(), so this is the rare case of one
+  // that got stuck there); trakka-precache refills SHELL_CACHE right after
+  // the page emptied every cache, so the app stays fully usable offline
+  // instead of only for the assets the reload happens to request.
+  if (event.data && event.data.type === 'SKIP_WAITING') {
+    event.waitUntil(self.skipWaiting());
+  }
+  if (event.data && event.data.type === 'trakka-precache') {
+    event.waitUntil(precacheShell().catch(() => {}));
   }
 });
 

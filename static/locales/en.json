@@ -238,7 +238,11 @@
     "applyWithLink": "Apply this price and link",
     "changesUrlHint": "The item's link will be replaced with this one, and its price tracked on that page.",
     "kindExpired": "⌛ Deal expired",
-    "expiredPrice": "{price} — no longer available"
+    "expiredPrice": "{price} — no longer available",
+    "clearAll": "Clear all",
+    "clearAllConfirm": "Confirm?",
+    "clearAllLabel": "Clear all price changes",
+    "remove": "Remove this alert"
   },
   "urgent": {
     "tabTitle": "Urgent",
@@ -646,6 +650,9 @@
       "updateCheckUpToDate": "Trakka is already up to date.",
       "updateCheckUnsupported": "Checking for updates isn't supported by this browser.",
       "updateCheckError": "Couldn't check for updates right now.",
+      "resetCacheButton": "Clear app cache",
+      "resetCacheHint": "Use this if the app doesn't look up to date or isn't working properly.",
+      "resetCacheOffline": "Connect to the internet to clear the app cache.",
       "androidAppTitle": "App server",
       "androidAppHint": "The Android app is connected to this Trakka server.",
       "androidAppVersion": "Android app {version}",

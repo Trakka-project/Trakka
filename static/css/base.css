@@ -1125,3 +1125,34 @@ html > body.overflow-hidden {
 .emoji-picker-tone[aria-pressed="true"] {
   border-color: #0ea5e9;
 }
+
+/* A 🔔 drawer entry being removed (static/js/notifications.js's
+   animateNotificationRowsOut, which pins max-height to the row's own
+   height first): it slides right while fading, and its height, padding,
+   border and the space-y-3 gap above it fold away so the entries below
+   close up smoothly. The margin needs !important to beat Tailwind's
+   `.space-y-3 > :not([hidden]) ~ :not([hidden])`. */
+.notification-row--leaving {
+  max-height: 0 !important;
+  margin-top: 0 !important;
+  padding-top: 0;
+  padding-bottom: 0;
+  border-width: 0;
+  opacity: 0;
+  transform: translateX(1.5rem);
+  overflow: hidden;
+  pointer-events: none;
+  transition:
+    max-height 240ms ease-in 40ms,
+    margin-top 240ms ease-in 40ms,
+    padding 240ms ease-in 40ms,
+    border-width 240ms ease-in 40ms,
+    opacity 180ms ease-out,
+    transform 180ms ease-out;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .notification-row--leaving {
+    transition: none;
+  }
+}

@@ -296,3 +296,7 @@ input:focus {
   font-size: 1.375rem;
   cursor: pointer;
 }
+
+.message[data-kind="info"] {
+  color: var(--muted);
+}

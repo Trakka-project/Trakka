@@ -101,7 +101,8 @@ func (d *DB) CreatePriceNotifications(ctx context.Context, userIDs []int64, item
 }
 
 // ListPriceNotifications returns userID's newest limit price notifications,
-// read or not, newest first — only those of a kind the user currently wants
+// read or not, newest first, leaving out the ones they dismissed
+// (DismissPriceNotifications) — only those of a kind the user currently wants
 // (Paramètres → "Alertes de prix": the master switch, then drops — which
 // include better deals — or increases; an expired deal under the master
 // switch alone), since every entry is recorded whatever the preferences
@@ -118,6 +119,7 @@ func (d *DB) ListPriceNotifications(ctx context.Context, userID int64, limit int
 		JOIN items ON items.id = pn.item_id
 		JOIN lists l ON l.id = items.list_id
 		WHERE pn.user_id = ?
+		  AND pn.dismissed_at IS NULL
 		  AND u.price_alerts_enabled = 1
 		  AND CASE pn.kind
 		        WHEN 'increase' THEN u.price_increase_alerts_enabled
@@ -176,6 +178,28 @@ func (d *DB) MarkPriceNotificationsRead(ctx context.Context, userID int64, ids [
 	}
 	if err := tx.Commit(); err != nil {
 		return fmt.Errorf("committing price notification read: %w", err)
+	}
+	return nil
+}
+
+// DismissPriceNotifications removes userID's own price notifications from
+// their inbox: the one with id, or every one of them when id is 0. The rows
+// are kept (dismissed_at, see migration 29) and marked read, so
+// PrunePriceNotifications deletes them on its read-row schedule. An id that
+// isn't userID's, or is already dismissed, is silently ignored.
+func (d *DB) DismissPriceNotifications(ctx context.Context, userID, id int64) error {
+	const dismiss = `UPDATE price_notifications
+		 SET dismissed_at = strftime('%Y-%m-%dT%H:%M:%fZ','now'),
+		     read_at = COALESCE(read_at, strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+		 WHERE user_id = ? AND dismissed_at IS NULL`
+	var err error
+	if id == 0 {
+		_, err = d.conn.ExecContext(ctx, dismiss, userID)
+	} else {
+		_, err = d.conn.ExecContext(ctx, dismiss+` AND id = ?`, userID, id)
+	}
+	if err != nil {
+		return fmt.Errorf("dismissing price notifications of user %d: %w", userID, err)
 	}
 	return nil
 }
