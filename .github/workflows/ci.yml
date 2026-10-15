@@ -57,7 +57,7 @@ env:
   # tools here that are Go modules rather than GitHub Actions.
   GOVULNCHECK_VERSION: v1.7.0
   GOSEC_VERSION: v2.29.0
-  GOLANGCI_LINT_VERSION: v2.13.2
+  GOLANGCI_LINT_VERSION: v2.14.0
   GITLEAKS_VERSION: v8.28.0
 
 jobs:

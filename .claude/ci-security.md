@@ -55,6 +55,17 @@ A second workflow builds the Android app ([docs/MOBILE_BUILD.md](../docs/MOBILE_
 - **`defaults.run.shell: bash`** on the job: an explicit `bash` runs with `-eo pipefail`, GitHub's implicit default has no `pipefail`, and without it `make build-apk-capacitor | tee ...` would turn a failed build into a passing step.
 - **Linting**: `podman run --rm -v "$PWD:/repo:ro" -w /repo docker.io/rhysd/actionlint:latest` checks both workflows (shellcheck included); it reported nothing on either when this workflow was added (actionlint 1.7.12).
 
+### Mandatory pre-hand-over checks
+
+Standing rule (also in the root `CLAUDE.md`): every delivery ends with `go test ./...`, `golangci-lint run ./...`, `govulncheck ./...` and `trivy fs --scanners vuln --severity CRITICAL,HIGH --ignore-unfixed --exit-code 1 .` run locally, each result reported, before anything is committed, pushed or called done. Use the versions pinned in `ci.yml`'s `env:` block — a different golangci-lint or govulncheck can pass locally and fail in CI, or the reverse. The Trivy flags are CI's own (`trivy-action`'s `severity`/`ignore-unfixed`/`exit-code`); without `--exit-code 1` Trivy only prints and never fails.
+
+When a tool isn't installed (none of these are needed to build Trakka):
+- `govulncheck`: `go run golang.org/x/vuln/cmd/govulncheck@<GOVULNCHECK_VERSION> ./...`
+- `golangci-lint`: the prebuilt release binary for `GOLANGCI_LINT_VERSION` from `https://github.com/golangci/golangci-lint/releases` (what `golangci-lint-action` itself installs).
+- `trivy`: `podman run --rm -v "$PWD:/src:ro,z" docker.io/aquasec/trivy:latest fs --scanners vuln --severity CRITICAL,HIGH --ignore-unfixed --exit-code 1 --skip-dirs /src/vendor /src`
+
+**Bumping Go also means checking golangci-lint.** golangci-lint type-checks against the export data of the Go toolchain running it; a release older than the toolchain fails on every package with `typecheck` errors like `export data version 5 is greater than maximum supported version 4` (Go 1.27.2 vs golangci-lint v2.13.2 — fixed by v2.14.0). Whenever `go.mod`'s `go` directive moves, run the pinned golangci-lint against it and bump `GOLANGCI_LINT_VERSION` in the same change if it fails.
+
 ### Running the same checks locally
 
 ```bash
@@ -63,7 +74,7 @@ go vet ./...
 go mod verify
 go build -o trakka ./cmd/server
 
-golangci-lint run ./...                                     # config: .golangci.yml
+golangci-lint run ./...                                     # config: .golangci.yml — match GOLANGCI_LINT_VERSION in ci.yml
 CGO_ENABLED=1 go test -v -race -cover ./...                 # -race needs a C toolchain (gcc/clang); CI enables cgo for this step only
 
 go install golang.org/x/vuln/cmd/govulncheck@v1.7.0         # match GOVULNCHECK_VERSION in ci.yml
@@ -77,7 +88,7 @@ gitleaks detect --source . --redact                         # secret scan (full 
 
 # Trivy (needs the trivy CLI installed separately, e.g. via your package
 # manager or https://aquasecurity.github.io/trivy/):
-trivy fs --severity CRITICAL,HIGH --ignore-unfixed .
+trivy fs --scanners vuln --severity CRITICAL,HIGH --ignore-unfixed --exit-code 1 .
 docker build -t trakka:scan . && trivy image --severity CRITICAL,HIGH --ignore-unfixed trakka:scan
 ```
 
