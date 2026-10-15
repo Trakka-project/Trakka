@@ -301,6 +301,19 @@ func (app *Application) handleItemsShow(w http.ResponseWriter, r *http.Request) 
 	writeJSON(w, http.StatusOK, item)
 }
 
+// keepsPriceAuto reports whether price, sent with an edit of existing whose
+// url becomes url, leaves a price the scans found (price_auto) following
+// its page: it is the very price the item already had, for the same url.
+// The edit modal re-sends an item's price with every save, whatever field
+// was actually changed — treating that as a price typed in would quietly
+// stop the background scans from applying the page's next price (they would
+// only propose a lower one, see applyObservedPrice). Any other price, or a
+// url change, is the user's own value.
+func keepsPriceAuto(existing *models.Item, price *float64, url string) bool {
+	return existing.PriceAuto && price != nil && existing.Price != nil &&
+		*price == *existing.Price && url == stringValue(existing.URL)
+}
+
 func (app *Application) handleItemsUpdate(w http.ResponseWriter, r *http.Request) {
 	id, ok := pathID(w, r)
 	if !ok {
@@ -426,7 +439,7 @@ func (app *Application) handleItemsUpdate(w http.ResponseWriter, r *http.Request
 	// A scraped image is tied to the url it was found on: if the url just
 	// changed to something new, the existing image no longer describes it
 	// and must not carry over, exactly like price_auto resetting to false
-	// on any full update.
+	// on any full update that changes the url (keepsPriceAuto).
 	imageURL := existing.ImageURL
 	if cleanURL != previousURL {
 		imageURL = nil
@@ -445,7 +458,10 @@ func (app *Application) handleItemsUpdate(w http.ResponseWriter, r *http.Request
 	justUnchecked := existing.Done && !in.Done
 	applyRecurrenceLifecycle(scheduled, existing, app.today())
 
-	item, err := app.DB.UpdateItem(r.Context(), id, in.Title, nullableString(cleanURL), in.Quantity, in.Price, false, imageURL, scheduled.Done, in.Position,
+	// A full update is a manual price, except the item's own price re-sent
+	// unchanged — see keepsPriceAuto.
+	priceAuto := keepsPriceAuto(existing, in.Price, cleanURL)
+	item, err := app.DB.UpdateItem(r.Context(), id, in.Title, nullableString(cleanURL), in.Quantity, in.Price, priceAuto, imageURL, scheduled.Done, in.Position,
 		nullableString(cleanMonth), scheduled.DueDate, scheduled.RecurrenceRule, scheduled.RecurrenceEndDate, in.IsUrgent, in.RecurrenceLeadMinutes,
 		in.TargetPrice, in.AlertOnPriceDrop)
 	if errors.Is(err, db.ErrNotFound) {
@@ -599,9 +615,11 @@ func (app *Application) handleItemsPatch(w http.ResponseWriter, r *http.Request)
 	// item.Price/PriceAuto untouched); present-but-"null" clears it;
 	// present with a number sets it. A plain *float64 can't tell "absent"
 	// apart from "explicit null" since both decode to a nil pointer, hence
-	// RawMessage. Either way a price supplied in the request is a manual
-	// value, so PriceAuto always resets to false here — the only path that
-	// ever sets it true is the scraper's own UpdateItemPriceIfMissing.
+	// RawMessage. A price supplied in the request is a manual value, so
+	// PriceAuto resets to false — unless it is the very price the item
+	// already had for the same url (see keepsPriceAuto): the edit modal
+	// re-sends the price with every save. Only the price scans
+	// (UpdateItemPriceIfMissing, UpdateItemPriceFromScan) ever set it true.
 	if in.Price != nil {
 		if string(in.Price) == "null" {
 			item.Price = nil
@@ -617,7 +635,7 @@ func (app *Application) handleItemsPatch(w http.ResponseWriter, r *http.Request)
 				return
 			}
 			item.Price = &price
-			item.PriceAuto = false
+			item.PriceAuto = keepsPriceAuto(&before, item.Price, stringValue(item.URL))
 		}
 	}
 	if in.Done != nil {

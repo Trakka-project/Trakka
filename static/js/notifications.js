@@ -309,10 +309,15 @@ function refreshNotifications() {
 
 // A background scan can find a price change at any time: while Trakka stays
 // open and visible, look again every minute (the hooks above cover a
-// return to the tab, and list reloads — see refreshCurrentList).
+// return to the tab, and list reloads — see refreshCurrentList) — at the
+// 🔔 and at the open list's own prices (applyServerPriceChanges, defined in
+// list_view.js), which the same scan moved: an increase shows its ▲ even
+// for a user whose 🔔 leaves increases out.
 const NOTIFICATIONS_POLL_MS = 60 * 1000;
 setInterval(() => {
-  if (document.visibilityState === 'visible' && state.currentUser) loadNotifications();
+  if (document.visibilityState !== 'visible' || !state.currentUser) return;
+  loadNotifications();
+  applyServerPriceChanges();
 }, NOTIFICATIONS_POLL_MS);
 
 function openNotificationsModal() {

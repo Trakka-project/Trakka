@@ -184,10 +184,10 @@ func (d *DB) GetItem(ctx context.Context, id int64) (*models.Item, error) {
 }
 
 // UpdateItem replaces every mutable field of an item. priceAuto should be
-// false for every caller except the PATCH handler preserving an existing
-// scraped price it didn't touch (see internal/handlers/items.go); any
-// caller that supplies price directly from the request is setting it
-// manually, even when the value happens to be nil. imageURL should be the
+// false for every caller except one preserving an existing scraped price
+// it didn't change — left out of a PATCH, or re-sent unchanged for the same
+// url (see internal/handlers.keepsPriceAuto); any other price supplied
+// from the request is set manually, even when the value happens to be nil. imageURL should be the
 // item's existing image_url when url isn't changing, or nil when it is —
 // a scraped image is tied to the url it was found on, so a url change
 // invalidates it the same way a manual price invalidates price_auto (see

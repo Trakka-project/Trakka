@@ -493,3 +493,95 @@ func TestHandleMeUpdatePriceAlertPreferences(t *testing.T) {
 		t.Fatalf("after PATCH: %+v", got)
 	}
 }
+
+// patchItemJSON sends body as PATCH /api/v1/items/{id} from user and
+// returns the item it answers with.
+func patchItemJSON(t *testing.T, app *Application, user *models.User, itemID int64, body string) *models.Item {
+	t.Helper()
+	id := strconv.FormatInt(itemID, 10)
+	req := httptest.NewRequest(http.MethodPatch, "/api/v1/items/"+id, strings.NewReader(body))
+	req.SetPathValue("id", id)
+	rec := httptest.NewRecorder()
+	app.handleItemsPatch(rec, withUser(req, user))
+	return decodeItemResponse(t, rec)
+}
+
+// TestBackgroundScanFollowsSuccessivePriceChanges: a scraper-found price
+// moving 100 → 80 → 90 → 70 over three background scans is applied every
+// time — item price, ▲/▼ movement and 🔔 entry — even when the item is
+// edited in between. Regression guard: the edit modal re-sends the item's
+// price unchanged with every save, which used to turn the price into a
+// typed-in one (price_auto = 0), so from the second variation on the scans
+// only proposed a better deal and the item's price stayed put.
+func TestBackgroundScanFollowsSuccessivePriceChanges(t *testing.T) {
+	app := newTestApplication(t)
+	recordPushes(app)
+	page := &fakeProductPage{}
+	app.productPageHook = page.hook
+	ctx := context.Background()
+	owner, _, item := trackedItemFixture(t, app, true) // scraper-found: 100
+	setPrefs(t, app, owner.ID, db.NotificationPreferences{PriceIncreaseAlertsEnabled: on})
+
+	steps := []struct {
+		observed, previous float64
+		kind               string
+		edit               string // PATCH sent after this step's scan, as the edit modal would
+	}{
+		{80, 100, "drop", `{"title":"Casque renommé","url":"https://shop.example.com/product","is_urgent":false,"price":80,"target_price":null,"alert_on_price_drop":false,"target_month":""}`},
+		{90, 80, "increase", `{"title":"Casque renommé","url":"https://shop.example.com/product","is_urgent":true,"price":90}`},
+		{70, 90, "drop", ""},
+	}
+	for i, step := range steps {
+		page.set(step.observed)
+		app.RunPriceAlertScan(ctx)
+
+		waitUntil(t, "the 🔔 entry", func() bool { return len(priceNotificationsOf(t, app, owner.ID)) == i+1 })
+		got, err := app.DB.GetItem(ctx, item.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got.Price == nil || *got.Price != step.observed || !got.PriceAuto {
+			t.Fatalf("step %d: item price = %v (auto %v), want %v following the page", i+1, got.Price, got.PriceAuto, step.observed)
+		}
+		if got.PreviousPrice == nil || *got.PreviousPrice != step.previous || got.PriceChangedAt == nil {
+			t.Fatalf("step %d: movement = %v at %v, want from %v", i+1, got.PreviousPrice, got.PriceChangedAt, step.previous)
+		}
+		n := priceNotificationsOf(t, app, owner.ID)[0] // newest first
+		if n.Kind != step.kind || n.OldPrice != step.previous || n.NewPrice != step.observed {
+			t.Fatalf("step %d: newest 🔔 entry = %+v, want %s %v → %v", i+1, n, step.kind, step.previous, step.observed)
+		}
+		if alert, err := app.DB.GetPendingPriceAlertForItem(ctx, item.ID); err == nil && alert != nil {
+			t.Fatalf("step %d: a page price change was proposed as a deal instead of applied: %+v", i+1, alert)
+		}
+
+		if step.edit != "" {
+			edited := patchItemJSON(t, app, owner, item.ID, step.edit)
+			if !edited.PriceAuto || *edited.Price != step.observed {
+				t.Fatalf("step %d: re-saving the unchanged price made it a typed-in one: %+v", i+1, edited)
+			}
+			if edited.PreviousPrice == nil || *edited.PreviousPrice != step.previous {
+				t.Fatalf("step %d: re-saving the unchanged price cleared the movement: %+v", i+1, edited)
+			}
+		}
+	}
+
+	history, err := app.DB.ListPriceHistory(ctx, item.ID, 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(history) != 3 || history[0].Price != 80 || history[1].Price != 90 || history[2].Price != 70 {
+		t.Fatalf("history = %+v, want 80, 90, 70", history)
+	}
+
+	// A price actually typed in is the user's own: it stops following the
+	// page, and a lower one there is only proposed.
+	edited := patchItemJSON(t, app, owner, item.ID, `{"price":65}`)
+	if edited.PriceAuto || *edited.Price != 65 || edited.PreviousPrice != nil {
+		t.Fatalf("typed-in price: %+v", edited)
+	}
+	page.set(60)
+	app.RunPriceAlertScan(ctx)
+	if got, _ := app.DB.GetItem(ctx, item.ID); *got.Price != 65 {
+		t.Fatalf("a background scan overwrote a typed-in price: %+v", got)
+	}
+}
