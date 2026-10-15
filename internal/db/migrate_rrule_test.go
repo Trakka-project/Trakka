@@ -45,8 +45,8 @@ func TestMigrationRewritesLegacyRecurrenceRules(t *testing.T) {
 	}
 
 	// Rewinding re-runs every later migration too: 23 is idempotent, but
-	// 24's, 26's and 27's ADD COLUMNs, 25's CREATE TABLE and 28's tables and
-	// columns have to be undone first.
+	// 24's, 26's and 27's ADD COLUMNs, 25's CREATE TABLE and 28's and 30's
+	// tables and columns have to be undone first (31 only writes data).
 	if _, err := d.conn.Exec(`ALTER TABLE users DROP COLUMN vibrate_on_notification`); err != nil {
 		t.Fatalf("undoing migration 24: %v", err)
 	}
@@ -68,9 +68,12 @@ func TestMigrationRewritesLegacyRecurrenceRules(t *testing.T) {
 		`ALTER TABLE users DROP COLUMN price_drop_alerts_enabled`,
 		`ALTER TABLE users DROP COLUMN price_increase_alerts_enabled`,
 		`ALTER TABLE users DROP COLUMN price_change_indicators_enabled`,
+		`DROP TABLE house_product_barcodes`,
+		`DROP TABLE house_products`,
+		`ALTER TABLE items DROP COLUMN aisle`,
 	} {
 		if _, err := d.conn.Exec(stmt); err != nil {
-			t.Fatalf("undoing migration 28: %v", err)
+			t.Fatalf("undoing migrations 28 and 30: %v", err)
 		}
 	}
 	if _, err := d.conn.Exec(`PRAGMA user_version = 21`); err != nil {

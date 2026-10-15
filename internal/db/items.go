@@ -31,7 +31,7 @@ const itemSelectColumns = `items.id, items.list_id, items.title, items.url, item
 		 items.target_price, items.alert_on_price_drop, items.labels, items.reminder_enabled, items.reminder_offset_days, items.reminder_time,
 		 items.due_time, items.next_due_date, items.reminder_at_due_time,
 		 CASE WHEN items.due_reminder_sent_for = ` + dueReminderKeyExpr + ` THEN items.notification_sent_at END,
-		 items.previous_price, items.price_changed_at`
+		 items.previous_price, items.price_changed_at, items.aisle`
 
 func scanItem(row rowScanner) (*models.Item, error) {
 	it := &models.Item{}
@@ -58,12 +58,13 @@ func scanItem(row rowScanner) (*models.Item, error) {
 	var notificationSentAt sql.NullString
 	var previousPrice sql.NullFloat64
 	var priceChangedAt sql.NullString
+	var aisle sql.NullString
 	if err := row.Scan(&it.ID, &it.ListID, &it.Title, &it.URL, &it.Quantity, &done,
 		&it.Position, &it.CreatedAt, &it.UpdatedAt, &price, &priceAuto, &imageURL, &targetMonth,
 		&dueDate, &isRecurring, &recurrenceRule, &recurrenceEndDate, &isUrgent, &recurrenceLeadMinutes,
 		&targetPrice, &alertOnPriceDrop, &labelsJSON, &reminderEnabled, &reminderOffsetDays, &reminderTime,
 		&dueTime, &nextDueDate, &reminderAtDueTime, &notificationSentAt,
-		&previousPrice, &priceChangedAt); err != nil {
+		&previousPrice, &priceChangedAt, &aisle); err != nil {
 		return nil, err
 	}
 	it.Done = done != 0
@@ -104,6 +105,7 @@ func scanItem(row rowScanner) (*models.Item, error) {
 		it.PreviousPrice = &previousPrice.Float64
 	}
 	it.PriceChangedAt = nullStringPtr(priceChangedAt)
+	it.Aisle = nullStringPtr(aisle)
 	return it, nil
 }
 
@@ -401,6 +403,54 @@ func (d *DB) SetItemSchedule(ctx context.Context, id int64, dueTime, nextDueDate
 		dueTime, nextDueDate, id)
 	if err != nil {
 		return nil, fmt.Errorf("updating schedule for item %d: %w", id, err)
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return nil, fmt.Errorf("reading rows affected for item %d: %w", id, err)
+	}
+	if n == 0 {
+		return nil, ErrNotFound
+	}
+	return d.GetItem(ctx, id)
+}
+
+// SetItemAisle writes an item's store aisle (see models.Item.Aisle; nil
+// clears it) and returns the updated row — a separate method for the same
+// "too many positional params" reason as SetItemLabels. aisle must already
+// be validated (internal/validate.Aisle). Returns ErrNotFound if no such
+// item exists.
+func (d *DB) SetItemAisle(ctx context.Context, id int64, aisle *string) (*models.Item, error) {
+	res, err := d.conn.ExecContext(ctx,
+		`UPDATE items SET aisle = ?, updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE id = ?`,
+		aisle, id)
+	if err != nil {
+		return nil, fmt.Errorf("updating aisle for item %d: %w", id, err)
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return nil, fmt.Errorf("reading rows affected for item %d: %w", id, err)
+	}
+	if n == 0 {
+		return nil, ErrNotFound
+	}
+	return d.GetItem(ctx, id)
+}
+
+// ReactivateItem is the write behind the "no duplicates on a Courses list"
+// rule (internal/handlers.handleItemsCreate): the product being added is
+// already item id, so that item comes back to the active part of the list
+// — done cleared, along with any pending next occurrence — with quantity as
+// computed by the caller, aisle filled in only if it had none, and urgent
+// added (never removed) by the new request. Returns ErrNotFound if no such
+// item exists.
+func (d *DB) ReactivateItem(ctx context.Context, id int64, quantity int, aisle *string, urgent bool) (*models.Item, error) {
+	res, err := d.conn.ExecContext(ctx,
+		`UPDATE items SET done = 0, next_due_date = NULL, quantity = ?, aisle = COALESCE(aisle, ?),
+		 is_urgent = CASE WHEN ? THEN 1 ELSE is_urgent END,
+		 updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE id = ?`,
+		quantity, aisle, boolToInt(urgent), id)
+	if err != nil {
+		return nil, fmt.Errorf("reactivating item %d: %w", id, err)
 	}
 	n, err := res.RowsAffected()
 	if err != nil {

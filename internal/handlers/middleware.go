@@ -61,12 +61,15 @@ func SecurityHeaders(hsts bool, next http.Handler) http.Handler {
 		// Trakka's own responses as a subresource.
 		h.Set("Cross-Origin-Opener-Policy", "same-origin")
 		h.Set("Cross-Origin-Resource-Policy", "same-origin")
-		// Trakka uses none of these device/browser capabilities; denying them
-		// outright means a compromised third-party script (the Tailwind Play
-		// CDN is the one third-party script this CSP trusts) cannot reach for
-		// them either.
+		// Trakka uses none of these device/browser capabilities but the
+		// camera; denying them outright means a compromised third-party script
+		// (the Tailwind Play CDN is the one third-party script this CSP
+		// trusts) cannot reach for them either. camera=(self) is for the
+		// barcode scanner of "Courses" lists (static/js/scanner.js): this
+		// origin only, never a frame, and the browser still asks the user
+		// before any page script gets a stream.
 		h.Set("Permissions-Policy",
-			"accelerometer=(), autoplay=(), camera=(), display-capture=(), "+
+			"accelerometer=(), autoplay=(), camera=(self), display-capture=(), "+
 				"encrypted-media=(), fullscreen=(self), geolocation=(), gyroscope=(), "+
 				"magnetometer=(), microphone=(), midi=(), payment=(), usb=(), xr-spatial-tracking=()")
 		if hsts {

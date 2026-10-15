@@ -32,14 +32,24 @@ type migration struct {
 
 var migrationFilePattern = regexp.MustCompile(`^(\d{4})_([a-z0-9_]+)\.sql$`)
 
+// goMigration is a migration that must run as Go code: apply records the
+// new version itself, inside its own transaction, like sqlMigration does.
+type goMigration struct {
+	name  string
+	apply func(conn *sql.DB) error
+}
+
 // goMigrations holds the versions that must run as Go code rather than a
-// plain embedded .sql file. Currently just migration 6 — see
-// migrate_list_types.go for why widening a CHECK constraint can't be
-// expressed as a single script under the generic sqlMigration wrapper
-// below. Adding a *new* migration normally needs nothing here: just drop a
-// new NNNN_description.sql file in internal/db/migrations/.
-var goMigrations = map[int]func(conn *sql.DB) error{
-	6: applyListTypesWidenMigration,
+// plain embedded .sql file: migration 6 (see migrate_list_types.go for why
+// widening a CHECK constraint can't be expressed as a single script under
+// the generic sqlMigration wrapper below) and migration 31 (see
+// migrate_quick_shopping.go: seeding the product catalog needs
+// internal/catalog's Go name normalization, which SQL can't reproduce).
+// Adding a *new* migration normally needs nothing here: just drop a new
+// NNNN_description.sql file in internal/db/migrations/.
+var goMigrations = map[int]goMigration{
+	6:  {name: "list_types_widen", apply: applyListTypesWidenMigration},
+	31: {name: "seed_house_products", apply: applySeedHouseProductsMigration},
 }
 
 // loadMigrations returns every migration in ascending version order,
@@ -75,11 +85,11 @@ func loadMigrations() ([]migration, error) {
 		byVersion[version] = migration{version: version, name: match[2], apply: sqlMigration(version, string(sqlBytes))}
 	}
 
-	for version, apply := range goMigrations {
+	for version, m := range goMigrations {
 		if _, exists := byVersion[version]; exists {
 			return nil, fmt.Errorf("duplicate migration version %d", version)
 		}
-		byVersion[version] = migration{version: version, name: "list_types_widen", apply: apply}
+		byVersion[version] = migration{version: version, name: m.name, apply: m.apply}
 	}
 
 	versions := make([]int, 0, len(byVersion))

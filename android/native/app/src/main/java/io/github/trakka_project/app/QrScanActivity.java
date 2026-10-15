@@ -8,6 +8,8 @@ import android.os.Build;
 import android.os.Bundle;
 import android.view.HapticFeedbackConstants;
 import android.view.View;
+import android.view.ViewGroup;
+import android.widget.TextView;
 import androidx.activity.EdgeToEdge;
 import androidx.activity.SystemBarStyle;
 import androidx.activity.result.ActivityResultLauncher;
@@ -31,8 +33,10 @@ import com.google.zxing.DecodeHintType;
 import com.google.zxing.MultiFormatReader;
 import com.google.zxing.PlanarYUVLuminanceSource;
 import com.google.zxing.ReaderException;
+import com.google.zxing.Result;
 import com.google.zxing.common.HybridBinarizer;
 import java.nio.ByteBuffer;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.EnumMap;
 import java.util.Map;
@@ -41,21 +45,33 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
- * Full-screen QR code scanner for the connect screen ({@link TrakkaAppPlugin#scanQrCode}): a CameraX
- * preview, with frames decoded on the device by ZXing. No network, no Google Play services. Returns
- * the code's text in {@link #EXTRA_TEXT}, or {@link #RESULT_CAMERA_DENIED} when the camera
- * permission is refused.
+ * Full-screen code scanner: a CameraX preview, with frames decoded on the device by ZXing. No
+ * network, no Google Play services. Scans the QR code of a server for the connect screen
+ * ({@link TrakkaAppPlugin#scanQrCode}), or, with {@link #EXTRA_MODE} = {@link #MODE_BARCODE}, a
+ * product barcode (EAN-13, EAN-8, UPC-A, UPC-E) for a "Courses" list
+ * ({@link TrakkaAppPlugin#scanBarcode}). Returns the code's text in {@link #EXTRA_TEXT},
+ * {@link #RESULT_CAMERA_DENIED} when the camera permission is refused, or
+ * {@link #RESULT_CAMERA_UNAVAILABLE} when the camera wouldn't start.
+ *
+ * <p>The permission is checked when the scanner opens: already granted (Android's settings, or an
+ * earlier scan), the camera starts at once; otherwise Android's own prompt asks for it — or, once
+ * the user refused it for good, answers no straight away, which comes back as
+ * {@link #RESULT_CAMERA_DENIED}.
  */
 public class QrScanActivity extends AppCompatActivity {
 
     static final String EXTRA_TEXT = "text";
+    static final String EXTRA_MODE = "mode";
+    static final String MODE_BARCODE = "barcode";
     static final int RESULT_CAMERA_DENIED = RESULT_FIRST_USER;
+    static final int RESULT_CAMERA_UNAVAILABLE = RESULT_FIRST_USER + 1;
 
     private final AtomicBoolean found = new AtomicBoolean();
     // Only used on analysisExecutor's single thread.
     private final MultiFormatReader reader = new MultiFormatReader();
     private ExecutorService analysisExecutor;
     private PreviewView preview;
+    private boolean barcodeMode;
 
     private final ActivityResultLauncher<String> cameraPermission = registerForActivityResult(
         new ActivityResultContracts.RequestPermission(),
@@ -81,9 +97,26 @@ public class QrScanActivity extends AppCompatActivity {
             return insets;
         });
 
+        barcodeMode = MODE_BARCODE.equals(getIntent().getStringExtra(EXTRA_MODE));
         Map<DecodeHintType, Object> hints = new EnumMap<>(DecodeHintType.class);
-        hints.put(DecodeHintType.POSSIBLE_FORMATS, Collections.singletonList(BarcodeFormat.QR_CODE));
-        hints.put(DecodeHintType.ALSO_INVERTED, Boolean.TRUE);
+        if (barcodeMode) {
+            hints.put(
+                DecodeHintType.POSSIBLE_FORMATS,
+                Arrays.asList(BarcodeFormat.EAN_13, BarcodeFormat.EAN_8, BarcodeFormat.UPC_A, BarcodeFormat.UPC_E)
+            );
+            hints.put(DecodeHintType.TRY_HARDER, Boolean.TRUE);
+            // A product barcode is wide and short: so is the frame to aim with.
+            View frame = findViewById(R.id.qr_scan_frame);
+            ViewGroup.LayoutParams params = frame.getLayoutParams();
+            float density = getResources().getDisplayMetrics().density;
+            params.width = Math.round(300 * density);
+            params.height = Math.round(150 * density);
+            frame.setLayoutParams(params);
+            ((TextView) findViewById(R.id.qr_scan_hint)).setText(R.string.barcode_scan_hint);
+        } else {
+            hints.put(DecodeHintType.POSSIBLE_FORMATS, Collections.singletonList(BarcodeFormat.QR_CODE));
+            hints.put(DecodeHintType.ALSO_INVERTED, Boolean.TRUE);
+        }
         reader.setHints(hints);
         analysisExecutor = Executors.newSingleThreadExecutor();
 
@@ -118,8 +151,9 @@ public class QrScanActivity extends AppCompatActivity {
                     provider.unbindAll();
                     provider.bindToLifecycle(this, camera, previewUseCase, analysis);
                 } catch (Exception e) {
-                    // No usable camera, or the camera service failed: nothing to scan with.
-                    finishWith(RESULT_CANCELED, null);
+                    // No usable camera, or the camera service failed (in use by another app, for
+                    // instance): nothing to scan with, which the page can say.
+                    finishWith(RESULT_CAMERA_UNAVAILABLE, null);
                 }
             },
             ContextCompat.getMainExecutor(this)
@@ -137,17 +171,8 @@ public class QrScanActivity extends AppCompatActivity {
             ByteBuffer buffer = luminance.getBuffer();
             byte[] data = new byte[buffer.remaining()];
             buffer.get(data);
-            PlanarYUVLuminanceSource source = new PlanarYUVLuminanceSource(
-                data,
-                luminance.getRowStride(),
-                image.getHeight(),
-                0,
-                0,
-                image.getWidth(),
-                image.getHeight(),
-                false
-            );
-            String text = reader.decodeWithState(new BinaryBitmap(new HybridBinarizer(source))).getText();
+            String text = decodeFrame(data, luminance.getRowStride(), image.getWidth(), image.getHeight(),
+                image.getImageInfo().getRotationDegrees()).getText();
             if (found.compareAndSet(false, true)) {
                 runOnUiThread(() -> {
                     preview.performHapticFeedback(
@@ -164,6 +189,42 @@ public class QrScanActivity extends AppCompatActivity {
             reader.reset();
             image.close();
         }
+    }
+
+    /**
+     * Decodes one frame. A QR code reads in any orientation; a 1D barcode only along the rows of
+     * the image, and frames come in the sensor's orientation: held level in front of a phone in
+     * portrait, a barcode runs down the columns of the frame. So a barcode is looked for both in the
+     * frame and in its transpose, the one matching how the user holds the phone first.
+     */
+    private Result decodeFrame(byte[] data, int rowStride, int width, int height, int rotation) throws ReaderException {
+        if (!barcodeMode) {
+            return decode(data, rowStride, width, height);
+        }
+        boolean sideways = rotation == 90 || rotation == 270;
+        try {
+            return sideways ? decode(transpose(data, rowStride, width, height), height, height, width) : decode(data, rowStride, width, height);
+        } catch (ReaderException first) {
+            reader.reset();
+            return sideways ? decode(data, rowStride, width, height) : decode(transpose(data, rowStride, width, height), height, height, width);
+        }
+    }
+
+    private Result decode(byte[] data, int rowStride, int width, int height) throws ReaderException {
+        PlanarYUVLuminanceSource source = new PlanarYUVLuminanceSource(data, rowStride, height, 0, 0, width, height, false);
+        return reader.decodeWithState(new BinaryBitmap(new HybridBinarizer(source)));
+    }
+
+    /** The luminance plane turned a quarter (mirrored, which a 1D reader doesn't mind: it reads both ways). */
+    private static byte[] transpose(byte[] data, int rowStride, int width, int height) {
+        byte[] out = new byte[width * height];
+        for (int y = 0; y < height; y++) {
+            int row = y * rowStride;
+            for (int x = 0; x < width; x++) {
+                out[x * height + y] = data[row + x];
+            }
+        }
+        return out;
     }
 
     private void finishWith(int resultCode, @Nullable String text) {

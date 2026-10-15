@@ -1156,3 +1156,45 @@ html > body.overflow-hidden {
     transition: none;
   }
 }
+
+/* Barcode scanner (static/js/scanner.js): a guide frame over the camera
+   preview, the rest of the picture dimmed around it, and a scan line moving
+   inside it. barcode.js reads the middle band of the frame, which is where
+   the guide sits. */
+.barcode-scanner-guide {
+  position: absolute;
+  left: 8%;
+  right: 8%;
+  top: 30%;
+  bottom: 30%;
+  border: 2px solid rgba(255, 255, 255, 0.9);
+  border-radius: 0.75rem;
+  box-shadow: 0 0 0 9999px rgba(2, 6, 23, 0.45);
+  pointer-events: none;
+}
+
+.barcode-scanner-guide::after {
+  content: '';
+  position: absolute;
+  left: 4%;
+  right: 4%;
+  top: 50%;
+  height: 2px;
+  background: rgb(244 63 94 / 0.85);
+  animation: barcode-scan-line 1.6s ease-in-out infinite alternate;
+}
+
+@keyframes barcode-scan-line {
+  from {
+    transform: translateY(-1.5rem);
+  }
+  to {
+    transform: translateY(1.5rem);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .barcode-scanner-guide::after {
+    animation: none;
+  }
+}

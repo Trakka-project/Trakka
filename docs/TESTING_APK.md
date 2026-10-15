@@ -146,6 +146,20 @@ How they work: [MOBILE_BUILD.md, Notifications](MOBILE_BUILD.md#task-reminders-l
 - [ ] Turn the switch off → `dumpsys alarm` no longer lists the app's reminders, and none comes.
 - [ ] *In a browser* (not the app), Settings → Task notifications still reads "Enable push notifications" and works as before.
 
+### Product barcode scanner ("Courses" lists)
+
+How it works: [MOBILE_BUILD.md](MOBILE_BUILD.md#what-works-and-what-doesnt-yet) and [docs/API.md, House product catalog](API.md#house-product-catalog). Use a "Courses" list of a House you're a member of: the quick-add bar shows ⭐ and 📷. First check in Paramètres → "Serveur de l'application" that the app's version is the one just installed: an APK whose version code isn't higher than the installed app's is refused by Android, which keeps the old app — and an app from before the scanner can't scan at all.
+
+- [ ] Tap **📷** → the full-screen scanner with a wide, short frame and "Point the camera at the product's barcode" (French: "Visez le code-barres du produit"). If the camera permission was never granted, Android asks first.
+- [ ] **Close**, or the back button → back on the list, nothing added.
+- [ ] Scan a product never scanned in this House, **holding the phone upright** and the barcode level → back on the list, its name in the quick-add field (if Open Food Facts knows it) or an empty field, a "📷 Barcode …" chip, and a message. Type or fix the name, press Enter → added.
+- [ ] Scan the same product again → added (or its quantity raised) straight away, with no field to fill.
+- [ ] Scan with the phone **sideways**, and with the product upside down → still read.
+- [ ] Scan a small EAN-8 (chewing gum, small packs) → read.
+- [ ] *Camera permission granted beforehand* (Settings → Apps → Trakka → Permissions → Camera: allowed): tap 📷 → the scanner opens straight away, with no prompt and no "refusé" message.
+- [ ] *Camera permission denied*: deny it (or revoke it in Settings → Apps → Trakka → Permissions), tap 📷 → "Trakka n'a pas accès à la caméra : autorisez-la dans les réglages Android…", with the field for the code's digits; typing them works.
+- [ ] *Older app*: on an APK built before this feature, 📷 says "Cette version de l'application Trakka ne sait pas encore scanner…" (never "Accès à la caméra refusé") and offers typing the digits.
+
 ### Links and sign-in redirects
 
 - [ ] An item with a product link → tapping the link opens it in the phone's browser, not in the app. Going back returns to Trakka unchanged.

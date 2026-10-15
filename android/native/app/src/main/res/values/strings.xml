@@ -7,6 +7,7 @@
     <string name="shortcut_change_server_short">Change server</string>
     <string name="shortcut_change_server_long">Change Trakka server</string>
     <string name="qr_scan_hint">Point the camera at the QR code of your Trakka server</string>
+    <string name="barcode_scan_hint">Point the camera at the product\'s barcode</string>
     <string name="qr_scan_close">Close</string>
     <string name="channel_reminders">Task reminders</string>
     <string name="channel_reminders_description">Reminders of your tasks\' due dates, with a short double vibration</string>

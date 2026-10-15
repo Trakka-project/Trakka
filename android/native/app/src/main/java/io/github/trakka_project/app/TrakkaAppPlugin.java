@@ -21,8 +21,9 @@ import java.util.concurrent.Executors;
 /**
  * The app's own native API, which pages reach as {@code window.Capacitor.Plugins.TrakkaApp}: the
  * connect screen (android/www), which is also the app's sign-in screen, drives it, Trakka's settings (static/js/settings.js) use
- * {@code getServer} and {@code changeServer}, and its sign-in page (static/js/login.js)
- * {@code signInWithBrowser}. Whatever can point the app to another server is
+ * {@code getServer} and {@code changeServer}, its sign-in page (static/js/login.js)
+ * {@code signInWithBrowser}, and its barcode scanner (static/js/scanner.js) {@code scanBarcode}.
+ * Whatever can point the app to another server is
  * refused while a server's pages are shown, so no page can send the app elsewhere: only the user
  * can, from the connect screen.
  */
@@ -284,6 +285,40 @@ public class TrakkaAppPlugin extends Plugin {
             call.resolve(scanned);
         } else if (result.getResultCode() == QrScanActivity.RESULT_CAMERA_DENIED) {
             call.reject("Camera permission denied", "camera_denied");
+        } else {
+            call.reject("Scan cancelled", "cancelled");
+        }
+    }
+
+    /**
+     * Scans a product barcode for a "Courses" list (static/js/scanner.js) in the app's own
+     * full-screen scanner, and resolves {code} with its digits; rejects "cancelled",
+     * "camera_denied" (the Android permission, see QrScanActivity) or "camera_unavailable". Offered
+     * to the server's pages, unlike the QR code scanner: a page never gets the camera itself
+     * (MainActivity refuses getUserMedia), only the digits of a code the user chose to aim at, and
+     * nothing here can change which server the app opens.
+     */
+    @PluginMethod
+    public void scanBarcode(PluginCall call) {
+        Intent intent = new Intent(getContext(), QrScanActivity.class).putExtra(QrScanActivity.EXTRA_MODE, QrScanActivity.MODE_BARCODE);
+        startActivityForResult(call, intent, "onBarcodeScanned");
+    }
+
+    @ActivityCallback
+    private void onBarcodeScanned(PluginCall call, ActivityResult result) {
+        if (call == null) {
+            return;
+        }
+        Intent data = result.getData();
+        String text = data == null ? null : data.getStringExtra(QrScanActivity.EXTRA_TEXT);
+        if (result.getResultCode() == Activity.RESULT_OK && text != null && text.matches("[0-9]{6,14}")) {
+            JSObject scanned = new JSObject();
+            scanned.put("code", text);
+            call.resolve(scanned);
+        } else if (result.getResultCode() == QrScanActivity.RESULT_CAMERA_DENIED) {
+            call.reject("Camera permission denied", "camera_denied");
+        } else if (result.getResultCode() == QrScanActivity.RESULT_CAMERA_UNAVAILABLE) {
+            call.reject("Camera unavailable", "camera_unavailable");
         } else {
             call.reject("Scan cancelled", "cancelled");
         }

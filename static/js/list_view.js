@@ -75,6 +75,7 @@ const listEls = {
   itemReminderOffset: document.getElementById('item-reminder-offset'),
   itemReminderTime: document.getElementById('item-reminder-time'),
   itemUrgent: document.getElementById('item-urgent'),
+  itemAisle: document.getElementById('item-aisle'),
   itemsActive: document.getElementById('items-active'),
   itemsDone: document.getElementById('items-done'),
   doneSection: document.getElementById('done-section'),
@@ -98,6 +99,7 @@ const listEls = {
   editItemReminderOffset: document.getElementById('edit-item-reminder-offset'),
   editItemReminderTime: document.getElementById('edit-item-reminder-time'),
   editItemUrgent: document.getElementById('edit-item-urgent'),
+  editItemAisle: document.getElementById('edit-item-aisle'),
   itemActionsSheet: document.getElementById('item-actions-sheet'),
   itemActionsSheetTitle: document.getElementById('item-actions-sheet-title'),
   itemActionsSheetMeta: document.getElementById('item-actions-sheet-meta'),
@@ -471,14 +473,16 @@ function typeLabel(type) {
 // Any other/unrecognized type falls back to DEFAULT_FIELD_VISIBILITY, the
 // same shape every list had before groceries/recurring_shopping/custom/todo
 // existed: URL and recurrence shown, price/target month/quantity hidden.
+// `aisle` (the store aisle select, and the "Par rayon" sort) is for
+// `groceries` only — the quick shopping list type, see quick-shop.js.
 const FIELD_VISIBILITY_BY_TYPE = {
-  groceries: { url: false, price: false, targetMonth: false, recurrence: false, dueDate: false, quantity: true, urgent: true, done: true },
-  shopping: { url: true, price: true, targetMonth: true, recurrence: false, dueDate: false, quantity: true, urgent: true, done: true },
-  recurring_shopping: { url: true, price: true, targetMonth: false, recurrence: true, dueDate: true, quantity: true, urgent: true, done: true },
-  todo: { url: true, price: false, targetMonth: false, recurrence: true, dueDate: true, quantity: false, urgent: true, done: true },
-  custom: { url: false, price: false, targetMonth: false, recurrence: false, dueDate: false, quantity: false, urgent: false, done: false },
+  groceries: { url: false, price: false, targetMonth: false, recurrence: false, dueDate: false, quantity: true, urgent: true, done: true, aisle: true },
+  shopping: { url: true, price: true, targetMonth: true, recurrence: false, dueDate: false, quantity: true, urgent: true, done: true, aisle: false },
+  recurring_shopping: { url: true, price: true, targetMonth: false, recurrence: true, dueDate: true, quantity: true, urgent: true, done: true, aisle: false },
+  todo: { url: true, price: false, targetMonth: false, recurrence: true, dueDate: true, quantity: false, urgent: true, done: true, aisle: false },
+  custom: { url: false, price: false, targetMonth: false, recurrence: false, dueDate: false, quantity: false, urgent: false, done: false, aisle: false },
 };
-const DEFAULT_FIELD_VISIBILITY = { url: true, price: false, targetMonth: false, recurrence: true, dueDate: true, quantity: false, urgent: true, done: true };
+const DEFAULT_FIELD_VISIBILITY = { url: true, price: false, targetMonth: false, recurrence: true, dueDate: true, quantity: false, urgent: true, done: true, aisle: false };
 
 function fieldVisibilityFor(type) {
   return FIELD_VISIBILITY_BY_TYPE[type] || DEFAULT_FIELD_VISIBILITY;
@@ -530,6 +534,7 @@ function applyListTypeVisibility(type) {
   for (const el of document.querySelectorAll('[data-item-field="due-date"]')) el.hidden = !visibility.dueDate;
   for (const el of document.querySelectorAll('[data-item-field="quantity"]')) el.hidden = !visibility.quantity;
   for (const el of document.querySelectorAll('[data-item-field="urgent"]')) el.hidden = !visibility.urgent;
+  for (const el of document.querySelectorAll('[data-item-field="aisle"]')) el.hidden = !visibility.aisle;
   listEls.itemTitle.placeholder = t(type === 'custom' ? 'items.titlePlaceholderCustom' : 'items.titlePlaceholder');
 
   // A `custom` list (freeform names/ideas/notes) shows none of url/price/
@@ -544,7 +549,7 @@ function applyListTypeVisibility(type) {
 }
 
 function hasAdvancedFields(visibility) {
-  return visibility.url || visibility.price || visibility.targetMonth || visibility.recurrence || visibility.dueDate || visibility.quantity || visibility.urgent;
+  return visibility.url || visibility.price || visibility.targetMonth || visibility.recurrence || visibility.dueDate || visibility.quantity || visibility.urgent || visibility.aisle;
 }
 
 // updateReminderCustomFieldsVisibility shows the inline "N jour(s) avant à
@@ -735,17 +740,26 @@ function updateViewModeToggleButton(type, visibility) {
 // two exactly as before — only the order *within* each section changes.
 // Entirely client-side (no request to the server, no change to any item's
 // stored `position`), so switching modes is instant and never touches the
-// offline sync queue.
+// offline sync queue. A list nobody picked an order for gets its type's
+// default (defaultSortMode): "Par rayon" for a Courses list (grouped under
+// aisle headings, see quick-shop.js), the list's own order otherwise —
+// which, on a Courses list, the sheet calls "Ordre de la liste" rather than
+// "Ordre par défaut".
 // ---------------------------------------------------------------------------
 
 const SORT_MODE_STORAGE_PREFIX = 'trakka:sortMode:';
-const DEFAULT_SORT_MODE = 'manual';
+const MANUAL_SORT_MODE = 'manual';
 
-function getSortMode(listId) {
+function defaultSortMode(list) {
+  // isQuickShopList is defined in quick-shop.js.
+  return isQuickShopList(list) ? 'aisle' : MANUAL_SORT_MODE;
+}
+
+function getSortMode(list) {
   try {
-    return localStorage.getItem(SORT_MODE_STORAGE_PREFIX + listId) || DEFAULT_SORT_MODE;
+    return localStorage.getItem(SORT_MODE_STORAGE_PREFIX + list.id) || defaultSortMode(list);
   } catch {
-    return DEFAULT_SORT_MODE; // localStorage unavailable (private mode, quota) — fall back to the default.
+    return defaultSortMode(list); // localStorage unavailable (private mode, quota) — fall back to the default.
   }
 }
 
@@ -793,6 +807,10 @@ function applySortMode(items, mode) {
       return items.sort((a, b) => (a.price ?? Infinity) - (b.price ?? Infinity));
     case 'price-desc':
       return items.sort((a, b) => (b.price ?? -Infinity) - (a.price ?? -Infinity));
+    case 'aisle':
+      // compareByAisle is defined in quick-shop.js: shop order, urgent
+      // first within an aisle (renderItems adds the aisle headings).
+      return items.sort(compareByAisle);
     case 'label':
       return items.sort((a, b) => {
         const ka = labelSortKey(a);
@@ -813,8 +831,8 @@ function applySortMode(items, mode) {
 // a discreet, at-a-glance signal that the list isn't showing its ordinary
 // order without having to open the sheet to check. Called from renderItems
 // on every render, same as updateViewModeToggleButton.
-function updateSortButtonHighlight(listId) {
-  const active = getSortMode(listId) !== DEFAULT_SORT_MODE;
+function updateSortButtonHighlight(list) {
+  const active = getSortMode(list) !== defaultSortMode(list);
   listEls.sortItemsButton.classList.toggle('bg-sky-500/10', active);
   listEls.sortItemsButton.classList.toggle('text-sky-600', active);
   listEls.sortItemsButton.classList.toggle('dark:text-sky-400', active);
@@ -827,17 +845,20 @@ const sortOptionButtons = document.querySelectorAll('#sort-items-sheet [data-sor
 // the sheet itself is closed (unlike the header button's own highlight,
 // which needs to stay current on every render, this only matters at the
 // moment the sheet opens).
-function updateSortOptionChecks(listId) {
-  const mode = getSortMode(listId);
+function updateSortOptionChecks(list) {
+  const mode = getSortMode(list);
   for (const button of sortOptionButtons) {
     const check = button.querySelector('.sort-option-check');
     if (check) check.hidden = button.dataset.sortMode !== mode;
   }
+  // "Ordre par défaut" isn't the default where "Par rayon" is.
+  document.getElementById('sort-option-manual-label').textContent =
+    t(isQuickShopList(list) ? 'modals.sortItems.listOrder' : 'modals.sortItems.manual');
 }
 
 function openSortItemsSheet() {
   if (!state.currentList) return;
-  updateSortOptionChecks(state.currentList.id);
+  updateSortOptionChecks(state.currentList);
   listEls.sortItemsSheet.hidden = false;
   TrakkaScrollLock.lock();
 }
@@ -1596,7 +1617,7 @@ function buildNextDueBadge(item, { interactive = true } = {}) {
 // {queued: true} placeholder carries no id and is merged as-is).
 const CLEARABLE_ITEM_FIELDS = [
   'due_date', 'due_time', 'next_due_date', 'notification_sent_at',
-  'recurrence_rule', 'recurrence_end_date', 'reminder_offset_days', 'reminder_time',
+  'recurrence_rule', 'recurrence_end_date', 'reminder_offset_days', 'reminder_time', 'aisle',
 ];
 function mergeServerItem(item, updated) {
   if (updated && updated.id !== undefined) {
@@ -2345,7 +2366,7 @@ function buildItemActionsMeta(item) {
 // viewport width (see the `compact` local below), rather than keeping a
 // second row that would carry nothing but the always-reserved sync dot (and,
 // for `todo`, an empty link-icon slot on a linkless item).
-function buildItemRow(item, { showCheckbox = true, index, showQuantity = true, showPrice = true, showLink = true, compactView = false } = {}) {
+function buildItemRow(item, { showCheckbox = true, index, showQuantity = true, showPrice = true, showLink = true, showAisle = false, compactView = false } = {}) {
   const li = document.createElement('li');
   const urgent = item.is_urgent && !item.done;
 
@@ -2499,15 +2520,24 @@ function buildItemRow(item, { showCheckbox = true, index, showQuantity = true, s
   // (see buildNextDueBadge), so the two share a small column that takes the
   // title's place — and its flex-1/min-w-0 sizing — in rowTop. Items without
   // a recurrence rule keep the bare title, exactly as before.
-  const nextDueBadge = buildNextDueBadge(item, { interactive: !selecting });
-  if (nextDueBadge) {
+  // A Courses item's aisle tag (buildAisleBadge, quick-shop.js) goes under
+  // its title the same way: it fits within the row's 44px touch-target
+  // height, so the row doesn't grow.
+  const titleBadges = [
+    buildNextDueBadge(item, { interactive: !selecting }),
+    showAisle ? buildAisleBadge(item, { interactive: !selecting }) : null,
+  ].filter(Boolean);
+  if (titleBadges.length > 0) {
     const titleBlock = document.createElement('div');
     titleBlock.className = 'flex min-w-0 flex-1 flex-col gap-1';
-    titleBlock.append(title, nextDueBadge);
+    titleBlock.append(title, ...titleBadges);
     rowTop.appendChild(titleBlock);
   } else {
     rowTop.appendChild(title);
   }
+  // A favorite product of a Courses list (buildFavoriteStar, quick-shop.js).
+  const favoriteStar = buildFavoriteStar(item);
+  if (favoriteStar) rowTop.appendChild(favoriteStar);
 
   // Compact view's whole point is a single line with nothing but checkbox +
   // title + a label indicator + actions — see buildItemRow's header comment
@@ -2738,8 +2768,11 @@ function renderItems() {
   updateReminderCustomFieldsVisibility(listEls.itemReminder, listEls.itemReminderCustomFields);
   updateRecurrenceSummary(listEls.itemRecurrence, listEls.itemRecurrenceSummary, listEls.itemRecurrenceSummaryLabel);
   updateQuickAddSchedulePill();
-  updateSortButtonHighlight(list.id);
+  updateSortButtonHighlight(list);
   updateFilterButtonHighlight(list.id);
+  // refreshQuickShopControls is defined in quick-shop.js — the ⭐/📷
+  // buttons of a Courses list, and its House's favorites/suggestions.
+  refreshQuickShopControls(list);
 
   // hasPendingListChanges is defined in app.js — see the "Network status +
   // offline sync indicators" section there. Re-checked on every render
@@ -2768,15 +2801,16 @@ function renderItems() {
   // it's shown at all.
   const filterState = getFilterState(list.id);
   const filteredItems = applyItemFilters(items, filterState);
-  // getSortMode/applySortMode are defined above. 'manual' (the default)
-  // keeps this list's original behavior: Array.prototype.sort is stable, so
+  // getSortMode/applySortMode are defined above. 'manual' (the default,
+  // except on a Courses list, where it's 'aisle') keeps this list's
+  // original behavior: Array.prototype.sort is stable, so
   // this only ever moves unfinished urgent items ahead of everything else —
   // items within each group keep their existing relative order (position/
   // id) instead of being reshuffled. Every other mode replaces that
   // ordering entirely, applied independently to the active and done
   // sections so items keep moving between the two on toggle exactly as
   // before — only the order *within* each section changes.
-  const sortMode = getSortMode(list.id);
+  const sortMode = getSortMode(list);
   // A status filter of 'active'/'done' forces the *other* section empty
   // regardless of what it would otherwise contain, rather than filtering
   // items out of `filteredItems` itself — that keeps filteredItems.length
@@ -2798,7 +2832,7 @@ function renderItems() {
       total: items.length,
     });
   }
-  if (sortMode === DEFAULT_SORT_MODE) {
+  if (sortMode === MANUAL_SORT_MODE) {
     active.sort((a, b) => (b.is_urgent ? 1 : 0) - (a.is_urgent ? 1 : 0));
   } else {
     applySortMode(active, sortMode);
@@ -2837,7 +2871,19 @@ function renderItems() {
   } else if (active.length === 0) {
     listEls.itemsActive.appendChild(emptyItemsRow(t('items.allDone')));
   } else {
+    // "Par rayon": a heading (buildAisleHeader, quick-shop.js) above each
+    // aisle's items, which applySortMode already put in shop order.
+    const groupByAisle = sortMode === 'aisle';
+    const aisleCounts = new Map();
+    if (groupByAisle) {
+      for (const item of active) aisleCounts.set(aisleGroupKey(item), (aisleCounts.get(aisleGroupKey(item)) || 0) + 1);
+    }
+    let currentAisle = null;
     active.forEach((item, index) => {
+      if (groupByAisle && aisleGroupKey(item) !== currentAisle) {
+        currentAisle = aisleGroupKey(item);
+        listEls.itemsActive.appendChild(buildAisleHeader(currentAisle, aisleCounts.get(currentAisle)));
+      }
       listEls.itemsActive.appendChild(
         buildItemRow(item, {
           showCheckbox: visibility.done,
@@ -2845,6 +2891,8 @@ function renderItems() {
           showQuantity: visibility.quantity,
           showPrice: visibility.price,
           showLink: visibility.url,
+          // The aisle headings already say it in "Par rayon".
+          showAisle: visibility.aisle && !groupByAisle,
           compactView,
         })
       );
@@ -2865,6 +2913,8 @@ function renderItems() {
         showQuantity: visibility.quantity,
         showPrice: visibility.price,
         showLink: visibility.url,
+        // The done section is never grouped by aisle.
+        showAisle: visibility.aisle,
         compactView,
       })
     );
@@ -3525,6 +3575,21 @@ listEls.createItemForm.addEventListener('submit', async (event) => {
   const dueTime = dueDate ? listEls.itemDueTime.value : '';
   const isUrgent = visibility.urgent ? listEls.itemUrgent.checked : false;
 
+  // A Courses list: addQuickShopItem (quick-shop.js) adds without ever
+  // duplicating a product already on the list, with the aisle chosen (if
+  // any) and the barcode just scanned (if any).
+  if (isQuickShopList(state.currentList)) {
+    const aisle = visibility.aisle ? listEls.itemAisle.value : '';
+    const scan = takePendingScan();
+    listEls.createItemForm.reset();
+    listEls.itemQuantity.value = '1';
+    setQuickAddAdvancedExpanded(false);
+    listEls.itemTitle.focus();
+    await addQuickShopItem({ title, quantity, aisle, aisleHint: scan.aisleHint, barcode: scan.barcode, urgent: isUrgent });
+    await refreshPendingBadge();
+    return;
+  }
+
   const payload = { list_id: state.currentListId, title, quantity };
   if (url) payload.url = url;
   if (price !== null) payload.price = price;
@@ -3684,6 +3749,7 @@ function openEditItemModal(item, { focus } = {}) {
   listEls.editItemReminderTime.value = reminderSelection.time;
   updateReminderCustomFieldsVisibility(listEls.editItemReminder, listEls.editItemReminderCustomFields);
   listEls.editItemUrgent.checked = Boolean(item.is_urgent);
+  listEls.editItemAisle.value = item.aisle || '';
   renderEditItemLabelsPreview(item);
   listEls.editItemModal.hidden = false;
   TrakkaScrollLock.lock();
@@ -3754,6 +3820,10 @@ function openItemActionsSheet(item, { focusLink = false } = {}) {
   listEls.itemActionsLinkGroup.hidden = !hasLink;
   listEls.itemActionsPriceCheckButton.hidden = !(canCheckItemPrice(item) && fieldVisibilityFor(state.currentList?.type).price);
   listEls.itemActionsUrgentLabel.textContent = t(item.is_urgent ? 'modals.itemActions.unmarkUrgent' : 'modals.itemActions.markUrgent');
+  // updateItemActionsFavoriteButton is defined in quick-shop.js (★ on a
+  // Courses list, for House members).
+  updateItemActionsFavoriteButton(item);
+  updateItemActionsAisleButton(item);
   listEls.itemActionsSheet.hidden = false;
   TrakkaScrollLock.lock();
   if (focusLink && hasLink) {
@@ -4162,6 +4232,9 @@ listEls.editItemForm.addEventListener('submit', async (event) => {
     payload.due_time = payload.due_date ? listEls.editItemDueTime.value : '';
     Object.assign(payload, reminderSelectionToPayload(listEls.editItemReminder, listEls.editItemReminderOffset, listEls.editItemReminderTime));
   }
+  // "" clears it. On a Courses list the server also makes this the
+  // household's usual aisle for the product.
+  if (visibility.aisle) payload.aisle = listEls.editItemAisle.value;
 
   const item = editingItem;
   const previous = {
@@ -4180,6 +4253,7 @@ listEls.editItemForm.addEventListener('submit', async (event) => {
     reminder_offset_days: item.reminder_offset_days,
     reminder_time: item.reminder_time,
     is_urgent: item.is_urgent,
+    aisle: item.aisle,
   };
   item.title = title;
   item.url = url || null;
@@ -4194,6 +4268,7 @@ listEls.editItemForm.addEventListener('submit', async (event) => {
   if (payload.reminder_at_due_time != null) item.reminder_at_due_time = payload.reminder_at_due_time;
   if ('reminder_offset_days' in payload) item.reminder_offset_days = payload.reminder_offset_days;
   if ('reminder_time' in payload) item.reminder_time = payload.reminder_time || null;
+  if ('aisle' in payload) item.aisle = payload.aisle || null;
   item.is_urgent = payload.is_urgent;
   renderItems();
   closeEditItemModal();
