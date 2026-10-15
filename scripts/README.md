@@ -6,7 +6,7 @@ Tooling for maintaining the repository. Nothing here is part of the shipped app,
 
 Regenerates the screenshots used in the root [README.md](../README.md), writing them to [`docs/assets/`](../docs/assets/).
 
-Requirements: Go 1.27.0+ and Node.js 20+.
+Requirements: Go 1.27.2+ and Node.js 20+.
 
 ```bash
 cd scripts
