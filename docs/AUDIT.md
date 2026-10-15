@@ -269,6 +269,8 @@ Two side effects, both improvements: inviting somebody who **has not registered 
 
 **Dynamic verification** against a running instance: inviting an unregistered and a registered address returns the same response shape; the roster shows both as `pending` with `user_id: 0`; the invited user's house list is unchanged until they call `/api/v1/me`, at which point the membership appears; withdrawal returns `204` then `404`; a list share to an unregistered address materializes with the correct `write` permission once that address registers, and the new user can immediately post an item to the shared list.
 
+**Later interaction — the sharing autocomplete (`GET /api/v1/users/search`).** Added after this audit, it is deliberately mode-dependent. On a **self-hosted** instance (`SAAS_MODE=false`, the default) it lets any signed-in user find any other account by name or email address: a household's members are meant to find each other, so the instance's account list is intentionally not secret from its own users there — the oracle this finding closed on the invite/share endpoints is moot on such an instance by design. With **`SAAS_MODE=true`** the property above holds in full: the search only ever matches email addresses among the caller's existing contacts (people they already share a house, list or space with), never a stranger's account even by its exact address, so it reveals nothing the caller couldn't already read from their own rosters. Both modes are rate-limited per account (60 searches/minute). Regression test: `TestUserSearchSaaSModeMatchesEmailOnlyAmongContacts` (`internal/handlers/user_search_test.go`).
+
 #### Authorization model — verified map
 
 Every mutating route was traced to its check. No other IDOR was found:

@@ -130,6 +130,18 @@ type Config struct {
 	// here. Link-local addresses (including the cloud metadata endpoint)
 	// stay blocked either way.
 	BackupWebDAVAllowPrivate bool
+
+	// SaaSMode marks a multi-tenant deployment where accounts on the same
+	// instance don't know each other, as opposed to the default self-hosted
+	// household/group. It only narrows the sharing autocomplete
+	// (GET /api/v1/users/search, see internal/handlers/user_search.go): off,
+	// any member can be found by any part of their name or email address;
+	// on, only by email address and only among the caller's existing
+	// contacts (people they already share a house, list or space with), so
+	// nobody can browse the instance's names or addresses. Exposed to the
+	// frontend through GET /api/v1/config.
+	// SAAS_MODE, default false.
+	SaaSMode bool
 }
 
 func Load() Config {
@@ -168,6 +180,8 @@ func Load() Config {
 		DefaultAppLanguage: envLanguage("DEFAULT_APP_LANGUAGE", "en"),
 
 		BackupWebDAVAllowPrivate: envBool("BACKUP_WEBDAV_ALLOW_PRIVATE", false),
+
+		SaaSMode: envBool("SAAS_MODE", false),
 	}
 }
 

@@ -361,6 +361,17 @@ type User struct {
 	PriceChangeIndicatorsEnabled bool `json:"price_change_indicators_enabled"`
 }
 
+// UserSearchResult is one suggestion of the sharing autocomplete
+// (GET /api/v1/users/search): just enough to recognize a person and invite
+// them by email, never the rest of their profile. DisplayName is left empty,
+// and so omitted, in SaaS mode (see config.Config.SaaSMode), where a
+// suggestion is matched and shown by email address only.
+type UserSearchResult struct {
+	ID          int64  `json:"id"`
+	Email       string `json:"email"`
+	DisplayName string `json:"display_name,omitempty"`
+}
+
 // UserWithCredentials is returned by db lookups used for authentication
 // (GetUserByEmail, GetUserByOIDCSubject). Never pass this to writeJSON.
 type UserWithCredentials struct {

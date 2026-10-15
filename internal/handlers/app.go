@@ -70,6 +70,11 @@ type Application struct {
 	authEmailLimiterOnce sync.Once
 	authEmailLimiterVal  *rateLimiter
 
+	// Per-account sharing-autocomplete bucket (see user_search.go), lazily
+	// built for the same reason.
+	userSearchLimiterOnce sync.Once
+	userSearchLimiterVal  *rateLimiter
+
 	// Handoff codes of SSO sign-ins started by the Android app (see
 	// oidc_app.go), lazily built for the same reason.
 	appHandoffsOnce sync.Once
@@ -151,6 +156,8 @@ func (app *Application) Routes() http.Handler {
 	apiMux := http.NewServeMux()
 	apiMux.HandleFunc("GET /api/v1/me", app.handleMe)
 	apiMux.HandleFunc("PATCH /api/v1/me", app.handleMeUpdate)
+	apiMux.HandleFunc("GET /api/v1/config", app.handleConfig)
+	apiMux.HandleFunc("GET /api/v1/users/search", app.handleUsersSearch)
 
 	apiMux.HandleFunc("GET /api/v1/houses", app.handleHousesIndex)
 	apiMux.HandleFunc("POST /api/v1/houses", app.handleHousesCreate)

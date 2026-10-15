@@ -864,8 +864,15 @@
       <ul id="members-list" class="mb-4 space-y-2"></ul>
 
       <form id="invite-member-form" class="flex gap-2">
-        <input type="email" id="invite-email" required data-i18n-placeholder="modals.members.invitePlaceholder" placeholder="Email de la personne à inviter"
-               class="min-w-0 flex-1 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-4 py-3 text-base text-slate-900 dark:text-slate-100 placeholder:text-slate-500 focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500/30">
+        <!-- Autocompleted from GET /api/v1/users/search (user-search.js),
+             which also swaps the placeholder per deployment mode. -->
+        <div class="relative min-w-0 flex-1">
+          <input type="email" id="invite-email" required autocomplete="off" role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="invite-email-suggestions"
+                 data-i18n-placeholder="modals.members.invitePlaceholder" placeholder="Saisir l'adresse e-mail à inviter…"
+                 class="w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-4 py-3 text-base text-slate-900 dark:text-slate-100 placeholder:text-slate-500 focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500/30">
+          <ul id="invite-email-suggestions" role="listbox" hidden data-i18n-aria-label="modals.userSearch.suggestionsLabel" aria-label="Suggestions"
+              class="absolute left-0 right-0 top-full z-50 mt-1 max-h-60 overflow-y-auto rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 py-1 shadow-lg"></ul>
+        </div>
         <button type="submit" data-i18n="modals.members.inviteSubmit" class="shrink-0 rounded-xl bg-sky-500 px-4 py-3 text-sm font-semibold text-white transition hover:bg-sky-400 active:scale-95">Inviter</button>
       </form>
     </div>
@@ -885,8 +892,15 @@
       <ul id="share-roster" class="mb-4 space-y-2"></ul>
 
       <form id="share-form" class="flex flex-col gap-2">
-        <input type="email" id="share-email" required data-i18n-placeholder="modals.share.emailPlaceholder" placeholder="Email de la personne"
-               class="w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-4 py-3 text-base text-slate-900 dark:text-slate-100 placeholder:text-slate-500 focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500/30">
+        <!-- Autocompleted from GET /api/v1/users/search (user-search.js),
+             which also swaps the placeholder per deployment mode. -->
+        <div class="relative">
+          <input type="email" id="share-email" required autocomplete="off" role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="share-email-suggestions"
+                 data-i18n-placeholder="modals.share.emailPlaceholder" placeholder="Saisir une adresse e-mail…"
+                 class="w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-4 py-3 text-base text-slate-900 dark:text-slate-100 placeholder:text-slate-500 focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500/30">
+          <ul id="share-email-suggestions" role="listbox" hidden data-i18n-aria-label="modals.userSearch.suggestionsLabel" aria-label="Suggestions"
+              class="absolute left-0 right-0 top-full z-50 mt-1 max-h-60 overflow-y-auto rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 py-1 shadow-lg"></ul>
+        </div>
         <div class="flex gap-2">
           <select id="share-permission"
                   class="min-h-[44px] flex-1 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 text-sm text-slate-900 dark:text-slate-100 focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500/30">
@@ -2346,6 +2360,7 @@
   <script src="/js/urgent.js" defer></script>
   <script src="/js/spaces.js" defer></script>
   <script src="/js/shares.js" defer></script>
+  <script src="/js/user-search.js" defer></script>
   <script src="/js/notifications.js" defer></script>
   <script src="/js/settings.js" defer></script>
   <script src="/js/push.js" defer></script>
