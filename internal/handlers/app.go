@@ -75,6 +75,18 @@ type Application struct {
 	userSearchLimiterOnce sync.Once
 	userSearchLimiterVal  *rateLimiter
 
+	// Per-account Open Food Facts lookup bucket (see products.go), lazily
+	// built for the same reason.
+	barcodeLookupLimiterOnce sync.Once
+	barcodeLookupLimiterVal  *rateLimiter
+
+	// quickAddMu serializes "is this product already on the list? then
+	// update it, else create it" on Courses lists (see
+	// addToQuickShoppingList), so two simultaneous adds can't both miss the
+	// other and create a duplicate. Held only for those few queries. A zero
+	// value is ready to use.
+	quickAddMu sync.Mutex
+
 	// Handoff codes of SSO sign-ins started by the Android app (see
 	// oidc_app.go), lazily built for the same reason.
 	appHandoffsOnce sync.Once
@@ -97,6 +109,11 @@ type Application struct {
 	// SSRF guard keeps the real fetch off a loopback test server, the same
 	// reason as pushHook.
 	productPageHook func(ctx context.Context, rawURL string) (*scraper.ProductInfo, error)
+
+	// barcodeLookupHook, when set (tests only), stands in for
+	// scraper.LookupBarcode (Open Food Facts) in lookupBarcode, for the same
+	// reason as productPageHook.
+	barcodeLookupHook func(ctx context.Context, code, lang string) (*scraper.BarcodeProduct, error)
 }
 
 // fetchProductPage reads an item's own page for a price check:
@@ -167,6 +184,12 @@ func (app *Application) Routes() http.Handler {
 	apiMux.HandleFunc("GET /api/v1/houses/{id}/members", app.handleHouseMembersIndex)
 	apiMux.HandleFunc("POST /api/v1/houses/{id}/members", app.handleHouseMembersInvite)
 	apiMux.HandleFunc("DELETE /api/v1/houses/{id}/members/{userId}", app.handleHouseMembersRemove)
+	apiMux.HandleFunc("GET /api/v1/houses/{id}/products", app.handleProductsIndex)
+	apiMux.HandleFunc("POST /api/v1/houses/{id}/products", app.handleProductsUpsert)
+	apiMux.HandleFunc("GET /api/v1/houses/{id}/products/suggestions", app.handleProductSuggestions)
+	apiMux.HandleFunc("GET /api/v1/houses/{id}/products/barcode/{code}", app.handleProductBarcodeLookup)
+	apiMux.HandleFunc("PATCH /api/v1/houses/{id}/products/{productId}", app.handleProductsUpdate)
+	apiMux.HandleFunc("DELETE /api/v1/houses/{id}/products/{productId}", app.handleProductsDelete)
 	// Withdrawing an invitation that has not been accepted yet. Keyed by
 	// ?email= rather than a path segment, since a pending invitation has no
 	// user id to name it by — that is precisely what makes it pending.

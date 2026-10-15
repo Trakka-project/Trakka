@@ -248,6 +248,63 @@ type Item struct {
 	// labels reports an empty array, matching internal/db's own "labels
 	// column defaults to '[]', never NULL" convention (see migration 18).
 	Labels []string `json:"labels"`
+	// Aisle is the store aisle the item is filed under, one of
+	// internal/catalog.Aisles ("produce", "dairy", ...), or nil when none is
+	// known. On a "Courses" (groceries) list a new item without one gets the
+	// household's usual aisle for that product, else a keyword guess (see
+	// internal/handlers.resolveItemAisle); the list view can group by it.
+	Aisle *string `json:"aisle,omitempty"`
+	// Merged is a transient, response-only field (like PriceStatus): true
+	// when POST /api/v1/items found the same product already on the
+	// "Courses" list and updated that item — unchecked it, adjusted its
+	// quantity — instead of creating a duplicate. The response is then that
+	// existing item, with its own id, and a 200 rather than a 201.
+	Merged bool `json:"merged,omitempty"`
+}
+
+// Product is one entry of a House's product catalog (house_products): a
+// product the household has added to one of its "Courses" lists, with what
+// it has learned about it. See internal/handlers/products.go.
+type Product struct {
+	ID      int64  `json:"id"`
+	HouseID int64  `json:"house_id"`
+	Name    string `json:"name"`
+	// Aisle is the household's aisle for it, "" when unknown.
+	Aisle      string `json:"aisle,omitempty"`
+	IsFavorite bool   `json:"is_favorite"`
+	// AddCount/PurchaseCount count how many times it was added to a list,
+	// and checked off one.
+	AddCount         int     `json:"add_count"`
+	PurchaseCount    int     `json:"purchase_count"`
+	FirstPurchasedAt *string `json:"first_purchased_at,omitempty"`
+	LastPurchasedAt  *string `json:"last_purchased_at,omitempty"`
+	CreatedAt        string  `json:"created_at"`
+	UpdatedAt        string  `json:"updated_at"`
+}
+
+// ProductSuggestion is a catalog product proposed by
+// GET /api/v1/houses/{id}/products/suggestions as one to buy again: Reason
+// "due" when it's (nearly) time to, judging by its usual buying interval,
+// "frequent" for a product bought regularly that isn't due yet.
+type ProductSuggestion struct {
+	Product
+	Reason          string  `json:"reason"`
+	AvgIntervalDays float64 `json:"avg_interval_days"`
+	DaysSinceLast   float64 `json:"days_since_last_purchase"`
+}
+
+// BarcodeLookup is the answer of
+// GET /api/v1/houses/{id}/products/barcode/{code}: the product a scanned
+// barcode stands for. Source is "house" when the household's own catalog
+// knows the code (Product is then that entry), or "openfoodfacts" when it
+// was found in the Open Food Facts database instead (Product is nil:
+// nothing is stored until the item is actually added).
+type BarcodeLookup struct {
+	Barcode string   `json:"barcode"`
+	Name    string   `json:"name"`
+	Aisle   string   `json:"aisle,omitempty"`
+	Source  string   `json:"source"`
+	Product *Product `json:"product,omitempty"`
 }
 
 // ValidListTypes enumerates the allowed values for List.Type. `shopping`

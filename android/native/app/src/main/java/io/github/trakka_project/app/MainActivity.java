@@ -460,9 +460,11 @@ public class MainActivity extends BridgeActivity {
             super(bridge);
         }
 
-        // Trakka uses neither the camera, the microphone nor the location. Capacitor would grant
-        // them to any page, with no prompt of its own, as soon as the app holds the Android
-        // permission (it has CAMERA, for QrScanActivity): refuse them all.
+        // Trakka's pages get neither the camera, the microphone nor the location. Capacitor would
+        // grant them to any page, with no prompt of its own, as soon as the app holds the Android
+        // permission (it has CAMERA, for QrScanActivity): refuse them all. The barcode scanner of
+        // "Courses" lists goes through the native scanner instead (TrakkaAppPlugin#scanBarcode),
+        // which hands the page a code's digits, never the camera.
         @Override
         public void onPermissionRequest(PermissionRequest request) {
             request.deny();

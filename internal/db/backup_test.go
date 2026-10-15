@@ -117,6 +117,9 @@ func TestPrepareRestoreFileMigratesOlderSchema(t *testing.T) {
 		`ALTER TABLE users DROP COLUMN price_drop_alerts_enabled`,
 		`ALTER TABLE users DROP COLUMN price_increase_alerts_enabled`,
 		`ALTER TABLE users DROP COLUMN price_change_indicators_enabled`,
+		`DROP TABLE house_product_barcodes`,
+		`DROP TABLE house_products`,
+		`ALTER TABLE items DROP COLUMN aisle`,
 	} {
 		if _, err := old.conn.Exec(stmt); err != nil {
 			t.Fatalf("%s: %v", stmt, err)

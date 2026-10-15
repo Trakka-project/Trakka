@@ -58,6 +58,15 @@ type Config struct {
 	// scraper.DealSearchQuery). DEAL_SEARCH_ENABLED, default true.
 	DealSearchEnabled bool
 
+	// ProductLookupEnabled lets a barcode scanned for a "Courses" list that
+	// the household's own catalog doesn't know be looked up in Open Food
+	// Facts (internal/scraper.LookupBarcode), to propose the product's name
+	// and aisle. Only the barcode digits are sent, once per scan of an
+	// unknown code. PRODUCT_LOOKUP_ENABLED, default true; false keeps
+	// scanning to the household's catalog (an unknown code then just asks
+	// for the product's name, and remembers it).
+	ProductLookupEnabled bool
+
 	// LogLevel is the minimum level written to stdout and the admin console's
 	// log panel: "debug", "info" (the default), "warn" or "error". "debug"
 	// shows each price check step by step — the url fetched, the HTTP status,
@@ -164,6 +173,7 @@ func Load() Config {
 
 		TargetPriceScrapeInterval: envDuration("SCRAPE_INTERVAL", 12*time.Hour),
 		DealSearchEnabled:         envBool("DEAL_SEARCH_ENABLED", true),
+		ProductLookupEnabled:      envBool("PRODUCT_LOOKUP_ENABLED", true),
 		LogLevel:                  envOr("LOG_LEVEL", "info"),
 
 		InstanceName:     envOr("INSTANCE_NAME", "Trakka"),

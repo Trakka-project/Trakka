@@ -128,6 +128,9 @@ func (app *Application) handleItemsCreate(w http.ResponseWriter, r *http.Request
 		ReminderTime          string   `json:"reminder_time"`
 		ReminderAtDueTime     *bool    `json:"reminder_at_due_time"`
 		DueTime               string   `json:"due_time"`
+		Aisle                 string   `json:"aisle"`
+		AisleHint             string   `json:"aisle_hint"`
+		Barcode               string   `json:"barcode"`
 	}
 	if !decodeJSON(w, r, &in) {
 		return
@@ -209,6 +212,21 @@ func (app *Application) handleItemsCreate(w http.ResponseWriter, r *http.Request
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
+	cleanAisle, err := validate.Aisle(in.Aisle)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	cleanAisleHint, err := validate.Aisle(in.AisleHint)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	cleanBarcode, err := validate.Barcode(in.Barcode)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
 
 	list, err := app.DB.GetList(r.Context(), in.ListID)
 	if errors.Is(err, db.ErrNotFound) {
@@ -222,12 +240,41 @@ func (app *Application) handleItemsCreate(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	item, err := app.DB.CreateItem(r.Context(), in.ListID, in.Title, nullableString(cleanURL), in.Quantity, in.Price, false, in.Position,
-		nullableString(cleanMonth), nullableString(cleanDueDate), nullableString(cleanRecurrenceRule), nullableString(cleanRecurrenceEndDate), in.IsUrgent, in.RecurrenceLeadMinutes,
-		in.TargetPrice, in.AlertOnPriceDrop)
-	if err != nil {
-		app.serverError(w, r, err)
-		return
+	create := func() (*models.Item, error) {
+		return app.DB.CreateItem(r.Context(), in.ListID, in.Title, nullableString(cleanURL), in.Quantity, in.Price, false, in.Position,
+			nullableString(cleanMonth), nullableString(cleanDueDate), nullableString(cleanRecurrenceRule), nullableString(cleanRecurrenceEndDate), in.IsUrgent, in.RecurrenceLeadMinutes,
+			in.TargetPrice, in.AlertOnPriceDrop)
+	}
+	var item *models.Item
+	if isQuickShoppingList(list) {
+		// A Courses list never holds the same product twice (see
+		// addToQuickShoppingList): when it's already there, that item is
+		// what this request updates and answers with — 200 and merged:
+		// true, its other fields (labels, reminder, url...) left as they
+		// were, since the request didn't create anything.
+		aisle := app.resolveItemAisle(r.Context(), list, in.Title, cleanAisle, cleanAisleHint)
+		var merged bool
+		item, merged, err = app.addToQuickShoppingList(r.Context(), list, in.Title, in.Quantity, aisle, cleanAisle != "", in.IsUrgent, create)
+		if err != nil {
+			app.serverError(w, r, err)
+			return
+		}
+		app.recordProductAdded(r.Context(), list, item, cleanAisle != "", cleanBarcode)
+		if merged {
+			item.Merged = true
+			app.notifyListChange(list, userFromContext(r), item.Title, itemAdded)
+			writeJSON(w, http.StatusOK, item)
+			return
+		}
+	} else {
+		item, err = create()
+		if err == nil && cleanAisle != "" {
+			item, err = app.DB.SetItemAisle(r.Context(), item.ID, &cleanAisle)
+		}
+		if err != nil {
+			app.serverError(w, r, err)
+			return
+		}
 	}
 	// SetItemLabels is a separate call (see its own doc comment) rather than
 	// another CreateItem parameter — only worth the extra write when there's
@@ -358,6 +405,7 @@ func (app *Application) handleItemsUpdate(w http.ResponseWriter, r *http.Request
 		ReminderTime          string   `json:"reminder_time"`
 		ReminderAtDueTime     *bool    `json:"reminder_at_due_time"`
 		DueTime               string   `json:"due_time"`
+		Aisle                 string   `json:"aisle"`
 	}
 	if !decodeJSON(w, r, &in) {
 		return
@@ -435,6 +483,11 @@ func (app *Application) handleItemsUpdate(w http.ResponseWriter, r *http.Request
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
+	cleanAisle, err := validate.Aisle(in.Aisle)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
 
 	// A scraped image is tied to the url it was found on: if the url just
 	// changed to something new, the existing image no longer describes it
@@ -496,6 +549,16 @@ func (app *Application) handleItemsUpdate(w http.ResponseWriter, r *http.Request
 		app.serverError(w, r, err)
 		return
 	}
+	// PUT is a full replace: an omitted aisle clears it, like labels.
+	aisleChanged := cleanAisle != stringValue(existing.Aisle)
+	if aisleChanged {
+		item, err = app.DB.SetItemAisle(r.Context(), item.ID, nullableString(cleanAisle))
+		if err != nil {
+			app.serverError(w, r, err)
+			return
+		}
+	}
+	app.updateProductCatalog(r.Context(), item, aisleChanged, justCompleted)
 	// Checked against the manually-supplied price only, before
 	// scrapeProductInfo runs — see the identical reasoning in
 	// handleItemsCreate for why a scraper-filled price is checked
@@ -547,6 +610,7 @@ func (app *Application) handleItemsPatch(w http.ResponseWriter, r *http.Request)
 		ReminderTime          *string         `json:"reminder_time"`
 		ReminderAtDueTime     json.RawMessage `json:"reminder_at_due_time"`
 		DueTime               *string         `json:"due_time"`
+		Aisle                 *string         `json:"aisle"`
 	}
 	if !decodeJSON(w, r, &in) {
 		return
@@ -818,6 +882,17 @@ func (app *Application) handleItemsPatch(w http.ResponseWriter, r *http.Request)
 		}
 	}
 
+	// Same absent/empty/value convention as TargetMonth: absent leaves the
+	// aisle as is, "" clears it.
+	if in.Aisle != nil {
+		cleanAisle, err := validate.Aisle(*in.Aisle)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		item.Aisle = nullableString(cleanAisle)
+	}
+
 	justCompleted := !before.Done && item.Done
 	justUnchecked := before.Done && !item.Done
 
@@ -864,6 +939,15 @@ func (app *Application) handleItemsPatch(w http.ResponseWriter, r *http.Request)
 			return
 		}
 	}
+	aisleChanged := stringValue(item.Aisle) != stringValue(before.Aisle)
+	if aisleChanged {
+		updated, err = app.DB.SetItemAisle(r.Context(), updated.ID, item.Aisle)
+		if err != nil {
+			app.serverError(w, r, err)
+			return
+		}
+	}
+	app.updateProductCatalog(r.Context(), updated, aisleChanged, justCompleted)
 	// Checked against the manually-supplied price only, before
 	// scrapeProductInfo runs — see the identical reasoning in
 	// handleItemsCreate for why a scraper-filled price is checked

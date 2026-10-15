@@ -72,6 +72,7 @@ Since the `house_members` table (below) was added, every house also needs an own
 | `reminder_at_due_time` | `INTEGER NOT NULL DEFAULT 0` | 0/1 boolean (migration 21); the "at the exact due time" mode — the reminder fires at `due_date` + `due_time`, and `reminder_offset_days`/`reminder_time` are only the fallback for an item without a `due_time`. Resolved at write time like the other two |
 | `previous_price` | `REAL` | nullable (migration 28); the price before the last time a background scan moved `price` (`db.UpdateItemPriceFromScan`, only when replacing an earlier price, not when filling in a missing one). With `price_changed_at`, drives the list view's green/red price indicator. Cleared by a manual `price` or `url` edit (`UpdateItem`, a `CASE` against the row's old values) and by accepting a [price alert](API.md#price-alerts) |
 | `price_changed_at` | `TEXT` | nullable (migration 28); ISO-8601 UTC time of that movement |
+| `aisle` | `TEXT` | nullable (migration 30); the store aisle, one of `internal/catalog.Aisles` (`produce`, `bakery`, `meat_fish`, `dairy`, `pantry`, `breakfast`, `drinks`, `baby`, `pets`, `household`, `hygiene`, `frozen`, `other`), validated by `internal/validate.Aisle`. On a "Courses" (`groceries`) list a new item without one gets the household's usual aisle for the product, else a keyword guess (`internal/handlers.resolveItemAisle`); the list view's "Par rayon" sort groups by it. Written by `db.SetItemAisle` (another "separate method, not one more `CreateItem`/`UpdateItem` parameter", like `SetItemLabels`) and by `db.ReactivateItem`, which only fills it in when empty. Migration 31 guessed it for the items Courses lists already held. See [API.md](API.md#quick-shopping-lists-courses) |
 | `labels` | `TEXT NOT NULL DEFAULT '[]'` | a JSON array of strings — a freeform, user-managed set of short tags (e.g. `"Bio"`, `"Promo"`), independent of every other column. Stored as JSON rather than a normalized join table since a label has no attributes of its own worth a dedicated table for, the same reasoning `recurrence_rule`/`target_month` already established for a small freeform value with no cross-item querying need. Defaults to `'[]'` rather than `NULL` so `scanItem` never has to special-case a missing column; cleaned and deduplicated by `internal/validate.Labels` before every write via `internal/db.SetItemLabels`, a dedicated method rather than another `CreateItem`/`UpdateItem` parameter — see [API.md](API.md#labels) |
 | `created_at` | `TEXT NOT NULL` | |
 | `updated_at` | `TEXT NOT NULL` | |
@@ -283,6 +284,35 @@ Each user's in-app price alert inbox, shown in the 🔔 drawer (migration 28; se
 
 Listing filters to items on lists the user can still access (the same three sources `AccessLevelForList` combines), so losing access to a list also hides what was queued about it.
 
+### `house_products`
+
+A House's product catalog (migration 30): one row per distinct product ever added to one of its "Courses" (`groceries`) lists — the history behind autocomplete, favorites, "time to buy it again" suggestions and barcode recognition ([API.md](API.md#house-product-catalog), `internal/db/products.go`). Rows outlive the items they came from: deleting an item, or a whole list, keeps what the household learned. Written best-effort by the item handlers (`RecordProductAdded` on every addition, merges included; `RecordProductPurchased` on every check-off; `SetProductAisle` when someone files an item under an aisle) — a failed catalog write is logged, never fails the item write.
+
+| Column | Type | Notes |
+|---|---|---|
+| `id` | `INTEGER PRIMARY KEY AUTOINCREMENT` | |
+| `house_id` | `INTEGER NOT NULL` | `REFERENCES houses(id) ON DELETE CASCADE` |
+| `name` | `TEXT NOT NULL` | the latest spelling added (shown as is) |
+| `name_key` | `TEXT NOT NULL` | `internal/catalog.Key(name)`: lowercase, accents and ligatures folded to ASCII, punctuation and runs of spaces collapsed — what two names are compared by. `UNIQUE (house_id, name_key)`, the upserts' conflict target. Always computed in Go and passed in: SQLite's `lower()` only folds ASCII, so a key computed in SQL would disagree with the server's for any accented name — the reason migration 31 is Go code |
+| `aisle` | `TEXT` | nullable; the household's usual aisle for the product. An explicit choice replaces it (an item added with an `aisle`, or an item's aisle edited); a guess only fills a gap |
+| `is_favorite` | `INTEGER NOT NULL DEFAULT 0` | 0/1 boolean; pinned to the quick-add panel. Partial index `idx_house_products_favorite` (`WHERE is_favorite = 1`) |
+| `add_count` | `INTEGER NOT NULL DEFAULT 0` | how many times it was added to a list (a merge into an existing item counts) |
+| `purchase_count` | `INTEGER NOT NULL DEFAULT 0` | how many times it was checked off a list |
+| `first_purchased_at` / `last_purchased_at` | `TEXT` | nullable; ISO-8601 UTC of the first and latest check-off — with `purchase_count`, its average buying interval (`internal/catalog.Assess`) |
+| `last_added_at` | `TEXT` | nullable; ISO-8601 UTC of the latest addition |
+| `created_at` / `updated_at` | `TEXT NOT NULL` | ISO-8601 UTC |
+
+### `house_product_barcodes`
+
+The EAN/UPC codes scanned for catalog products (migration 30): several per product (the 1 L bottle and the six-pack are both "Lait"), one product per code within a House. A row is upserted when an item is added with a `barcode` (`RecordProductAdded`), which moves a code already filed under another product to this one.
+
+| Column | Type | Notes |
+|---|---|---|
+| `house_id` | `INTEGER NOT NULL` | `REFERENCES houses(id) ON DELETE CASCADE`; `PRIMARY KEY (house_id, barcode)` |
+| `barcode` | `TEXT NOT NULL` | digits only, a 12-digit UPC-A stored as its 13-digit EAN-13 form (`internal/validate.Barcode`), so both spellings of one code match |
+| `product_id` | `INTEGER NOT NULL` | `REFERENCES house_products(id) ON DELETE CASCADE` — forgetting a product drops its codes; index `idx_house_product_barcodes_product` |
+| `created_at` | `TEXT NOT NULL` | ISO-8601 UTC |
+
 ## Evolving the schema
 
 Trakka has a real versioned migration engine (`internal/db/migrate.go`), not the single idempotent `schema.sql` this project used before. Every startup:
@@ -295,7 +325,8 @@ Trakka has a real versioned migration engine (`internal/db/migrate.go`), not the
 
 - New tables/indexes: plain `CREATE TABLE` / `CREATE INDEX`.
 - New columns on an existing table: plain `ALTER TABLE ... ADD COLUMN`.
-- Widening a `CHECK` constraint (e.g. `lists.type`, migration 6): SQLite has no `ALTER TABLE ... ADD/DROP CONSTRAINT`, so this still means rebuilding the table — and that rebuild needs `PRAGMA foreign_keys = OFF` set *outside* any transaction, which the engine's generic one-script-one-transaction wrapper can't express. This is the one documented exception: register it in `goMigrations` in `internal/db/migrate.go` and write it as an ordinary Go function instead of a `.sql` file — see `internal/db/migrate_list_types.go` for the concrete pattern (create the replacement table under a *temporary* name, copy every row preserving its id, `DROP TABLE` the *old* table — never rename it away — then `RENAME` the temporary one into the now-free original name, verifying with `PRAGMA foreign_key_check` before committing). The ordering there was arrived at by testing, not just reading the docs: renaming the *original* table out of the way first makes SQLite rewrite every other table's foreign key definitions that pointed at it (e.g. `items.list_id`) to reference the temporary name instead — confirmed empirically, and `PRAGMA foreign_keys = OFF` does *not* suppress this, only `PRAGMA legacy_alter_table` would.
+- Widening a `CHECK` constraint (e.g. `lists.type`, migration 6): SQLite has no `ALTER TABLE ... ADD/DROP CONSTRAINT`, so this still means rebuilding the table — and that rebuild needs `PRAGMA foreign_keys = OFF` set *outside* any transaction, which the engine's generic one-script-one-transaction wrapper can't express. This is one of the two documented exceptions: register it in `goMigrations` in `internal/db/migrate.go` (a version → `{name, apply}` entry; `apply` runs its own transaction and records the version with `setSchemaVersion`) and write it as an ordinary Go function instead of a `.sql` file — see `internal/db/migrate_list_types.go` for the concrete pattern (create the replacement table under a *temporary* name, copy every row preserving its id, `DROP TABLE` the *old* table — never rename it away — then `RENAME` the temporary one into the now-free original name, verifying with `PRAGMA foreign_key_check` before committing). The ordering there was arrived at by testing, not just reading the docs: renaming the *original* table out of the way first makes SQLite rewrite every other table's foreign key definitions that pointed at it (e.g. `items.list_id`) to reference the temporary name instead — confirmed empirically, and `PRAGMA foreign_keys = OFF` does *not* suppress this, only `PRAGMA legacy_alter_table` would.
+- Data that only Go can compute: migration 31 (`internal/db/migrate_quick_shopping.go`) seeds `house_products` from the items already on every House's Courses lists and guesses their `aisle`, which needs `internal/catalog`'s name normalization and keyword guess — computing the keys any other way would make every seeded product a duplicate of the one the running server derives the first time it's added again. It follows the same `goMigrations` pattern, after migration 30's plain `.sql` created the tables. It leaves `items.updated_at` alone, so the PWA's offline mirror (which only refuses strictly older rows) picks the aisle up on its next read.
 - Never edit an already-shipped migration file in place — a database that already applied it recorded that in `user_version` and will never run it again, so an edit would only affect databases that haven't reached that version yet, silently diverging from ones that have. Add a new migration instead, exactly as you would with any other schema change management tool.
 
 **Adopting an existing database.** A database created by Trakka's pre-migration-engine code has tables already but `PRAGMA user_version` still at `0` (SQLite's default for a file that's never had it set). `migrate()` detects this (`hasExistingSchema`: any user table already present) and stamps it directly at the latest version without running any migration SQL, rather than replaying scripts that would immediately fail on already-existing tables/columns. This is safe because the old code always applied every schema change unconditionally on every startup and refused to start at all on any failure, so any database that ever started successfully already has the full schema.

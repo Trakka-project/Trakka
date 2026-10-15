@@ -4,7 +4,9 @@
   "description": "Maintainer tooling for Trakka (not part of the shipped app). See scripts/README.md.",
   "type": "module",
   "scripts": {
-    "showcase": "node generate-showcase-images.js"
+    "showcase": "node generate-showcase-images.js",
+    "test:barcode": "node test-barcode-decoder.js",
+    "test:quick-shopping": "node test-quick-shopping.js"
   },
   "devDependencies": {
     "playwright": "1.62.1"
