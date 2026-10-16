@@ -8,8 +8,8 @@ importScripts('/js/db.js', '/js/recurrence.js');
 
 // Bump both on any change to APP_SHELL's contents so activate()
 // evicts the old cache instead of serving stale assets forever.
-const SHELL_CACHE = 'trakka-shell-v134';
-const RUNTIME_CACHE = 'trakka-runtime-v126';
+const SHELL_CACHE = 'trakka-shell-v136';
+const RUNTIME_CACHE = 'trakka-runtime-v128';
 const KNOWN_CACHES = [SHELL_CACHE, RUNTIME_CACHE];
 
 const APP_SHELL = [
@@ -35,6 +35,7 @@ const APP_SHELL = [
   '/js/scanner.js',
   '/js/quick-shop.js',
   '/js/budget.js',
+  '/js/assignees.js',
   '/js/planning.js',
   '/js/urgent.js',
   '/js/spaces.js',
@@ -491,8 +492,14 @@ async function mirrorReadResponse(url, response) {
   const isSharedCategoriesQuery =
     url.pathname === '/api/v1/custom-categories' && url.searchParams.get('shared_with_me') === 'true';
 
+  const assignableMatch = url.pathname.match(/^\/api\/v1\/lists\/(\d+)\/assignable-users$/);
+
   if (url.pathname === '/api/v1/houses' && Array.isArray(data)) {
     await self.TrakkaDB.putHouses(data);
+  } else if (assignableMatch && data && Array.isArray(data.users)) {
+    // Who the task assignee pickers offer (assignees.js), and the names
+    // applyAssigneesOffline gives an assignment made offline.
+    await self.TrakkaDB.putAssignableUsers(Number(assignableMatch[1]), data);
   } else if (isSharedWithMe && Array.isArray(data)) {
     await self.TrakkaDB.replaceSharedLists(data);
   } else if (isPinnedHouseSpaces && Array.isArray(data)) {
@@ -558,6 +565,14 @@ async function offlineReadFallback(url) {
   if (url.pathname === '/api/v1/houses') {
     const houses = await self.TrakkaDB.getHouses();
     return new Response(JSON.stringify(houses), { status: 200, headers });
+  }
+
+  // A list's assignable users, if they were ever fetched online (see
+  // mirrorReadResponse) — else the generic 503 below.
+  const assignableMatch = url.pathname.match(/^\/api\/v1\/lists\/(\d+)\/assignable-users$/);
+  if (assignableMatch) {
+    const assignable = await self.TrakkaDB.getAssignableUsers(Number(assignableMatch[1]));
+    if (assignable) return new Response(JSON.stringify(assignable), { status: 200, headers });
   }
 
   if (url.pathname === '/api/v1/lists' && url.searchParams.get('shared_with_me') === 'true') {
@@ -843,6 +858,7 @@ async function queueOfflineWrite(method, url, body) {
       created_at: now,
       updated_at: now,
     };
+    await applyAssigneesOffline(item, body, { assignees: [] });
     await self.TrakkaDB.putItem(item);
     await recomputeListTotalAmount(listId);
     await self.TrakkaDB.enqueueRequest({ method, path: pathname, body, tempId, dependsOnListTempId, listId, itemId: tempId, createdAt: now });
@@ -896,6 +912,7 @@ async function applyOptimisticEdit(pathname, method, body) {
     // this row, so it must land before either of them.
     const updated = { ...existing, ...body, id, updated_at: now };
     applyRecurrenceLifecycleOffline(updated, existing);
+    await applyAssigneesOffline(updated, body, existing);
     await self.TrakkaDB.putItem(updated);
     // Step 2: recompute the parent list's cached total_amount from every
     // item now mirrored under it (including this one's new done/quantity/
@@ -1031,6 +1048,35 @@ function applyRecurrenceLifecycleOffline(updated, before) {
   updated.next_due_date = !next || (updated.recurrence_end_date && next > updated.recurrence_end_date) ? null : next;
 }
 
+// ---------------------------------------------------------------------------
+// Task assignments, mirrored offline: a write carries assignee_ids (user
+// ids) while items hold assignees ({ user_id, display_name }, see
+// internal/handlers/assignees.go). An offline write gets its assignees
+// named from the list's assignable users mirror (GET
+// /lists/{id}/assignable-users), else from
+// the assignees the item already had, so the mirror — and the response the
+// page merges — look like the server's. assignee_ids itself is never kept
+// on the mirrored item. Who may assign whom stays for the server to decide
+// on replay (a refused entry is dropped like any definitive 4xx).
+// ---------------------------------------------------------------------------
+
+async function applyAssigneesOffline(updated, body, before) {
+  if (!body || !Array.isArray(body.assignee_ids)) return;
+  delete updated.assignee_ids;
+  const assignable = updated.list_id != null ? await self.TrakkaDB.getAssignableUsers(updated.list_id) : null;
+  const roster = (assignable && assignable.users) || [];
+  const known = Array.isArray(before && before.assignees) ? before.assignees : [];
+  const seen = new Set();
+  updated.assignees = [];
+  for (const id of body.assignee_ids) {
+    if (seen.has(id)) continue;
+    seen.add(id);
+    const member = roster.find((m) => m.user_id === id);
+    const previous = known.find((a) => a.user_id === id);
+    updated.assignees.push({ user_id: id, display_name: member ? member.display_name || '' : (previous ? previous.display_name : '') });
+  }
+}
+
 // A PATCH/PUT/DELETE against a temp-* id targets something that only ever
 // existed locally. There is no server-side counterpart to call yet, so the
 // change is folded into the still-queued "create" entry instead.
@@ -1091,6 +1137,7 @@ async function resolveAgainstPendingCreate(tempId, method, body, headers) {
   const existing = (await self.TrakkaDB.getItem(tempId)) || { id: tempId };
   const updated = { ...existing, ...body, id: tempId, updated_at: now };
   applyRecurrenceLifecycleOffline(updated, existing);
+  await applyAssigneesOffline(updated, body, existing);
   await self.TrakkaDB.putItem(updated);
   await recomputeListTotalAmount(updated.list_id);
   return new Response(JSON.stringify(updated), { status: 200, headers });

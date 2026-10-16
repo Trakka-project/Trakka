@@ -350,6 +350,25 @@ A list created from a template (`db.CreateListFromTemplate`) gets one `items` ro
 
 **List budget.** No column stores it: `internal/db`'s `listSelect` computes it on every list read from three correlated subqueries over `items` (the estimate of what isn't bought — `total_amount` —, the estimate of what is, and what that cost: `COALESCE(actual_price, price) × quantity`), and `internal/budget.Summarize` derives the planned budget, spending, projection and variance from them (`models.List.Budget`, [API.md](API.md#get-apiv1lists)).
 
+### `item_assignees`
+
+The people an item is assigned to (migration 34) — one row per person, none for an unassigned item. See [API.md](API.md#task-assignments), `internal/db/item_assignees.go`.
+
+| Column | Type | Notes |
+|---|---|---|
+| `item_id` | `INTEGER NOT NULL` | `REFERENCES items(id) ON DELETE CASCADE` |
+| `user_id` | `INTEGER NOT NULL` | `REFERENCES users(id) ON DELETE CASCADE`; index `idx_item_assignees_user` |
+| `created_at` | `TEXT NOT NULL` | ISO-8601 UTC |
+
+`PRIMARY KEY (item_id, user_id)`. A join table rather than an `items.assigned_user_id` column because a chore can be shared ("Thomas & Sarah"), and rather than a JSON array like `items.labels` because each row references a user the database must keep valid. What the rows guarantee, and where:
+
+- **An assignee is always within the list's scope** (`db.AssigneeScope`, set by `SAAS_MODE`): self-hosted, anyone who can open the list — a `house_members` row for its House, a `list_shares` row for the list, or a `space_shares` row for its current `custom_category_id`; in SaaS mode, a `house_members` row only. `db.SetItemAssignees` checks every id inside the same transaction as its writes (`ErrInvalidAssignee` otherwise). Losing access doesn't touch `item_assignees` by itself — the `house_members`/`list_shares`/`space_shares` deletes and a list's `custom_category_id` change know nothing about it — so the handlers run a prune right after each (`PruneHouseAssignees`, `PruneListAssignees`, `PruneSpaceAssignees`, or the whole `PruneAssignees` after a Space is deleted), and the server prunes everything at startup, which also applies a `SAAS_MODE` switch to existing rows. A list never changes House. Deleting the item or the account cascades.
+- **Assignment order** is the rows' `rowid`: `SetItemAssignees` diffs the new set against the current one (deleting the people who leave, inserting the newcomers) instead of rewriting everything, so the people who stay keep their place. It bumps `items.updated_at` only when the set actually changed, and so do the prunes for the items they unassign someone from, so the PWA's offline mirror (which refuses strictly older rows) picks either up.
+- **Recurring tasks need nothing**: the same `items` row is reused from one occurrence to the next (`db.ActivateNextOccurrence` only updates columns), so its rows stay.
+- **Reads**: `itemSelectColumns` ends with `itemAssigneesExpr`, a correlated subquery building the item's `[{user_id, display_name}]` with `json_group_array(... ORDER BY ia.rowid)` (SQLite JSON1 and aggregate `ORDER BY`, 3.44+; the bundled `modernc.org/sqlite` is 3.53) over the primary key, so every read that feeds `scanItem` — the list detail, `GetItem`, the price scans — carries them without a second query. `"[]"` when there are none.
+
+There is no `reminder_date` column, though the feature's spec named one: an item's reminder moment is already derived from `due_date`/`due_time` and `reminder_offset_days`/`reminder_time`/`reminder_at_due_time` (see [`items`](#items)), recomputed for every occurrence; a stored date would go stale the moment a recurring task advanced.
+
 ## Evolving the schema
 
 Trakka has a real versioned migration engine (`internal/db/migrate.go`), not the single idempotent `schema.sql` this project used before. Every startup:

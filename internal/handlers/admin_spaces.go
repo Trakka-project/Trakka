@@ -42,5 +42,11 @@ func (app *Application) handleAdminSpacesDelete(w http.ResponseWriter, r *http.R
 		app.serverError(w, r, err)
 		return
 	}
+	// Its lists left it (ON DELETE SET NULL), and with it its share
+	// recipients' access — the database no longer knows which lists, hence
+	// the whole prune (see assignees.go).
+	app.pruneAssignees(r, func(scope db.AssigneeScope) (int, error) {
+		return app.DB.PruneAssignees(r.Context(), scope)
+	})
 	w.WriteHeader(http.StatusNoContent)
 }

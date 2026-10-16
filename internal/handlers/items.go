@@ -164,6 +164,7 @@ func (app *Application) handleItemsCreate(w http.ResponseWriter, r *http.Request
 		AisleHint             string   `json:"aisle_hint"`
 		Barcode               string   `json:"barcode"`
 		PurchaseStatus        string   `json:"purchase_status"`
+		AssigneeIDs           []int64  `json:"assignee_ids"`
 	}
 	if !decodeJSON(w, r, &in) {
 		return
@@ -274,6 +275,11 @@ func (app *Application) handleItemsCreate(w http.ResponseWriter, r *http.Request
 		}
 		createPlanned = planned
 	}
+	cleanAssignees, err := cleanAssigneeIDs(in.AssigneeIDs)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
 
 	list, err := app.DB.GetList(r.Context(), in.ListID)
 	if errors.Is(err, db.ErrNotFound) {
@@ -284,6 +290,11 @@ func (app *Application) handleItemsCreate(w http.ResponseWriter, r *http.Request
 		return
 	}
 	if !app.authorizeListAccess(w, r, list, true) {
+		return
+	}
+	// Checked before the item exists, so a refused assignment doesn't leave
+	// an unassigned item behind (see assignees.go).
+	if len(cleanAssignees) > 0 && !app.authorizeAssignees(w, r, list, cleanAssignees) {
 		return
 	}
 
@@ -331,6 +342,14 @@ func (app *Application) handleItemsCreate(w http.ResponseWriter, r *http.Request
 		item, err = app.DB.SetItemLabels(r.Context(), item.ID, cleanLabels)
 		if err != nil {
 			app.serverError(w, r, err)
+			return
+		}
+	}
+	// Same "only when there's something to store" as labels: a fresh item
+	// is unassigned. (Like labels, a merged Courses item, answered above,
+	// keeps the assignees it had.)
+	if len(cleanAssignees) > 0 {
+		if item = app.saveAssignees(w, r, item.ID, cleanAssignees); item == nil {
 			return
 		}
 	}
@@ -465,6 +484,11 @@ func (app *Application) handleItemsUpdate(w http.ResponseWriter, r *http.Request
 		Aisle                 string   `json:"aisle"`
 		PurchaseStatus        string   `json:"purchase_status"`
 		ActualPrice           *float64 `json:"actual_price"`
+		// The one field a PUT leaves as is when absent: not everyone who
+		// may edit the item may set it (in SaaS mode, only House members —
+		// see assignees.go), and a list-share recipient's full replace of an
+		// assigned task must not need to — or be able to — unassign it.
+		AssigneeIDs *[]int64 `json:"assignee_ids"`
 	}
 	if !decodeJSON(w, r, &in) {
 		return
@@ -474,6 +498,16 @@ func (app *Application) handleItemsUpdate(w http.ResponseWriter, r *http.Request
 	if in.Title == "" {
 		writeError(w, http.StatusBadRequest, "title is required")
 		return
+	}
+	var cleanAssignees []int64
+	writeAssignees := false
+	if in.AssigneeIDs != nil {
+		cleanAssignees, err = cleanAssigneeIDs(*in.AssigneeIDs)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		writeAssignees = !sameAssignees(existing, cleanAssignees)
 	}
 	// PUT is a full replace and `done` can't be told absent from false, so
 	// a purchase_status, when sent, is what decides done; without one the
@@ -569,6 +603,11 @@ func (app *Application) handleItemsUpdate(w http.ResponseWriter, r *http.Request
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
+	// Last check before the first write, so a refused assignment leaves
+	// the item untouched.
+	if writeAssignees && !app.authorizeItemAssignees(w, r, existing, cleanAssignees) {
+		return
+	}
 
 	// A scraped image is tied to the url it was found on: if the url just
 	// changed to something new, the existing image no longer describes it
@@ -646,6 +685,11 @@ func (app *Application) handleItemsUpdate(w http.ResponseWriter, r *http.Request
 			return
 		}
 	}
+	if writeAssignees {
+		if item = app.saveAssignees(w, r, item.ID, cleanAssignees); item == nil {
+			return
+		}
+	}
 	app.updateProductCatalog(r.Context(), item, aisleChanged, justCompleted)
 	// Checked against the manually-supplied price only, before
 	// scrapeProductInfo runs — see the identical reasoning in
@@ -701,6 +745,7 @@ func (app *Application) handleItemsPatch(w http.ResponseWriter, r *http.Request)
 		Aisle                 *string         `json:"aisle"`
 		PurchaseStatus        *string         `json:"purchase_status"`
 		ActualPrice           json.RawMessage `json:"actual_price"`
+		AssigneeIDs           *[]int64        `json:"assignee_ids"`
 	}
 	if !decodeJSON(w, r, &in) {
 		return
@@ -1019,6 +1064,26 @@ func (app *Application) handleItemsPatch(w http.ResponseWriter, r *http.Request)
 		item.Aisle = nullableString(cleanAisle)
 	}
 
+	// Same absent/present convention as labels: absent leaves the assignees
+	// as they are, a present array (even empty) replaces them. Authorized
+	// here, after every other field is validated and before the first
+	// write, so a refused assignment leaves the item untouched; re-sending
+	// the current assignees needs no authorization, since it changes
+	// nothing (see assignees.go).
+	var cleanAssignees []int64
+	writeAssignees := false
+	if in.AssigneeIDs != nil {
+		cleanAssignees, err = cleanAssigneeIDs(*in.AssigneeIDs)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		writeAssignees = !sameAssignees(&before, cleanAssignees)
+		if writeAssignees && !app.authorizeItemAssignees(w, r, &before, cleanAssignees) {
+			return
+		}
+	}
+
 	justCompleted := !before.Done && item.Done
 	justUnchecked := before.Done && !item.Done
 
@@ -1079,6 +1144,11 @@ func (app *Application) handleItemsPatch(w http.ResponseWriter, r *http.Request)
 		updated, err = app.DB.SetItemPurchase(r.Context(), updated.ID, item.IsPlanned, item.ActualPrice)
 		if err != nil {
 			app.serverError(w, r, err)
+			return
+		}
+	}
+	if writeAssignees {
+		if updated = app.saveAssignees(w, r, updated.ID, cleanAssignees); updated == nil {
 			return
 		}
 	}

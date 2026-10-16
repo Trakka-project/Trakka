@@ -223,6 +223,8 @@ function updateBulkActionsBar() {
   for (const button of [selectionEls.doneButton, selectionEls.labelsButton, selectionEls.targetMonthButton, selectionEls.deleteButton]) {
     button.disabled = count === 0;
   }
+  // "Assigner" (assignees.js): task lists, for House members.
+  updateBulkAssigneesButton(list, count);
 
   // Lifts #toast-container (undo toasts, the "mois appliqué" confirmation)
   // above the bar instead of letting it cover the bar's own buttons.
@@ -263,6 +265,9 @@ function paintRowSelection(li, checkbox, selected) {
 // focus stays on the checkbox.
 function decorateSelectableRow(li, item) {
   const checkbox = li.querySelector('.item-select-toggle input');
+  // "Par membre" (assignees.js) draws a task shared by two people under
+  // both of them: setSelected repaints every row of the item, found by this.
+  li.dataset.selectionKey = selectionKey(item);
   for (const el of li.querySelectorAll('button, a, input, select, textarea')) {
     if (el !== checkbox) el.inert = true;
   }
@@ -283,6 +288,11 @@ function decorateSelectableRow(li, item) {
     if (selectedItemIds.size === 0) {
       exitSelectionMode();
       return;
+    }
+    for (const rowEl of listEls.itemsActive.querySelectorAll('li[data-selection-key]')) {
+      if (rowEl.dataset.selectionKey !== li.dataset.selectionKey || rowEl === li) continue;
+      const other = rowEl.querySelector('.item-select-toggle input');
+      if (other) paintRowSelection(rowEl, other, selected);
     }
     paintRowSelection(li, checkbox, selected);
     updateBulkActionsBar();

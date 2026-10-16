@@ -82,6 +82,16 @@ func main() {
 		}
 	}()
 
+	// Whoever fell out of the scope tasks are assigned within — after a
+	// change of SAAS_MODE, or a prune that failed — is unassigned before
+	// the first request (see internal/handlers/assignees.go).
+	if pruned, err := database.PruneAssignees(context.Background(), db.AssigneeScopeFor(cfg.SaaSMode)); err != nil {
+		logger.Error("pruning task assignments", "error", err)
+		os.Exit(1)
+	} else if pruned > 0 {
+		logger.Info("unassigned users outside the task assignment scope", "assignments", pruned)
+	}
+
 	resolvedSettings, err := settings.Resolve(context.Background(), database, cfg)
 	if err != nil {
 		logger.Error("resolving system settings", "error", err)

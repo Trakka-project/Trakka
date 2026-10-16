@@ -177,5 +177,10 @@ func (app *Application) handleHouseMembersRemove(w http.ResponseWriter, r *http.
 		app.serverError(w, r, err)
 		return
 	}
+	// Their tasks in the House go unless they can still open the list
+	// another way (see assignees.go).
+	app.pruneAssignees(r, func(scope db.AssigneeScope) (int, error) {
+		return app.DB.PruneHouseAssignees(r.Context(), scope, houseID)
+	})
 	w.WriteHeader(http.StatusNoContent)
 }

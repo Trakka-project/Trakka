@@ -298,6 +298,13 @@ func (app *Application) handleListsUpdate(w http.ResponseWriter, r *http.Request
 		app.serverError(w, r, err)
 		return
 	}
+	if !sameCategoryID(in.CustomCategoryID, existing.CustomCategoryID) {
+		// Out of its old Space, the list no longer reaches that Space's
+		// share recipients (see assignees.go).
+		app.pruneAssignees(r, func(scope db.AssigneeScope) (int, error) {
+			return app.DB.PruneListAssignees(r.Context(), scope, id)
+		})
+	}
 	writeJSON(w, http.StatusOK, list)
 }
 

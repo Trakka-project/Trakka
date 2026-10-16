@@ -215,6 +215,7 @@ func (app *Application) Routes() http.Handler {
 	apiMux.HandleFunc("PUT /api/v1/lists/{id}", app.handleListsUpdate)
 	apiMux.HandleFunc("DELETE /api/v1/lists/{id}", app.handleListsDelete)
 	apiMux.HandleFunc("PUT /api/v1/lists/{id}/reorder", app.handleListsReorder)
+	apiMux.HandleFunc("GET /api/v1/lists/{id}/assignable-users", app.handleListAssignableUsers)
 	apiMux.HandleFunc("GET /api/v1/shopping-templates", app.handleShoppingTemplatesIndex)
 	apiMux.HandleFunc("POST /api/v1/shopping-templates", app.handleShoppingTemplatesCreate)
 	apiMux.HandleFunc("DELETE /api/v1/shopping-templates/{id}", app.handleShoppingTemplatesDelete)

@@ -168,6 +168,9 @@ func (app *Application) handleSpaceShareRevoke(w http.ResponseWriter, r *http.Re
 		app.serverError(w, r, err)
 		return
 	}
+	app.pruneAssignees(r, func(scope db.AssigneeScope) (int, error) {
+		return app.DB.PruneSpaceAssignees(r.Context(), scope, id)
+	})
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -454,5 +457,8 @@ func (app *Application) handleListShareRevoke(w http.ResponseWriter, r *http.Req
 		app.serverError(w, r, err)
 		return
 	}
+	app.pruneAssignees(r, func(scope db.AssigneeScope) (int, error) {
+		return app.DB.PruneListAssignees(r.Context(), scope, id)
+	})
 	w.WriteHeader(http.StatusNoContent)
 }
