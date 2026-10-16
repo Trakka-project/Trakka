@@ -2,26 +2,33 @@ name: Android APK
 
 # Builds the Android app (android/, docs/MOBILE_BUILD.md) with the same
 # `make build-apk-capacitor` as on a workstation, signs it with the release
-# key kept in this repository's secrets, and attaches it to the GitHub
-# release, where README.md and docs/INSTALLATION.md link to it
+# key kept in this repository's secrets, and attaches it to a *draft* GitHub
+# release, where README.md and docs/INSTALLATION.md link to it once published
 # (releases/latest/download/trakka.apk).
+#
+# Why a draft: this repository's releases are immutable (Settings → General →
+# Releases). Once published, a release accepts no new asset ("HTTP 422: Cannot
+# upload assets to an immutable release"), so the APK has to be on the release
+# before anyone publishes it.
 
 # ---------------------------------------------------------------------------
 # Triggers
 # ---------------------------------------------------------------------------
-# - Publishing a GitHub release (made from a vX.Y.Z tag, like every Trakka
-#   release): the APK, its SHA-256 and a build provenance attestation are
-#   attached to it. The trigger is the release rather than the tag push, since
-#   the assets need the release to exist.
+# - Pushing a vX.Y.Z tag (`git push origin v1.4.0`): the APK, its SHA-256 and
+#   a build provenance attestation go on a draft release for that tag, created
+#   with the tag's CHANGELOG.md section as notes (or reused, if a draft for
+#   that tag already exists). Review it and publish it: that locks it, APK
+#   included. Publishing it is what fires ci.yml's `release` run, as before.
 # - Running it by hand (Actions → Android APK → Run workflow): from a vX.Y.Z
-#   tag ("Use workflow from" → Tags), it rebuilds and re-attaches that
-#   release's APK, for instance after fixing the secrets; from a branch, it
-#   builds a development APK, kept as a workflow artifact for 14 days.
+#   tag ("Use workflow from" → Tags), it rebuilds the APK and re-attaches it to
+#   that tag's draft, for instance after fixing the secrets; it refuses a tag
+#   whose release is already published. From a branch, it builds a
+#   development APK, kept as a workflow artifact for 14 days.
 # There is deliberately no pull_request trigger: the signing key never meets
 # pull request code.
 on:
-  release:
-    types: [published]
+  push:
+    tags: ["v*.*.*"]
   workflow_dispatch:
 
 # One build per tag or branch at a time, never cancelled halfway through an
@@ -41,7 +48,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 45
     permissions:
-      contents: write # attach the APK to the release (gh release upload)
+      contents: write # create the draft release and attach the APK to it
       id-token: write # mint the Sigstore/SLSA provenance attestation
       attestations: write # store that attestation
     # An explicit `bash` runs with -eo pipefail (the implicit default has no
@@ -72,6 +79,7 @@ jobs:
             # final v1.3.0 still installs over it).
             {
               echo "tag=$tag"
+              echo "prerelease=$([ -n "${BASH_REMATCH[5]}" ] && echo true || echo false)"
               echo "version_name=${tag#v}"
               echo "version_code=$(( 10#$major * 1000000 + 10#$minor * 1000 + 10#$patch ))"
             } >> "$GITHUB_OUTPUT"
@@ -83,6 +91,7 @@ jobs:
             # so that any release installs over it.
             {
               echo "tag="
+              echo "prerelease=false"
               echo "version_name=dev-${SHA:0:7}"
               echo "version_code=1"
             } >> "$GITHUB_OUTPUT"
@@ -139,12 +148,34 @@ jobs:
         with:
           subject-path: android/out/trakka.apk
 
-      - name: Attach the APK to the release
+      - name: Attach the APK to the draft release
         if: steps.version.outputs.tag != ''
+        # `gh release view` also finds drafts (by listing the releases, which
+        # needs contents: write). A published release can't take assets here:
+        # releases are immutable, see the top of this file.
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ steps.version.outputs.tag }}
-        run: gh release upload "$TAG" android/out/trakka.apk android/out/trakka.apk.sha256 --clobber --repo "$GITHUB_REPOSITORY"
+          VERSION: ${{ steps.version.outputs.version_name }}
+          PRERELEASE: ${{ steps.version.outputs.prerelease }}
+        run: |
+          assets=(android/out/trakka.apk android/out/trakka.apk.sha256)
+          if is_draft="$(gh release view "$TAG" --json isDraft --jq .isDraft --repo "$GITHUB_REPOSITORY" 2>/dev/null)"; then
+            if [ "$is_draft" != true ]; then
+              echo "::error::Release $TAG is already published, and published releases are immutable: no APK can be added to it. Release a new version (push its tag before publishing anything), see docs/MOBILE_BUILD.md."
+              exit 1
+            fi
+            gh release upload "$TAG" "${assets[@]}" --clobber --repo "$GITHUB_REPOSITORY"
+          else
+            # Notes: the tag's section of CHANGELOG.md ("## [1.4.0] - date"
+            # up to the next "## ["), or GitHub's generated ones without it.
+            notes="$RUNNER_TEMP/release-notes.md"
+            awk -v heading="## [$VERSION]" 'index($0, heading) == 1 { on = 1; next } on && /^## \[/ { exit } on' CHANGELOG.md > "$notes"
+            flags=(--draft --verify-tag --title "$TAG")
+            if grep -q '[^[:space:]]' "$notes"; then flags+=(--notes-file "$notes"); else flags+=(--generate-notes); fi
+            if [ "$PRERELEASE" = true ]; then flags+=(--prerelease); fi
+            gh release create "$TAG" "${assets[@]}" "${flags[@]}" --repo "$GITHUB_REPOSITORY"
+          fi
 
       - name: Keep the development APK as a workflow artifact
         if: steps.version.outputs.tag == ''
@@ -165,7 +196,8 @@ jobs:
         run: |
           {
             if [ -n "$TAG" ]; then
-              echo "### trakka.apk attached to release $TAG"
+              echo "### trakka.apk attached to the draft release $TAG"
+              echo "Review the draft (Releases) and publish it: that locks it, APK included."
             else
               echo "### Development APK (workflow artifact)"
             fi

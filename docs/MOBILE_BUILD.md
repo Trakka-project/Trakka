@@ -125,9 +125,13 @@ It is a self-generated key rather than one managed by an app store, but it becom
 
 [`.github/workflows/build-apk.yml`](../.github/workflows/build-apk.yml) builds the APK the same way (`make build-apk-capacitor`, with Docker) and attaches it to Trakka's GitHub releases, so that nobody has to build it to install it: [latest release](https://github.com/Trakka-project/Trakka/releases/latest), or directly <https://github.com/Trakka-project/Trakka/releases/latest/download/trakka.apk>.
 
-- **Publishing a release** (from a `vX.Y.Z` tag) builds `trakka.apk`, signed with the release key, and attaches it with `trakka.apk.sha256` and a build provenance attestation. The app's version comes from the tag: `v1.3.0` gives version name `1.3.0` and version code `1003000`, so each release installs over the previous one. The run's page sums up the package, version, signing certificate and checksum.
-- **Running the workflow by hand** (Actions → Android APK → Run workflow): from a tag, it rebuilds and re-attaches that release's APK, for instance after fixing the secrets; from a branch, it builds a development APK (version code 1, so that any release installs over it), downloadable from the run's page for 14 days.
-- Releases made before the app existed (v1.2.0 and older) have no `android/`, and no APK.
+- **Making a release.** Trakka's releases are *immutable*: once published, GitHub accepts no new file on them. So the APK goes on the release **before** it is published:
+  1. Update `CHANGELOG.md`, merge, then tag and push the tag: `git tag v1.4.0 && git push origin v1.4.0`.
+  2. The workflow builds `trakka.apk`, signed with the release key, and creates a **draft** release for the tag with `trakka.apk`, `trakka.apk.sha256`, a build provenance attestation, and the tag's `CHANGELOG.md` section as notes (GitHub's generated notes without one; a `-suffix` tag makes a pre-release). If you drafted that release yourself beforehand, it uses your draft instead.
+  3. Review the draft (Releases), then publish it. Don't create and publish the release from GitHub's "Draft a new release" form in one go: published before the workflow ran, it can never get the APK.
+ The app's version comes from the tag: `v1.3.0` gives version name `1.3.0` and version code `1003000`, so each release installs over the previous one. The run's page sums up the package, version, signing certificate and checksum.
+- **Running the workflow by hand** (Actions → Android APK → Run workflow): from a tag, it rebuilds the APK and re-attaches it to that tag's draft, for instance after fixing the secrets (an already published release is refused); from a branch, it builds a development APK (version code 1, so that any release installs over it), downloadable from the run's page for 14 days.
+- Releases made before the app existed (v1.2.0 and older) have no `android/`, and no APK. v1.3.0 and v1.3.1 have none either: they were published before the workflow worked, and are locked.
 
 ### Setting up the secrets
 
@@ -210,7 +214,7 @@ New Trakka versions need no new APK: the app always shows the server's current T
 | 📷 says "Trakka n'a pas accès à la caméra" | Android refused the camera to the app: Settings → Apps → Trakka → Permissions → Camera. Once refused twice, Android no longer asks, so the setting is the only way back |
 | Trakka says push notifications aren't supported | An app built before local reminders: install the current APK. Other push notifications aren't available in the app yet: see [Notifications](#notifications) |
 | The "Android APK" workflow stops on a missing secret | The repository secrets aren't set up: see [Setting up the secrets](#setting-up-the-secrets), then run the workflow by hand from the release's tag |
-| The workflow fails at "Attach the APK to the release" | It was run by hand from a tag that has no GitHub release yet: publish the release, which runs the workflow by itself |
+| The workflow fails at "Attach the APK to the draft release" with "already published", or `HTTP 422: Cannot upload assets to an immutable release` | The release was published before the APK was attached, and published releases can't be changed. Release the next patch version the documented way (push the tag, publish the draft the workflow makes) |
 | The build can't resolve or download anything | The container has no working DNS (common with `systemd-resolved` or a VPN, see [DEPLOYMENT.md](DEPLOYMENT.md#when-the-build-cant-download-go-modules)): `make build-apk-capacitor APK_RUN_FLAGS=--network=host APK_IMAGE_BUILD_FLAGS=--network=host` |
 | `uv_os_get_passwd returned ENOENT` at "cap sync" (Docker, or the GitHub workflow) | The builder image predates its nss_wrapper entrypoint, which gives your UID the `/etc/passwd` entry Docker's `--user` doesn't add (the Capacitor CLI needs one): rebuild it, which `make build-apk-capacitor` does by itself on an up-to-date checkout |
 | `permission denied` writing under `android/`, with rootless Docker | Run as the container's root, which is you there: `make build-apk-capacitor APK_USER_FLAGS=` |
