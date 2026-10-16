@@ -142,13 +142,18 @@ type Config struct {
 
 	// SaaSMode marks a multi-tenant deployment where accounts on the same
 	// instance don't know each other, as opposed to the default self-hosted
-	// household/group. It only narrows the sharing autocomplete
-	// (GET /api/v1/users/search, see internal/handlers/user_search.go): off,
-	// any member can be found by any part of their name or email address;
-	// on, only by email address and only among the caller's existing
-	// contacts (people they already share a house, list or space with), so
-	// nobody can browse the instance's names or addresses. Exposed to the
-	// frontend through GET /api/v1/config.
+	// household/group. It narrows two things:
+	//   - the sharing autocomplete (GET /api/v1/users/search, see
+	//     internal/handlers/user_search.go): off, any member can be found by
+	//     any part of their name or email address; on, only by email address
+	//     and only among the caller's existing contacts (people they already
+	//     share a house, list or space with), so nobody can browse the
+	//     instance's names or addresses;
+	//   - task assignments (internal/handlers/assignees.go, db.AssigneeScope):
+	//     off, a task can be assigned to anyone who can open its list (House
+	//     members, list and Space share recipients), by anyone who may edit
+	//     it; on, only to and by the members of the list's House.
+	// Exposed to the frontend through GET /api/v1/config.
 	// SAAS_MODE, default false.
 	SaaSMode bool
 }

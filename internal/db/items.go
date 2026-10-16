@@ -24,14 +24,25 @@ const dueReminderKeyExpr = `items.due_date || COALESCE('T' || items.due_time, ''
 // query that feeds scanItem selects exactly this, qualified with items. so
 // it also works in queries joining lists. notification_sent_at is only
 // reported while it belongs to the current due date/time (see
-// models.Item.NotificationSentAt).
+// models.Item.NotificationSentAt). The last column is the item's assignees
+// as a JSON array (see itemAssigneesExpr).
 const itemSelectColumns = `items.id, items.list_id, items.title, items.url, items.quantity, items.done, items.position, items.created_at, items.updated_at,
 		 items.price, items.price_auto, items.image_url, items.target_month,
 		 items.due_date, items.is_recurring, items.recurrence_rule, items.recurrence_end_date, items.is_urgent, items.recurrence_lead_minutes,
 		 items.target_price, items.alert_on_price_drop, items.labels, items.reminder_enabled, items.reminder_offset_days, items.reminder_time,
 		 items.due_time, items.next_due_date, items.reminder_at_due_time,
 		 CASE WHEN items.due_reminder_sent_for = ` + dueReminderKeyExpr + ` THEN items.notification_sent_at END,
-		 items.previous_price, items.price_changed_at, items.aisle, items.is_planned, items.actual_price`
+		 items.previous_price, items.price_changed_at, items.aisle, items.is_planned, items.actual_price,
+		 ` + itemAssigneesExpr
+
+// itemAssigneesExpr is an item's assignees (models.Item.Assignees,
+// migration 34) as a JSON array of {user_id, display_name}, in the order
+// they were assigned (item_assignees' rowid) — "[]" when there are none,
+// json_group_array's result over no rows. One correlated subquery on
+// item_assignees' primary key per item, so every read that feeds scanItem
+// carries the assignees without a second round trip.
+const itemAssigneesExpr = `(SELECT json_group_array(json_object('user_id', u.id, 'display_name', u.display_name) ORDER BY ia.rowid)
+		 FROM item_assignees ia JOIN users u ON u.id = ia.user_id WHERE ia.item_id = items.id)`
 
 func scanItem(row rowScanner) (*models.Item, error) {
 	it := &models.Item{}
@@ -61,13 +72,18 @@ func scanItem(row rowScanner) (*models.Item, error) {
 	var aisle sql.NullString
 	var isPlanned int
 	var actualPrice sql.NullFloat64
+	var assigneesJSON string
 	if err := row.Scan(&it.ID, &it.ListID, &it.Title, &it.URL, &it.Quantity, &done,
 		&it.Position, &it.CreatedAt, &it.UpdatedAt, &price, &priceAuto, &imageURL, &targetMonth,
 		&dueDate, &isRecurring, &recurrenceRule, &recurrenceEndDate, &isUrgent, &recurrenceLeadMinutes,
 		&targetPrice, &alertOnPriceDrop, &labelsJSON, &reminderEnabled, &reminderOffsetDays, &reminderTime,
 		&dueTime, &nextDueDate, &reminderAtDueTime, &notificationSentAt,
-		&previousPrice, &priceChangedAt, &aisle, &isPlanned, &actualPrice); err != nil {
+		&previousPrice, &priceChangedAt, &aisle, &isPlanned, &actualPrice, &assigneesJSON); err != nil {
 		return nil, err
+	}
+	it.Assignees = []models.ItemAssignee{}
+	if err := json.Unmarshal([]byte(assigneesJSON), &it.Assignees); err != nil {
+		return nil, fmt.Errorf("decoding assignees for item %d: %w", it.ID, err)
 	}
 	it.Done = done != 0
 	if price.Valid {

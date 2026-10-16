@@ -488,15 +488,17 @@ function typeLabel(type) {
 // link to watch, so a Courses list (no links) has prices but no alert. On a
 // Courses list the price cells and the summary only show once an item has
 // a price (listShowsPrices), so a plain grocery list stays as light as it
-// was.
+// was. `assignees` (assigning tasks to House members, the "Par membre" sort
+// and the "Membres" filter — assignees.js) is for task lists: an assigned
+// item of another type still shows its avatars, but offers no picker.
 const FIELD_VISIBILITY_BY_TYPE = {
-  groceries: { url: false, price: true, targetPrice: false, targetMonth: false, recurrence: false, dueDate: false, quantity: true, urgent: true, done: true, aisle: true },
-  shopping: { url: true, price: true, targetPrice: true, targetMonth: true, recurrence: false, dueDate: false, quantity: true, urgent: true, done: true, aisle: false },
-  recurring_shopping: { url: true, price: true, targetPrice: true, targetMonth: false, recurrence: true, dueDate: true, quantity: true, urgent: true, done: true, aisle: false },
-  todo: { url: true, price: false, targetPrice: false, targetMonth: false, recurrence: true, dueDate: true, quantity: false, urgent: true, done: true, aisle: false },
-  custom: { url: false, price: false, targetPrice: false, targetMonth: false, recurrence: false, dueDate: false, quantity: false, urgent: false, done: false, aisle: false },
+  groceries: { url: false, price: true, targetPrice: false, targetMonth: false, recurrence: false, dueDate: false, quantity: true, urgent: true, done: true, aisle: true, assignees: false },
+  shopping: { url: true, price: true, targetPrice: true, targetMonth: true, recurrence: false, dueDate: false, quantity: true, urgent: true, done: true, aisle: false, assignees: false },
+  recurring_shopping: { url: true, price: true, targetPrice: true, targetMonth: false, recurrence: true, dueDate: true, quantity: true, urgent: true, done: true, aisle: false, assignees: false },
+  todo: { url: true, price: false, targetPrice: false, targetMonth: false, recurrence: true, dueDate: true, quantity: false, urgent: true, done: true, aisle: false, assignees: true },
+  custom: { url: false, price: false, targetPrice: false, targetMonth: false, recurrence: false, dueDate: false, quantity: false, urgent: false, done: false, aisle: false, assignees: false },
 };
-const DEFAULT_FIELD_VISIBILITY = { url: true, price: false, targetPrice: false, targetMonth: false, recurrence: true, dueDate: true, quantity: false, urgent: true, done: true, aisle: false };
+const DEFAULT_FIELD_VISIBILITY = { url: true, price: false, targetPrice: false, targetMonth: false, recurrence: true, dueDate: true, quantity: false, urgent: true, done: true, aisle: false, assignees: false };
 
 function fieldVisibilityFor(type) {
   return FIELD_VISIBILITY_BY_TYPE[type] || DEFAULT_FIELD_VISIBILITY;
@@ -550,6 +552,9 @@ function applyListTypeVisibility(type) {
   for (const el of document.querySelectorAll('[data-item-field="quantity"]')) el.hidden = !visibility.quantity;
   for (const el of document.querySelectorAll('[data-item-field="urgent"]')) el.hidden = !visibility.urgent;
   for (const el of document.querySelectorAll('[data-item-field="aisle"]')) el.hidden = !visibility.aisle;
+  // The "Par membre" sort; the assignee pickers also need House membership
+  // and the roster, so assignees.js shows those itself.
+  for (const el of document.querySelectorAll('[data-item-field="assignees"]')) el.hidden = !visibility.assignees;
   listEls.itemTitle.placeholder = t(type === 'custom' ? 'items.titlePlaceholderCustom' : 'items.titlePlaceholder');
 
   // A `custom` list (freeform names/ideas/notes) shows none of url/price/
@@ -564,7 +569,7 @@ function applyListTypeVisibility(type) {
 }
 
 function hasAdvancedFields(visibility) {
-  return visibility.url || visibility.price || visibility.targetMonth || visibility.recurrence || visibility.dueDate || visibility.quantity || visibility.urgent || visibility.aisle;
+  return visibility.url || visibility.price || visibility.targetMonth || visibility.recurrence || visibility.dueDate || visibility.quantity || visibility.urgent || visibility.aisle || visibility.assignees;
 }
 
 // updateReminderCustomFieldsVisibility shows the inline "N jour(s) avant à
@@ -826,6 +831,10 @@ function applySortMode(items, mode) {
       // compareByAisle is defined in quick-shop.js: shop order, urgent
       // first within an aisle (renderItems adds the aisle headings).
       return items.sort(compareByAisle);
+    case 'assignee':
+      // "Par membre" (assignees.js): renderItems splits the list into one
+      // group per member; within each, the list's own order, urgent first.
+      return items.sort((a, b) => (b.is_urgent ? 1 : 0) - (a.is_urgent ? 1 : 0));
     case 'label':
       return items.sort((a, b) => {
         const ka = labelSortKey(a);
@@ -964,7 +973,7 @@ listEls.viewModeToggleButtonDesktop.addEventListener('click', toggleViewMode);
 const FILTER_STATE_STORAGE_PREFIX = 'trakka:filters:';
 
 function defaultFilterState() {
-  return { status: 'all', labels: [], priceMin: null, priceMax: null, urgentOnly: false, stores: [] };
+  return { status: 'all', labels: [], priceMin: null, priceMax: null, urgentOnly: false, stores: [], assignees: [] };
 }
 
 function getFilterState(listId) {
@@ -979,6 +988,10 @@ function getFilterState(listId) {
       priceMax: typeof parsed.priceMax === 'number' ? parsed.priceMax : null,
       urgentOnly: parsed.urgentOnly === true,
       stores: Array.isArray(parsed.stores) ? parsed.stores.filter((s) => typeof s === 'string') : [],
+      // User ids, and/or 'none' for "Non assignées" (assignees.js).
+      assignees: Array.isArray(parsed.assignees)
+        ? parsed.assignees.filter((v) => v === UNASSIGNED_KEY || Number.isInteger(v))
+        : [],
     };
   } catch {
     return defaultFilterState(); // localStorage unavailable, or corrupt JSON — fall back to no filters.
@@ -1000,7 +1013,8 @@ function isFilterStateActive(filterState) {
     filterState.priceMin !== null ||
     filterState.priceMax !== null ||
     filterState.urgentOnly ||
-    filterState.stores.length > 0
+    filterState.stores.length > 0 ||
+    filterState.assignees.length > 0
   );
 }
 
@@ -1016,6 +1030,7 @@ function countActiveFilters(filterState) {
   if (filterState.priceMin !== null || filterState.priceMax !== null) count++;
   if (filterState.urgentOnly) count++;
   if (filterState.stores.length > 0) count++;
+  if (filterState.assignees.length > 0) count++;
   return count;
 }
 
@@ -1062,6 +1077,11 @@ function applyItemFilters(items, filterState) {
       const domain = itemStoreDomain(item);
       return domain !== null && wanted.has(domain.toLowerCase());
     });
+  }
+  // matchesAssigneeFilter is defined in assignees.js: assigned to one of
+  // the chosen members, or to nobody when "Non assignées" is chosen.
+  if (filterState.assignees.length > 0) {
+    result = result.filter((item) => matchesAssigneeFilter(item, filterState.assignees));
   }
   return result;
 }
@@ -1186,6 +1206,8 @@ function openFilterItemsSheet() {
   updateFilterStatusButtons(filterState);
   renderFilterLabelChips(filterState);
   renderFilterStoreChips(filterState);
+  // renderFilterAssigneeChips is defined in assignees.js ("Membres").
+  renderFilterAssigneeChips(filterState);
   listEls.filterUrgentOnly.checked = filterState.urgentOnly;
   listEls.filterPriceMin.value = filterState.priceMin === null ? '' : filterState.priceMin;
   listEls.filterPriceMax.value = filterState.priceMax === null ? '' : filterState.priceMax;
@@ -1254,10 +1276,13 @@ listEls.filterResetButton.addEventListener('click', () => {
   updateFilterStatusButtons(filterState);
   renderFilterLabelChips(filterState);
   renderFilterStoreChips(filterState);
+  renderFilterAssigneeChips(filterState);
   listEls.filterUrgentOnly.checked = false;
   listEls.filterPriceMin.value = '';
   listEls.filterPriceMax.value = '';
   updateFilterButtonHighlight(state.currentList.id);
+  // No member filtered on any more: new tasks go back to unassigned.
+  resetQuickAddAssignees(state.currentList);
   renderItems();
 });
 
@@ -2584,17 +2609,28 @@ function buildItemRow(item, { showCheckbox = true, index, showQuantity = true, s
   // height, so the row doesn't grow. So does a purchase list item's
   // "📝 Prévu" tag (buildPlannedBadge, budget.js) — on the same line as the
   // aisle tag when it has both, never a line of its own.
+  // Who the task is assigned to (buildAssigneeAvatars, assignees.js) goes
+  // there too, as small initials avatars, a tap opening the picker — not as
+  // a column of its own next to the title, which took the title's room on
+  // a phone (at 320px it wrapped every few letters). On a recurring task it
+  // shares the "🔁 Échéance suivante" badge's line, wrapping under it when
+  // there's no room. Nothing for an unassigned item, so its row is
+  // unchanged.
+  const assigneeAvatars = buildAssigneeAvatars(item, { interactive: !selecting });
   const tags = [
     showAisle ? buildAisleBadge(item, { interactive: !selecting }) : null,
     showPurchase ? buildPlannedBadge(item, { interactive: !selecting }) : null,
+    assigneeAvatars,
   ].filter(Boolean);
+  const nextDueBadge = buildNextDueBadge(item, { interactive: !selecting });
+  if (nextDueBadge && assigneeAvatars && tags.length === 1) tags.unshift(nextDueBadge);
   let tagRow = tags[0] || null;
   if (tags.length > 1) {
     tagRow = document.createElement('div');
     tagRow.className = 'flex min-w-0 flex-wrap items-center gap-1';
     tagRow.append(...tags);
   }
-  const titleBadges = [buildNextDueBadge(item, { interactive: !selecting }), tagRow].filter(Boolean);
+  const titleBadges = [tags.includes(nextDueBadge) ? null : nextDueBadge, tagRow].filter(Boolean);
   if (titleBadges.length > 0) {
     const titleBlock = document.createElement('div');
     titleBlock.className = 'flex min-w-0 flex-1 flex-col gap-1';
@@ -2841,6 +2877,9 @@ function renderItems() {
   // refreshQuickShopControls is defined in quick-shop.js — the ⭐/📷
   // buttons of a Courses list, and its House's favorites/suggestions.
   refreshQuickShopControls(list);
+  // refreshAssigneeControls is defined in assignees.js — the House roster
+  // the assignee pickers offer, and the quick-add panel's member toggles.
+  refreshAssigneeControls(list);
 
   // hasPendingListChanges is defined in app.js — see the "Network status +
   // offline sync indicators" section there. Re-checked on every render
@@ -2955,26 +2994,36 @@ function renderItems() {
     if (groupByAisle) {
       for (const item of active) aisleCounts.set(aisleGroupKey(item), (aisleCounts.get(aisleGroupKey(item)) || 0) + 1);
     }
-    let currentAisle = null;
-    active.forEach((item, index) => {
-      if (groupByAisle && aisleGroupKey(item) !== currentAisle) {
-        currentAisle = aisleGroupKey(item);
-        listEls.itemsActive.appendChild(buildAisleHeader(currentAisle, aisleCounts.get(currentAisle)));
+    const buildActiveRow = (item, index) =>
+      buildItemRow(item, {
+        showCheckbox: visibility.done,
+        index,
+        showQuantity: visibility.quantity,
+        showPrice: showPrices,
+        showPurchase: visibility.price,
+        showLink: visibility.url,
+        // The aisle headings already say it in "Par rayon".
+        showAisle: visibility.aisle && !groupByAisle,
+        compactView,
+      });
+    if (sortMode === ASSIGNEE_SORT_MODE && visibility.assignees) {
+      // "Par membre" (assignees.js): a heading per member — mine first,
+      // "Non assignées" last — over that member's items in list order. A
+      // task shared by two people is drawn under each of them.
+      for (const group of groupItemsByAssignee(active, list)) {
+        listEls.itemsActive.appendChild(buildAssigneeGroupHeader(group));
+        group.items.forEach((item, index) => listEls.itemsActive.appendChild(buildActiveRow(item, index)));
       }
-      listEls.itemsActive.appendChild(
-        buildItemRow(item, {
-          showCheckbox: visibility.done,
-          index,
-          showQuantity: visibility.quantity,
-          showPrice: showPrices,
-          showPurchase: visibility.price,
-          showLink: visibility.url,
-          // The aisle headings already say it in "Par rayon".
-          showAisle: visibility.aisle && !groupByAisle,
-          compactView,
-        })
-      );
-    });
+    } else {
+      let currentAisle = null;
+      active.forEach((item, index) => {
+        if (groupByAisle && aisleGroupKey(item) !== currentAisle) {
+          currentAisle = aisleGroupKey(item);
+          listEls.itemsActive.appendChild(buildAisleHeader(currentAisle, aisleCounts.get(currentAisle)));
+        }
+        listEls.itemsActive.appendChild(buildActiveRow(item, index));
+      });
+    }
   }
 
   listEls.itemsDone.replaceChildren();
@@ -3252,6 +3301,9 @@ function showDashboard() {
   exitSelectionModeIfActive();
   state.currentListId = null;
   state.currentList = null;
+  // forgetAssignableUsers is defined in assignees.js: the next list opened
+  // asks again who its tasks can be assigned to.
+  forgetAssignableUsers();
   listEls.itemsSection.hidden = true;
   els.listsSection.hidden = false;
   resetScrollPosition();
@@ -3711,6 +3763,10 @@ listEls.createItemForm.addEventListener('submit', async (event) => {
     Object.assign(payload, reminder);
   }
   if (isUrgent) payload.is_urgent = true;
+  // quickAddAssigneeIds/resolveAssignees are defined in assignees.js: the
+  // members ticked in the panel (or the one the "Membres" filter shows).
+  const assigneeIds = quickAddAssigneeIds();
+  if (assigneeIds) payload.assignee_ids = assigneeIds;
 
   // Locally-scoped id, distinct from the server's own `temp-item-*` ids
   // (assigned by sw.js when a request is queued offline) — this one only
@@ -3736,6 +3792,7 @@ listEls.createItemForm.addEventListener('submit', async (event) => {
     is_urgent: isUrgent,
     done: false,
     purchase_status: planned ? 'planned' : 'to_buy',
+    assignees: assigneeIds ? resolveAssignees(assigneeIds, state.currentList) : [],
     position: 0,
   };
   state.currentList.items = [...(state.currentList.items || []), optimisticItem];
@@ -3750,6 +3807,8 @@ listEls.createItemForm.addEventListener('submit', async (event) => {
   setRecurrenceSelection(listEls.itemRecurrence, '');
   updateRecurrenceSummary(listEls.itemRecurrence, listEls.itemRecurrenceSummary, listEls.itemRecurrenceSummaryLabel);
   updateQuickAddSchedulePill();
+  // Back to the default (the filtered member, if any) for the next one.
+  resetQuickAddAssignees(state.currentList);
   setQuickAddAdvancedExpanded(false);
   listEls.itemTitle.focus();
 
@@ -3850,6 +3909,8 @@ function openEditItemModal(item, { focus } = {}) {
   listEls.editItemActualPrice.value = item.done && typeof item.actual_price === 'number' ? item.actual_price : '';
   syncEditItemActualPrice();
   renderEditItemLabelsPreview(item);
+  // renderEditItemAssignees is defined in assignees.js ("Assignée à").
+  renderEditItemAssignees(item);
   listEls.editItemModal.hidden = false;
   TrakkaScrollLock.lock();
   if (focus === 'due-date' && !listEls.editItemDueDate.closest('[data-item-field]').hidden) {
@@ -3930,6 +3991,8 @@ function openItemActionsSheet(item, { focusLink = false } = {}) {
   // Courses list, for House members).
   updateItemActionsFavoriteButton(item);
   updateItemActionsAisleButton(item);
+  // "👤 Assigner" (assignees.js), on a task list for House members.
+  updateItemActionsAssigneesButton(item);
   // The purchase status picker and "Prix payé" row (budget.js).
   updateItemActionsPurchase(item);
   listEls.itemActionsSheet.hidden = false;
@@ -4363,6 +4426,11 @@ listEls.editItemForm.addEventListener('submit', async (event) => {
   if (visibility.aisle) payload.aisle = listEls.editItemAisle.value;
 
   const item = editingItem;
+  // Only sent when the assignees changed (editItemAssigneeIds, assignees.js)
+  // — the server refuses them from someone outside the House, and an
+  // unrelated edit has no reason to touch them.
+  const assigneeIds = editItemAssigneeIds(item);
+  if (assigneeIds) payload.assignee_ids = assigneeIds;
   const previous = {
     title: item.title,
     url: item.url,
@@ -4383,6 +4451,7 @@ listEls.editItemForm.addEventListener('submit', async (event) => {
     done: item.done,
     purchase_status: item.purchase_status,
     actual_price: item.actual_price,
+    assignees: item.assignees,
   };
   item.title = title;
   item.url = url || null;
@@ -4403,6 +4472,7 @@ listEls.editItemForm.addEventListener('submit', async (event) => {
   if ('reminder_offset_days' in payload) item.reminder_offset_days = payload.reminder_offset_days;
   if ('reminder_time' in payload) item.reminder_time = payload.reminder_time || null;
   if ('aisle' in payload) item.aisle = payload.aisle || null;
+  if (assigneeIds) item.assignees = resolveAssignees(assigneeIds, state.currentList, item.assignees || []);
   item.is_urgent = payload.is_urgent;
   renderItems();
   closeEditItemModal();

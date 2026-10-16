@@ -7,7 +7,8 @@
     "showcase": "node generate-showcase-images.js",
     "test:barcode": "node test-barcode-decoder.js",
     "test:quick-shopping": "node test-quick-shopping.js",
-    "test:budget-templates": "node test-budget-templates.js"
+    "test:budget-templates": "node test-budget-templates.js",
+    "test:assignees": "node test-assignees.js"
   },
   "devDependencies": {
     "playwright": "1.62.1"

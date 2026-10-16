@@ -537,6 +537,24 @@
     return putOne(STORE_META, { key: 'activeUserId', value: userId });
   }
 
+  // ---- Assignable users -----------------------------------------------------
+  //
+  // The last GET /api/v1/lists/{id}/assignable-users response per list
+  // ({ can_assign, users }), kept in STORE_META (one `assignableUsers:<id>`
+  // row each — small rows, not worth a store and a DB_VERSION bump of their
+  // own). sw.js serves it back offline, so the task assignee pickers
+  // (assignees.js) still list who can be assigned, and names the assignees
+  // of an assignment made offline. clearAll wipes it with the rest of the
+  // mirror.
+
+  function getAssignableUsers(listId) {
+    return getOne(STORE_META, `assignableUsers:${listId}`).then((row) => (row ? row.value : null));
+  }
+
+  function putAssignableUsers(listId, assignable) {
+    return putOne(STORE_META, { key: `assignableUsers:${listId}`, value: assignable });
+  }
+
   // clearAll wipes every mirrored store, the pending offline write queue, and
   // the mirror-ownership record.
   //
@@ -621,5 +639,7 @@
     replaceSharedCategories,
     getActiveUserId,
     setActiveUserId,
+    getAssignableUsers,
+    putAssignableUsers,
   };
 })();

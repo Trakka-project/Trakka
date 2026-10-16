@@ -67,6 +67,10 @@ function closeShareModal() {
   sharesEls.shareModal.hidden = true;
   TrakkaScrollLock.unlock();
   sharingTarget = null;
+  // forgetAssignableUsers is defined in assignees.js: self-hosted, a share
+  // recipient can be assigned the list's tasks, so the open list's assignee
+  // pickers follow a share added or revoked here.
+  forgetAssignableUsers();
 }
 
 async function loadShareRoster() {

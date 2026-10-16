@@ -461,7 +461,8 @@
       "nameDesc": "Name (Z → A)",
       "priceAsc": "Price (ascending)",
       "priceDesc": "Price (descending)",
-      "label": "Label"
+      "label": "Label",
+      "assignee": "By member"
     },
     "listOptions": {
       "title": "List options",
@@ -965,5 +966,29 @@
     "saveHintTasksOne": "The list's item, with its recurrence if it has one (but not its dates), becomes a template the whole household can start a new list of the same type from.",
     "saveHintTasksOther": "The list's {count} items, with their recurrence if they have one (but not their dates), become a template the whole household can start a new list of the same type from.",
     "needsNetwork": "Creating a list from a template needs a network connection."
+  },
+  "assignees": {
+    "quickAddLabel": "👤 For:",
+    "quickAddChip": "For {names}",
+    "quickAddChipClear": "Don't assign the next task",
+    "fieldLabel": "Assigned to",
+    "assign": "Assign",
+    "pickerTitle": "Assign to",
+    "pickerDone": "Done",
+    "pickerSubtitleOther": "For {count} selected tasks",
+    "assignedTo": "Assigned to {names}",
+    "editAriaLabel": "“{title}” is assigned to {names} — change",
+    "me": "Me",
+    "meWithName": "{name} (me)",
+    "nobody": "Nobody",
+    "unassigned": "Unassigned",
+    "unnamed": "Member",
+    "groupMine": "My tasks",
+    "groupOf": "{name}'s tasks",
+    "groupUnassigned": "Unassigned",
+    "filterHeading": "Members",
+    "rosterUnavailable": "The list of people you can assign isn't available offline.",
+    "cannotAssign": "You can't change who this list's tasks are assigned to.",
+    "noMembers": "Nobody to assign this task to."
   }
 }

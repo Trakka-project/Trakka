@@ -255,6 +255,16 @@ type Item struct {
 	// labels reports an empty array, matching internal/db's own "labels
 	// column defaults to '[]', never NULL" convention (see migration 18).
 	Labels []string `json:"labels"`
+	// Assignees are the people the item is assigned to (the item_assignees
+	// table, migration 34), in the order they were assigned. Never nil in a
+	// response — an unassigned item reports an empty array, like Labels.
+	// Set through assignee_ids on POST/PUT/PATCH /api/v1/items, to the
+	// list's assignable users (see internal/handlers/assignees.go and
+	// db.AssigneeScope: its House's members in SaaS mode; anyone who can
+	// open the list, self-hosted). A recurring
+	// task keeps its assignees from one occurrence to the next, since the
+	// same row comes back (see NextDueDate and db.ActivateNextOccurrence).
+	Assignees []ItemAssignee `json:"assignees"`
 	// Aisle is the store aisle the item is filed under, one of
 	// internal/catalog.Aisles ("produce", "dairy", ...), or nil when none is
 	// known. On a "Courses" (groceries) list a new item without one gets the
@@ -285,6 +295,38 @@ type Item struct {
 	// existing item, with its own id, and a 200 rather than a 201.
 	Merged bool `json:"merged,omitempty"`
 }
+
+// ItemAssignee is one person an item is assigned to (Item.Assignees).
+// DisplayName is the account's display name as is — possibly "" for an
+// account registered without one; the frontend then falls back on the
+// AssignableUser's email, which this deliberately doesn't carry, since
+// everyone who can read the list sees the item too.
+type ItemAssignee struct {
+	UserID      int64  `json:"user_id"`
+	DisplayName string `json:"display_name"`
+}
+
+// AssignableUser is one person the items of a list can be assigned to —
+// an entry of GET /api/v1/lists/{id}/assignable-users (see
+// db.AssignableUsers).
+type AssignableUser struct {
+	UserID      int64  `json:"user_id"`
+	DisplayName string `json:"display_name"`
+	Email       string `json:"email"`
+}
+
+// AssignableUsers is the GET /api/v1/lists/{id}/assignable-users response.
+// CanAssign says whether the caller may send assignee_ids on this list's
+// items; Users is empty when they may not see who is assignable (SaaS
+// mode, for someone outside the list's House).
+type AssignableUsers struct {
+	CanAssign bool             `json:"can_assign"`
+	Users     []AssignableUser `json:"users"`
+}
+
+// MaxItemAssignees bounds how many people one item can be assigned to — far
+// more than any household, just a cap on the request.
+const MaxItemAssignees = 50
 
 // Purchase statuses (Item.PurchaseStatus): planned while estimating, to buy
 // once confirmed, bought once checked off. Bought is Item.Done.

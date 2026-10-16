@@ -461,7 +461,8 @@
       "nameDesc": "Nom (Z → A)",
       "priceAsc": "Prix (croissant)",
       "priceDesc": "Prix (décroissant)",
-      "label": "Label"
+      "label": "Label",
+      "assignee": "Par membre"
     },
     "listOptions": {
       "title": "Options de la liste",
@@ -965,5 +966,29 @@
     "saveHintTasksOne": "L'élément de la liste, avec sa récurrence s'il en a une (mais sans ses dates), devient un modèle que toute la maison pourra utiliser à la création d'une liste du même type.",
     "saveHintTasksOther": "Les {count} éléments de la liste, avec leur récurrence s'ils en ont une (mais sans leurs dates), deviennent un modèle que toute la maison pourra utiliser à la création d'une liste du même type.",
     "needsNetwork": "Créer une liste à partir d'un modèle nécessite une connexion réseau."
+  },
+  "assignees": {
+    "quickAddLabel": "👤 Pour :",
+    "quickAddChip": "Pour {names}",
+    "quickAddChipClear": "Ne pas assigner la prochaine tâche",
+    "fieldLabel": "Assignée à",
+    "assign": "Assigner",
+    "pickerTitle": "Assigner à",
+    "pickerDone": "OK",
+    "pickerSubtitleOther": "Pour {count} tâches sélectionnées",
+    "assignedTo": "Assignée à {names}",
+    "editAriaLabel": "« {title} » est assignée à {names} — modifier",
+    "me": "Moi",
+    "meWithName": "{name} (moi)",
+    "nobody": "Personne",
+    "unassigned": "Non assignées",
+    "unnamed": "Membre",
+    "groupMine": "Mes tâches",
+    "groupOf": "Tâches de {name}",
+    "groupUnassigned": "Non assignées",
+    "filterHeading": "Membres",
+    "rosterUnavailable": "La liste des personnes assignables n'est pas disponible hors ligne.",
+    "cannotAssign": "Vous ne pouvez pas modifier les assignations de cette liste.",
+    "noMembers": "Personne à qui assigner cette tâche."
   }
 }

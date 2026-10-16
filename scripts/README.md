@@ -59,6 +59,18 @@ SHOTS_DIR=/tmp/shots npm run test:budget-templates  # also saves a screenshot at
 
 It creates a list from the "Rentrée scolaire" built-in template through the "Nouvelle liste" modal's picker (name, icon and type filled in, a typed name kept), checks its items arrive planned with their prices and aisles and its budget, confirms planned items (one tag tap, then "Valider les articles prévus"), checks an item off and enters the price paid from the toast's "Prix payé" button, checks the variance in the summary (red overrun, then a green saving, in step with the server's `budget`), moves an item back to "Prévu" from its actions sheet, edits a price paid in the edit modal, saves the list as a House template (the price paid becoming the estimate), creates a list from it and deletes it from the picker, switches the type to "Tâches" and checks the picker then offers the task templates only (no price, the type picked automatically, a task template dropped again on a switch back to a purchase type, no picker for "Liste libre"), creates the chores list (recurring tasks, no budget, no "Prévu", 🔁 cadence badges) and saves it as a House template offered under "Tâches" only, measures the template carousel at 390, 360 and 320 px (inside the dialog's padding, aligned with the fields, a 16 px margin after the last card at full scroll) and swipes it with raw touch events to check it snaps to a card, checks the picker's offline message and that a Courses list without prices shows no budget, and that nothing is wider than a 320 px phone — the collapsed summary included. Requirements as above.
 
+## `test-assignees.js`
+
+End-to-end check of task assignments in headless Chromium, against a freshly built server on a throwaway database:
+
+```bash
+cd scripts
+npm run test:assignees                       # prints ok/FAIL per check, exits 1 on any failure
+SHOTS_DIR=/tmp/shots npm run test:assignees  # also saves a screenshot at each step
+```
+
+It builds a House of three (Camille, Thomas and Sarah, invited by email) plus a list-share recipient, and checks the avatars on task rows (with their contrast in light and dark), the "Par membre" grouping (a task shared by two people under both headings), the "Membres" filter (a task added while "Moi" is on is assigned to me and stays in view), the picker sheet from the actions sheet and from the avatars, the edit modal's field, the multi-select "Assigner" (tri-state), a recurring assigned task checked off (kept assigned once the undo window commits it), the share recipient joining the assignable people once the list is shared with them — and assigning a task to themselves — (self-hosted, the default), an assignment made offline through the service worker (named from the roster mirror, still there after a reload, synced once back online), and at 320 px that nothing overflows and an assigned task's title is as wide as an unassigned one's. It then starts a second server with `SAAS_MODE=true` and checks that a share recipient there can neither be assigned nor assign, and only gets a read-only view. Requirements as above.
+
 ## `test-barcode-decoder.js`
 
 Unit test of `static/js/barcode.js`, the scanner's own EAN-13/EAN-8 decoder, with no browser: synthetic symbols with blur, noise, a lighting gradient, upside down and vertical must be read; random stripes and a wrong check digit must not. `npm run test:barcode`.

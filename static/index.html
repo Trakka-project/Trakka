@@ -509,6 +509,20 @@
             </button>
           </div>
 
+          <!-- Who the next task will be assigned to, while the panel above is
+               collapsed (assignees.js: updateQuickAddAssigneesChip) —
+               typically the member the "Membres" filter shows. -->
+          <div id="quick-add-assignees-chip" hidden class="mt-2 flex items-center gap-2">
+            <span class="inline-flex min-w-0 items-center gap-1.5 rounded-full border border-sky-500/40 bg-sky-500/10 py-1 pl-3 pr-1 text-sm font-medium text-sky-700 dark:text-sky-300">
+              <span aria-hidden="true">👤</span>
+              <span id="quick-add-assignees-chip-label" class="truncate"></span>
+              <button type="button" id="quick-add-assignees-chip-clear" data-i18n-aria-label="assignees.quickAddChipClear" aria-label="Ne pas assigner la prochaine tâche"
+                      class="flex h-8 w-8 shrink-0 items-center justify-center rounded-full hover:bg-sky-500/20">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" class="h-4 w-4" aria-hidden="true"><path d="M18 6L6 18M6 6l12 12"/></svg>
+              </button>
+            </span>
+          </div>
+
           <!-- A scanned barcode waiting for the product's name (quick-shop.js's
                prefillFromScan): sent with the next addition, so the House
                catalog recognizes the code next time. -->
@@ -590,6 +604,12 @@
               <input type="time" id="item-reminder-time" placeholder="--:--" data-i18n-aria-label="items.reminderTimeAriaLabel" aria-label="Heure du rappel"
                      class="rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-3 text-base text-slate-900 dark:text-slate-100 focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500/30">
             </div>
+            <!-- Task lists, for whoever may assign: who the new task is for —
+                 one toggle per assignable person (assignees.js). -->
+            <div id="item-assignees-field" hidden class="flex basis-full flex-wrap items-center gap-2">
+              <span id="item-assignees-label" data-i18n="assignees.quickAddLabel" class="text-sm font-medium text-slate-600 dark:text-slate-300">👤 Pour :</span>
+              <div id="item-assignees" role="group" aria-labelledby="item-assignees-label" class="flex min-w-0 flex-wrap gap-1.5"></div>
+            </div>
             <label data-item-field="urgent" class="flex min-h-[44px] cursor-pointer items-center gap-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 text-sm font-medium text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-800">
               <input type="checkbox" id="item-urgent" data-i18n-aria-label="items.urgentAriaLabel" aria-label="Marquer comme urgent"
                      class="h-4 w-4 rounded border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 text-rose-600 dark:text-rose-500 focus:ring-rose-500/40">
@@ -669,6 +689,12 @@
                     class="flex min-h-[52px] min-w-0 flex-col items-center justify-center gap-0.5 rounded-xl px-1 py-1.5 text-xs font-medium text-slate-700 dark:text-slate-200 hover:bg-slate-200 dark:hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-40">
               <span aria-hidden="true" class="text-lg leading-none">🏷️</span>
               <span data-i18n="bulk.labels" class="max-w-full truncate">Labels</span>
+            </button>
+            <!-- Task lists, for whoever may assign (assignees.js). -->
+            <button type="button" id="bulk-assignees-button" hidden aria-haspopup="dialog" aria-controls="assignee-picker-sheet"
+                    class="flex min-h-[52px] min-w-0 flex-col items-center justify-center gap-0.5 rounded-xl px-1 py-1.5 text-xs font-medium text-slate-700 dark:text-slate-200 hover:bg-slate-200 dark:hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-40">
+              <span aria-hidden="true" class="text-lg leading-none">👤</span>
+              <span data-i18n="assignees.assign" class="max-w-full truncate">Assigner</span>
             </button>
             <button type="button" id="bulk-target-month-button" hidden
                     class="flex min-h-[52px] min-w-0 flex-col items-center justify-center gap-0.5 rounded-xl px-1 py-1.5 text-xs font-medium text-slate-700 dark:text-slate-200 hover:bg-slate-200 dark:hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-40">
@@ -1941,6 +1967,15 @@
           <p class="mt-1 text-xs text-slate-500" data-i18n="modals.editItem.urgentHint">Ex : Papier toilette épuisé</p>
         </div>
 
+        <!-- Task lists: the people the task is assigned to
+             (assignees.js: renderEditItemAssignees) — toggles for whoever
+             may assign, a read-only line for anyone else. -->
+        <div id="edit-item-assignees-field" hidden>
+          <span id="edit-item-assignees-label" data-i18n="assignees.fieldLabel" class="mb-1 block text-sm font-medium text-slate-600 dark:text-slate-300">Assignée à</span>
+          <div id="edit-item-assignees" role="group" aria-labelledby="edit-item-assignees-label" class="flex flex-wrap gap-2"></div>
+          <p id="edit-item-assignees-note" hidden class="text-sm text-slate-500 dark:text-slate-400"></p>
+        </div>
+
         <div>
           <div class="mb-1 flex items-center justify-between gap-2">
             <span class="block text-sm font-medium text-slate-600 dark:text-slate-300" data-i18n="modals.editItem.labelsLabel">Labels</span>
@@ -2107,6 +2142,14 @@
           <span data-i18n="quickShop.changeAisle">Rayon</span>
           <span id="item-actions-aisle-value" class="ml-auto min-w-0 truncate text-sm font-normal text-slate-500 dark:text-slate-400"></span>
         </button>
+        <!-- Task lists, for whoever may assign: who the task is assigned to,
+             opening #assignee-picker-sheet (assignees.js). -->
+        <button type="button" id="item-actions-assignees-button" hidden aria-haspopup="dialog" aria-controls="assignee-picker-sheet"
+                class="flex items-center gap-3 rounded-xl px-3 py-3 text-left text-base font-medium text-slate-900 dark:text-slate-100 hover:bg-slate-200 dark:hover:bg-slate-700">
+          <span aria-hidden="true">👤</span>
+          <span data-i18n="assignees.assign" class="shrink-0">Assigner</span>
+          <span id="item-actions-assignees-value" class="ml-auto min-w-0 truncate text-sm font-normal text-slate-500 dark:text-slate-400"></span>
+        </button>
         <button type="button" id="item-actions-labels-button"
                 class="flex items-center gap-3 rounded-xl px-3 py-3 text-left text-base font-medium text-slate-900 dark:text-slate-100 hover:bg-slate-200 dark:hover:bg-slate-700">
           <span aria-hidden="true">🏷️</span>
@@ -2212,6 +2255,14 @@
                 class="flex items-center gap-3 rounded-xl px-3 py-3 text-left text-base font-medium text-slate-900 dark:text-slate-100 hover:bg-slate-200 dark:hover:bg-slate-700">
           <span aria-hidden="true">🛒</span>
           <span data-i18n="modals.sortItems.aisle">Par rayon</span>
+          <span class="sort-option-check ml-auto text-lg text-sky-500 dark:text-sky-400" hidden aria-hidden="true">✓</span>
+        </button>
+        <!-- Task lists: one group per House member, "Mes tâches" first
+             (assignees.js: groupItemsByAssignee). -->
+        <button type="button" id="sort-option-assignee" data-sort-mode="assignee" data-item-field="assignees" hidden
+                class="flex items-center gap-3 rounded-xl px-3 py-3 text-left text-base font-medium text-slate-900 dark:text-slate-100 hover:bg-slate-200 dark:hover:bg-slate-700">
+          <span aria-hidden="true">👥</span>
+          <span data-i18n="modals.sortItems.assignee">Par membre</span>
           <span class="sort-option-check ml-auto text-lg text-sky-500 dark:text-sky-400" hidden aria-hidden="true">✓</span>
         </button>
         <button type="button" id="sort-option-urgent" data-sort-mode="urgent"
@@ -2398,6 +2449,12 @@
             </button>
           </div>
         </div>
+        <!-- Task lists: whose tasks to show — "Moi", each member, "Non
+             assignées" (assignees.js: renderFilterAssigneeChips). -->
+        <div id="filter-assignees-section" hidden class="mb-4">
+          <h3 class="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400" data-i18n="assignees.filterHeading">Membres</h3>
+          <div id="filter-assignees-chips" class="flex flex-wrap gap-2"></div>
+        </div>
         <div id="filter-labels-section" hidden class="mb-4">
           <h3 class="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400" data-i18n="modals.filterItems.labelsHeading">Labels</h3>
           <div id="filter-labels-chips" class="flex flex-wrap gap-2"></div>
@@ -2567,6 +2624,26 @@
     </div>
   </div>
 
+  <!-- Assignee picker (assignees.js's openAssigneePicker): from a task's
+       avatars, its actions sheet, or the multi-select bar. Each tap assigns
+       or unassigns that member right away. -->
+  <div id="assignee-picker-sheet" hidden class="fixed inset-0 z-40 flex items-end justify-center bg-slate-950/30 dark:bg-slate-950/70 p-0 sm:items-center sm:p-4">
+    <div role="dialog" aria-modal="true" aria-labelledby="assignee-picker-title" class="flex max-h-[85vh] w-full flex-col overflow-hidden rounded-t-2xl bg-slate-100 dark:bg-slate-800 p-5 shadow-xl sm:max-w-md sm:rounded-2xl">
+      <div class="mb-1 flex shrink-0 items-center justify-between gap-3">
+        <h2 id="assignee-picker-title" data-i18n="assignees.pickerTitle" class="min-w-0 flex-1 truncate text-lg font-semibold">Assigner à</h2>
+        <button type="button" id="close-assignee-picker-sheet-button" data-i18n-aria-label="modals.close" aria-label="Fermer"
+                class="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-slate-500 dark:text-slate-400 hover:bg-slate-300 dark:hover:bg-slate-700 hover:text-slate-900 dark:hover:text-slate-200">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" class="h-5 w-5" aria-hidden="true"><path d="M18 6L6 18M6 6l12 12"/></svg>
+        </button>
+      </div>
+      <p id="assignee-picker-subtitle" class="mb-3 shrink-0 truncate text-sm text-slate-500 dark:text-slate-400"></p>
+      <div id="assignee-picker-options" role="group" aria-labelledby="assignee-picker-title" class="flex min-h-0 flex-col gap-2 overflow-y-auto"></div>
+      <p id="assignee-picker-status" hidden role="status" class="text-sm text-slate-500 dark:text-slate-400"></p>
+      <button type="button" id="assignee-picker-done-button" data-i18n="assignees.pickerDone"
+              class="mt-4 w-full shrink-0 rounded-xl bg-sky-500 px-4 py-3 text-base font-semibold text-white transition hover:bg-sky-400 active:scale-[0.98]">OK</button>
+    </div>
+  </div>
+
   <!-- Barcode scanner (scanner.js): the camera with a guide, decoded on the
        device (BarcodeDetector, else barcode.js), and the code typed by hand
        as a fallback. Not used inside the Android app, which scans natively.
@@ -2695,6 +2772,7 @@
   <script src="/js/scanner.js" defer></script>
   <script src="/js/quick-shop.js" defer></script>
   <script src="/js/budget.js" defer></script>
+  <script src="/js/assignees.js" defer></script>
   <script src="/js/planning.js" defer></script>
   <script src="/js/urgent.js" defer></script>
   <script src="/js/spaces.js" defer></script>
