@@ -212,6 +212,7 @@ New Trakka versions need no new APK: the app always shows the server's current T
 | The "Android APK" workflow stops on a missing secret | The repository secrets aren't set up: see [Setting up the secrets](#setting-up-the-secrets), then run the workflow by hand from the release's tag |
 | The workflow fails at "Attach the APK to the release" | It was run by hand from a tag that has no GitHub release yet: publish the release, which runs the workflow by itself |
 | The build can't resolve or download anything | The container has no working DNS (common with `systemd-resolved` or a VPN, see [DEPLOYMENT.md](DEPLOYMENT.md#when-the-build-cant-download-go-modules)): `make build-apk-capacitor APK_RUN_FLAGS=--network=host APK_IMAGE_BUILD_FLAGS=--network=host` |
+| `uv_os_get_passwd returned ENOENT` at "cap sync" (Docker, or the GitHub workflow) | The builder image predates its nss_wrapper entrypoint, which gives your UID the `/etc/passwd` entry Docker's `--user` doesn't add (the Capacitor CLI needs one): rebuild it, which `make build-apk-capacitor` does by itself on an up-to-date checkout |
 | `permission denied` writing under `android/`, with rootless Docker | Run as the container's root, which is you there: `make build-apk-capacitor APK_USER_FLAGS=` |
 
 ## Security
