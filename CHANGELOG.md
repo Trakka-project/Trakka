@@ -1,5 +1,11 @@
 ## [unreleased]
 
+## [1.3.1] - 2026-10-16
+
+### 🐛 Bug Fixes
+
+- *fix(apk)*: Change image on apk build and fix entrypoint because of error on build
+
 ## [1.3.0] - 2026-10-16
 
 ### 🚀 Features

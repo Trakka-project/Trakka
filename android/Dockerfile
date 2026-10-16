@@ -37,6 +37,7 @@ ENV PATH=$JAVA_HOME/bin:$ANDROID_HOME/cmdline-tools/latest/bin:$PATH
 RUN mkdir -p /usr/share/man/man1 \
  && apt-get update \
  && apt-get install -y --no-install-recommends openjdk-21-jdk-headless unzip curl ca-certificates \
+      libnss-wrapper \
  && rm -rf /var/lib/apt/lists/* \
  && ln -s "$(dirname "$(dirname "$(readlink -f "$(command -v javac)")")")" "$JAVA_HOME"
 
@@ -50,8 +51,10 @@ RUN curl -fsSLo /tmp/cmdline-tools.zip \
  && yes | sdkmanager --sdk_root="$ANDROID_HOME" "platforms;${ANDROID_PLATFORM}" "build-tools;${ANDROID_BUILD_TOOLS}" platform-tools >/dev/null
 
 # The build runs as your own UID (see the Makefile), which has no home directory in this image:
-# give it a writable one. Gradle's and npm's downloads go to /cache, which the Makefile mounts
-# from the host so that they survive between builds.
+# give it a writable one. It may have no /etc/passwd entry either (Docker's `--user`, e.g. UID
+# 1001 on GitHub's runners): entrypoint.sh then lends it one through nss_wrapper
+# (libnss-wrapper above), which the Capacitor CLI needs. Gradle's and npm's downloads go to
+# /cache, which the Makefile mounts from the host so that they survive between builds.
 RUN mkdir -m 1777 /tmp/home /cache /cache/gradle /cache/npm
 ENV HOME=/tmp/home \
     ANDROID_USER_HOME=/tmp/home/.android \
@@ -59,6 +62,8 @@ ENV HOME=/tmp/home \
     npm_config_cache=/cache/npm \
     npm_config_update_notifier=false
 
+COPY --chmod=755 entrypoint.sh /usr/local/bin/trakka-apk-entrypoint
+
 WORKDIR /work/android
-ENTRYPOINT ["node", "build.mjs"]
+ENTRYPOINT ["/usr/local/bin/trakka-apk-entrypoint"]
 CMD ["build"]

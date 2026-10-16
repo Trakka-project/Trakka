@@ -17,8 +17,9 @@ APK_RUN_FLAGS ?=
 APK_IMAGE_BUILD_FLAGS ?=
 
 # Run as yourself, so that everything written under android/ stays yours: Podman maps your user
-# into the container, rootful Docker gets your UID. With rootless Docker, pass APK_USER_FLAGS=
-# (the container's root is you).
+# into the container, rootful Docker gets your UID (which may have no /etc/passwd entry in the
+# image, e.g. 1001 on GitHub's runners: android/entrypoint.sh lends it one). With rootless Docker,
+# pass APK_USER_FLAGS= (the container's root is you).
 ifneq ($(findstring podman,$(shell $(CONTAINER_ENGINE) --version 2>/dev/null)),)
 APK_USER_FLAGS ?= --userns=keep-id
 else
