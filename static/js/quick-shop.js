@@ -22,10 +22,14 @@
 const QUICK_SHOP_LIST_TYPES = ['groceries'];
 
 // internal/catalog.Aisles, in the same (shop walk) order.
-const QUICK_SHOP_AISLES = ['produce', 'bakery', 'meat_fish', 'dairy', 'pantry', 'breakfast', 'drinks', 'baby', 'pets', 'household', 'hygiene', 'frozen', 'other'];
+const QUICK_SHOP_AISLES = [
+  'produce', 'bakery', 'meat_fish', 'dairy', 'pantry', 'breakfast', 'drinks', 'baby', 'pets', 'household', 'hygiene',
+  'stationery', 'clothing', 'electronics', 'diy', 'frozen', 'other',
+];
 const AISLE_EMOJI = {
   produce: '🥕', bakery: '🥖', meat_fish: '🥩', dairy: '🧀', pantry: '🥫', breakfast: '🍪', drinks: '🥤',
-  baby: '🍼', pets: '🐾', household: '🧽', hygiene: '🧴', frozen: '🧊', other: '🛒',
+  baby: '🍼', pets: '🐾', household: '🧽', hygiene: '🧴',
+  stationery: '✏️', clothing: '👕', electronics: '🔌', diy: '🔧', frozen: '🧊', other: '🛒',
 };
 const MAX_ITEM_QUANTITY = 100000; // internal/handlers.maxItemQuantity
 const AUTOCOMPLETE_DEBOUNCE_MS = 120;
@@ -426,7 +430,10 @@ function mergedQuantity(existing, requested) {
 // created. Resolves once the request settles, with 'merged' or 'created'.
 // A merge is announced by a toast unless quiet (the ⭐ panel shows it on
 // the product's own chip instead).
-async function addQuickShopItem({ title, quantity = 1, aisle = '', aisleHint = '', barcode = '', urgent = false, quiet = false }) {
+// `price` (an estimate, or null) and `planned` come from the quick-add
+// form's advanced panel; a product already on the list only gets the price
+// when it has none, and always comes back "to buy".
+async function addQuickShopItem({ title, quantity = 1, aisle = '', aisleHint = '', barcode = '', urgent = false, quiet = false, price = null, planned = false }) {
   const list = state.currentList;
   if (!list) return null;
   const existing = findDuplicateItem(list.items, title);
@@ -439,27 +446,37 @@ async function addQuickShopItem({ title, quantity = 1, aisle = '', aisleHint = '
     // stays a PATCH — a queued POST would put a duplicate in the mirror —
     // and the code is filed the next time the product is added.
     const filing = barcode && navigator.onLine ? { title, barcode, aisleHint, quantity } : null;
-    await bringBackItem(existing, quantity, { aisle: aisle || aisleHint, urgent, quiet, filing });
+    await bringBackItem(existing, quantity, { aisle: aisle || aisleHint, urgent, quiet, filing, price });
     outcome = 'merged';
   } else {
-    outcome = await createQuickShopItem({ title, quantity, aisle, aisleHint, barcode, urgent, quiet });
+    outcome = await createQuickShopItem({ title, quantity, aisle, aisleHint, barcode, urgent, quiet, price, planned });
   }
   if (!quickShopEls.sheet.hidden) renderQuickShopPanel();
   return outcome;
 }
 
-async function bringBackItem(item, quantity, { aisle, urgent, quiet, filing = null }) {
+async function bringBackItem(item, quantity, { aisle, urgent, quiet, filing = null, price = null }) {
   const wasDone = item.done;
-  const previous = { done: item.done, quantity: item.quantity, aisle: item.aisle, is_urgent: item.is_urgent, next_due_date: item.next_due_date };
-  const payload = { done: false, quantity: mergedQuantity(item, quantity) };
+  const previous = {
+    done: item.done, quantity: item.quantity, aisle: item.aisle, is_urgent: item.is_urgent, next_due_date: item.next_due_date,
+    price: item.price, purchase_status: item.purchase_status, actual_price: item.actual_price,
+  };
+  // Adding a product is wanting it: back "to buy" (not planned), any price
+  // paid for its previous purchase dropped — the server's POST merge does
+  // the same (db.ReactivateItem).
+  const payload = { done: false, purchase_status: 'to_buy', actual_price: null, quantity: mergedQuantity(item, quantity) };
   if (!item.aisle && aisle) payload.aisle = aisle;
   if (urgent && !item.is_urgent) payload.is_urgent = true;
+  if (price !== null && typeof item.price !== 'number') payload.price = price;
 
   item.done = false;
   item.next_due_date = null;
+  item.purchase_status = 'to_buy';
+  item.actual_price = null;
   item.quantity = payload.quantity;
   if (payload.aisle) item.aisle = payload.aisle;
   if (payload.is_urgent) item.is_urgent = true;
+  if ('price' in payload) item.price = payload.price;
   renderItems();
   if (!quiet) {
     TrakkaToast.success(wasDone
@@ -495,7 +512,7 @@ async function bringBackItem(item, quantity, { aisle, urgent, quiet, filing = nu
   }
 }
 
-async function createQuickShopItem({ title, quantity, aisle, aisleHint, barcode, urgent, quiet }) {
+async function createQuickShopItem({ title, quantity, aisle, aisleHint, barcode, urgent, quiet, price = null, planned = false }) {
   const list = state.currentList;
   const known = [...quickShop.favorites, ...quickShop.recurring].find((p) => productKey(p.name) === productKey(title));
   const optimisticItem = {
@@ -507,6 +524,8 @@ async function createQuickShopItem({ title, quantity, aisle, aisleHint, barcode,
     aisle: aisle || (known && known.aisle) || aisleHint || null,
     is_urgent: urgent,
     done: false,
+    purchase_status: planned ? 'planned' : 'to_buy',
+    price,
     position: 0,
     labels: [],
   };
@@ -514,6 +533,8 @@ async function createQuickShopItem({ title, quantity, aisle, aisleHint, barcode,
   renderItems();
 
   const payload = { list_id: list.id, title, quantity: optimisticItem.quantity };
+  if (price !== null) payload.price = price;
+  if (planned) payload.purchase_status = 'planned';
   if (aisle) payload.aisle = aisle;
   if (aisleHint) payload.aisle_hint = aisleHint;
   if (barcode) payload.barcode = barcode;

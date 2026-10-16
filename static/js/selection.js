@@ -367,6 +367,9 @@ function bulkToggleDone() {
     const pending = pendingToggles.get(item);
     const committedDone = pending ? pending.committedDone : item.done;
     const committedNextDueDate = pending ? pending.committedNextDueDate : (item.next_due_date ?? null);
+    const committedPurchase = pending
+      ? pending.committedPurchase
+      : { purchase_status: item.purchase_status ?? null, actual_price: item.actual_price ?? null };
     if (pending) pending.dismiss();
     // Same optimistic state as toggleDone (setItemDoneOptimistic is
     // defined in list_view.js).
@@ -374,8 +377,9 @@ function bulkToggleDone() {
     if (newDone === committedDone) {
       pendingToggles.delete(item); // back to the server-confirmed state — nothing to send
       item.next_due_date = committedNextDueDate;
+      Object.assign(item, committedPurchase);
     } else {
-      entries.push({ item, committedDone, committedNextDueDate });
+      entries.push({ item, committedDone, committedNextDueDate, committedPurchase });
     }
   }
   renderItems();
@@ -389,11 +393,12 @@ function bulkToggleDone() {
     message: t(`bulk.${newDone ? 'markedDone' : 'markedUndone'}${plural}`, { count: entries.length }),
     undoLabel: t('undo.cancel'),
     onUndo: () => {
-      for (const { item, committedDone, committedNextDueDate } of entries) {
+      for (const { item, committedDone, committedNextDueDate, committedPurchase } of entries) {
         if (!ownsItem(item)) continue;
         pendingToggles.delete(item);
         item.done = committedDone;
         item.next_due_date = committedNextDueDate;
+        Object.assign(item, committedPurchase);
       }
       renderItems();
       notifyItemsChanged(listId, list.items);
@@ -402,14 +407,17 @@ function bulkToggleDone() {
       const toSend = entries.filter(({ item }) => ownsItem(item));
       for (const { item } of toSend) pendingToggles.delete(item);
       const errors = [];
-      await runWithConcurrency(toSend, BULK_REQUEST_CONCURRENCY, async ({ item, committedDone, committedNextDueDate }) => {
+      await runWithConcurrency(toSend, BULK_REQUEST_CONCURRENCY, async ({ item, committedDone, committedNextDueDate, committedPurchase }) => {
         try {
-          const updated = await apiRequest(`/items/${item.id}`, { method: 'PATCH', body: JSON.stringify({ done: newDone }) });
+          // donePatchPayload (budget.js) adds the purchase status on a
+          // purchase list, like toggleDone's.
+          const updated = await apiRequest(`/items/${item.id}`, { method: 'PATCH', body: JSON.stringify(donePatchPayload(list, newDone)) });
           // mergeServerItem is defined in list_view.js.
           mergeServerItem(item, updated);
         } catch (err) {
           item.done = committedDone;
           item.next_due_date = committedNextDueDate;
+          Object.assign(item, committedPurchase);
           errors.push(err);
         }
       });
@@ -426,9 +434,9 @@ function bulkToggleDone() {
       await refreshPendingBadge();
     },
   });
-  for (const { item, committedDone, committedNextDueDate } of entries) {
+  for (const { item, committedDone, committedNextDueDate, committedPurchase } of entries) {
     // dismiss is a no-op: superseding one item must not cancel the batch.
-    pendingToggles.set(item, { batch, committedDone, committedNextDueDate, dismiss() {} });
+    pendingToggles.set(item, { batch, committedDone, committedNextDueDate, committedPurchase, dismiss() {} });
   }
 }
 

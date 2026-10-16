@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"strings"
 
+	"trakka/internal/budget"
 	"trakka/internal/models"
 )
 
@@ -31,11 +32,22 @@ import (
 // <= 0. SUM() over zero matching rows (no unchecked priced items at all)
 // returns SQL NULL, which is exactly the "nothing to show" signal
 // TotalAmount's nil case relies on — no COALESCE needed.
+//
+// The two subqueries after it are the rest of the list's budget (see
+// models.List.Budget and internal/budget.Sums, which scanListRow builds it
+// from): bought_estimated, the estimate of every bought (done) item, and
+// spent, what those cost — actual_price when one was entered, the estimate
+// otherwise. total_amount is the third sum, the estimate of what is left to
+// buy. All three NULL means no item has any price at all: no budget.
 const listSelect = `
 	SELECT lists.id, lists.house_id, lists.name, lists.type, lists.icon, lists.created_at, lists.updated_at, lists.custom_category_id,
 	       cc.id, cc.user_id, cc.name, cc.icon, cc.color, cc.position, cc.created_at,
 	       (SELECT SUM(items.price * CASE WHEN items.quantity > 0 THEN items.quantity ELSE 1 END)
-	          FROM items WHERE items.list_id = lists.id AND items.price IS NOT NULL AND items.done = 0) AS total_amount
+	          FROM items WHERE items.list_id = lists.id AND items.price IS NOT NULL AND items.done = 0) AS total_amount,
+	       (SELECT SUM(items.price * CASE WHEN items.quantity > 0 THEN items.quantity ELSE 1 END)
+	          FROM items WHERE items.list_id = lists.id AND items.price IS NOT NULL AND items.done = 1) AS bought_estimated,
+	       (SELECT SUM(COALESCE(items.actual_price, items.price) * CASE WHEN items.quantity > 0 THEN items.quantity ELSE 1 END)
+	          FROM items WHERE items.list_id = lists.id AND COALESCE(items.actual_price, items.price) IS NOT NULL AND items.done = 1) AS spent
 	FROM lists LEFT JOIN custom_categories cc ON cc.id = lists.custom_category_id`
 
 func scanListRow(row rowScanner) (*models.List, error) {
@@ -45,9 +57,9 @@ func scanListRow(row rowScanner) (*models.List, error) {
 	var catUserID sql.NullInt64
 	var catName, catIcon, catColor, catCreatedAt sql.NullString
 	var catPosition sql.NullInt64
-	var totalAmount sql.NullFloat64
+	var totalAmount, boughtEstimated, spent sql.NullFloat64
 	if err := row.Scan(&l.ID, &l.HouseID, &l.Name, &l.Type, &l.Icon, &l.CreatedAt, &l.UpdatedAt, &customCategoryID,
-		&catID, &catUserID, &catName, &catIcon, &catColor, &catPosition, &catCreatedAt, &totalAmount); err != nil {
+		&catID, &catUserID, &catName, &catIcon, &catColor, &catPosition, &catCreatedAt, &totalAmount, &boughtEstimated, &spent); err != nil {
 		return nil, err
 	}
 	if customCategoryID.Valid {
@@ -69,7 +81,27 @@ func scanListRow(row rowScanner) (*models.List, error) {
 		amount := totalAmount.Float64
 		l.TotalAmount = &amount
 	}
+	if totalAmount.Valid || boughtEstimated.Valid || spent.Valid {
+		l.Budget = listBudget(budget.Sums{
+			RemainingEstimated: totalAmount.Float64,
+			BoughtEstimated:    boughtEstimated.Float64,
+			Spent:              spent.Float64,
+		})
+	}
 	return l, nil
+}
+
+// listBudget is internal/budget.Summarize in the API's shape.
+func listBudget(sums budget.Sums) *models.ListBudget {
+	summary := budget.Summarize(sums)
+	return &models.ListBudget{
+		EstimatedTotal: summary.EstimatedTotal,
+		SpentTotal:     summary.SpentTotal,
+		RemainingTotal: summary.RemainingTotal,
+		ProjectedTotal: summary.ProjectedTotal,
+		Variance:       summary.Variance,
+		VarianceStatus: summary.Status,
+	}
 }
 
 // ListListsForUser returns lists belonging to houses userID is a member

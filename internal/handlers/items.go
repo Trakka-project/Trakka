@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"trakka/internal/db"
 	"trakka/internal/models"
@@ -74,6 +75,37 @@ func validateDueTime(raw, dueDate string) (string, error) {
 	return dueTime, nil
 }
 
+// Purchase-cycle validation errors (see models.Item.PurchaseStatus and
+// ActualPrice).
+var (
+	errInvalidPurchaseStatus  = errors.New("purchase_status must be one of 'planned', 'to_buy', 'bought'")
+	errPurchaseStatusConflict = errors.New("purchase_status contradicts done")
+	errActualPriceNotBought   = errors.New("actual_price can only be set on a bought item")
+	errActualPriceNegative    = errors.New("actual_price cannot be negative")
+)
+
+// parsePurchaseStatus validates a purchase_status sent by a client and
+// reports the done and is_planned flags it stands for.
+func parsePurchaseStatus(raw string) (status string, done, planned bool, err error) {
+	status = strings.TrimSpace(raw)
+	if !models.ValidPurchaseStatuses[status] {
+		return "", false, false, errInvalidPurchaseStatus
+	}
+	return status, status == models.PurchaseBought, status == models.PurchasePlanned, nil
+}
+
+// purchaseColumns returns the is_planned and actual_price an item must be
+// stored with once it ends up done (bought) or not: planned only while not
+// bought, an actual price only while bought — buying an item confirms it,
+// and taking it out of "bought" makes its next purchase a new one (see
+// migration 32).
+func purchaseColumns(done, planned bool, actualPrice *float64) (bool, *float64) {
+	if done {
+		return false, actualPrice
+	}
+	return planned, nil
+}
+
 func (app *Application) handleItemsIndex(w http.ResponseWriter, r *http.Request) {
 	listIDStr := r.URL.Query().Get("list_id")
 	if listIDStr == "" {
@@ -131,6 +163,7 @@ func (app *Application) handleItemsCreate(w http.ResponseWriter, r *http.Request
 		Aisle                 string   `json:"aisle"`
 		AisleHint             string   `json:"aisle_hint"`
 		Barcode               string   `json:"barcode"`
+		PurchaseStatus        string   `json:"purchase_status"`
 	}
 	if !decodeJSON(w, r, &in) {
 		return
@@ -227,6 +260,20 @@ func (app *Application) handleItemsCreate(w http.ResponseWriter, r *http.Request
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
+	// A new item is planned or to buy (the default); "bought" is reached by
+	// checking it off, which is what runs the check-off side effects.
+	createPlanned := false
+	if in.PurchaseStatus != "" {
+		status, _, planned, err := parsePurchaseStatus(in.PurchaseStatus)
+		if err == nil && status == models.PurchaseBought {
+			err = errors.New("a new item is 'planned' or 'to_buy'; check it off to mark it bought")
+		}
+		if err != nil {
+			writeError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		createPlanned = planned
+	}
 
 	list, err := app.DB.GetList(r.Context(), in.ListID)
 	if errors.Is(err, db.ErrNotFound) {
@@ -296,6 +343,16 @@ func (app *Application) handleItemsCreate(w http.ResponseWriter, r *http.Request
 	if err != nil {
 		app.serverError(w, r, err)
 		return
+	}
+	// Like labels, only written when there's something to store: a fresh
+	// item is "to buy". (A merged item, answered above, always comes back
+	// "to buy" — adding a product is wanting it, see db.ReactivateItem.)
+	if createPlanned {
+		item, err = app.DB.SetItemPurchase(r.Context(), item.ID, true, nil)
+		if err != nil {
+			app.serverError(w, r, err)
+			return
+		}
 	}
 	// A new item is never done, so it has no next occurrence to schedule —
 	// only a due time needs writing.
@@ -406,6 +463,8 @@ func (app *Application) handleItemsUpdate(w http.ResponseWriter, r *http.Request
 		ReminderAtDueTime     *bool    `json:"reminder_at_due_time"`
 		DueTime               string   `json:"due_time"`
 		Aisle                 string   `json:"aisle"`
+		PurchaseStatus        string   `json:"purchase_status"`
+		ActualPrice           *float64 `json:"actual_price"`
 	}
 	if !decodeJSON(w, r, &in) {
 		return
@@ -415,6 +474,28 @@ func (app *Application) handleItemsUpdate(w http.ResponseWriter, r *http.Request
 	if in.Title == "" {
 		writeError(w, http.StatusBadRequest, "title is required")
 		return
+	}
+	// PUT is a full replace and `done` can't be told absent from false, so
+	// a purchase_status, when sent, is what decides done; without one the
+	// item is bought or to buy per done, no longer planned.
+	planned := false
+	if in.PurchaseStatus != "" {
+		_, statusDone, statusPlanned, err := parsePurchaseStatus(in.PurchaseStatus)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		in.Done, planned = statusDone, statusPlanned
+	}
+	if in.ActualPrice != nil {
+		if *in.ActualPrice < 0 {
+			writeError(w, http.StatusBadRequest, errActualPriceNegative.Error())
+			return
+		}
+		if !in.Done {
+			writeError(w, http.StatusBadRequest, errActualPriceNotBought.Error())
+			return
+		}
 	}
 	if !validate.MaxLen(in.Title, validate.MaxTitleLen) {
 		writeError(w, http.StatusBadRequest, "title is too long")
@@ -549,6 +630,13 @@ func (app *Application) handleItemsUpdate(w http.ResponseWriter, r *http.Request
 		app.serverError(w, r, err)
 		return
 	}
+	// PUT is a full replace: an omitted actual_price clears it, like labels.
+	storedPlanned, storedActualPrice := purchaseColumns(item.Done, planned, in.ActualPrice)
+	item, err = app.DB.SetItemPurchase(r.Context(), item.ID, storedPlanned, storedActualPrice)
+	if err != nil {
+		app.serverError(w, r, err)
+		return
+	}
 	// PUT is a full replace: an omitted aisle clears it, like labels.
 	aisleChanged := cleanAisle != stringValue(existing.Aisle)
 	if aisleChanged {
@@ -611,6 +699,8 @@ func (app *Application) handleItemsPatch(w http.ResponseWriter, r *http.Request)
 		ReminderAtDueTime     json.RawMessage `json:"reminder_at_due_time"`
 		DueTime               *string         `json:"due_time"`
 		Aisle                 *string         `json:"aisle"`
+		PurchaseStatus        *string         `json:"purchase_status"`
+		ActualPrice           json.RawMessage `json:"actual_price"`
 	}
 	if !decodeJSON(w, r, &in) {
 		return
@@ -705,6 +795,42 @@ func (app *Application) handleItemsPatch(w http.ResponseWriter, r *http.Request)
 	if in.Done != nil {
 		item.Done = *in.Done
 	}
+	// purchase_status sets done (and is_planned) itself; sent together with
+	// done, the two must agree.
+	if in.PurchaseStatus != nil {
+		_, statusDone, statusPlanned, err := parsePurchaseStatus(*in.PurchaseStatus)
+		if err == nil && in.Done != nil && *in.Done != statusDone {
+			err = errPurchaseStatusConflict
+		}
+		if err != nil {
+			writeError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		item.Done, item.IsPlanned = statusDone, statusPlanned
+	}
+	// Same absent/null/number three-way as Price below, checked against the
+	// done state this request leaves the item in.
+	if in.ActualPrice != nil {
+		if string(in.ActualPrice) == "null" {
+			item.ActualPrice = nil
+		} else {
+			var actualPrice float64
+			if err := json.Unmarshal(in.ActualPrice, &actualPrice); err != nil {
+				writeError(w, http.StatusBadRequest, "actual_price must be a number")
+				return
+			}
+			if actualPrice < 0 {
+				writeError(w, http.StatusBadRequest, errActualPriceNegative.Error())
+				return
+			}
+			if !item.Done {
+				writeError(w, http.StatusBadRequest, errActualPriceNotBought.Error())
+				return
+			}
+			item.ActualPrice = &actualPrice
+		}
+	}
+	item.IsPlanned, item.ActualPrice = purchaseColumns(item.Done, item.IsPlanned, item.ActualPrice)
 	if in.Position != nil {
 		item.Position = *in.Position
 	}
@@ -942,6 +1068,15 @@ func (app *Application) handleItemsPatch(w http.ResponseWriter, r *http.Request)
 	aisleChanged := stringValue(item.Aisle) != stringValue(before.Aisle)
 	if aisleChanged {
 		updated, err = app.DB.SetItemAisle(r.Context(), updated.ID, item.Aisle)
+		if err != nil {
+			app.serverError(w, r, err)
+			return
+		}
+	}
+	// Same "only write when something changed" gate: a plain toggle of an
+	// item that was neither planned nor priced leaves both columns alone.
+	if item.IsPlanned != before.IsPlanned || !sameFloat(item.ActualPrice, before.ActualPrice) {
+		updated, err = app.DB.SetItemPurchase(r.Context(), updated.ID, item.IsPlanned, item.ActualPrice)
 		if err != nil {
 			app.serverError(w, r, err)
 			return

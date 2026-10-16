@@ -66,8 +66,8 @@
     "reorderSuccess": "Item order saved.",
     "financeSummaryLabel": "Budget summary",
     "financeSummaryLabelShort": "Summary",
-    "financeTotal": "Estimated total",
-    "financeSpent": "Already spent",
+    "financeTotal": "Planned budget",
+    "financeSpent": "Spent (actual)",
     "financeRemaining": "Remaining to spend",
     "financeFilteredBadge": "Filtered",
     "financeFilteredNoteOne": "Based only on {count} filtered item out of {total}",
@@ -82,7 +82,7 @@
     "titlePlaceholderCustom": "Name, idea, note...",
     "urlPlaceholder": "URL (optional)",
     "quantityAriaLabel": "Quantity",
-    "pricePlaceholder": "Price € (optional)",
+    "pricePlaceholder": "Estimated price € (optional)",
     "priceAriaLabel": "Price in euros",
     "targetPricePlaceholder": "Alert if price < X €",
     "targetPriceAriaLabel": "Target price for the price-drop alert",
@@ -225,8 +225,21 @@
       "household": "Household",
       "hygiene": "Health & beauty",
       "frozen": "Frozen",
+      "stationery": "Stationery & school supplies",
+      "clothing": "Clothing & luggage",
+      "electronics": "Electronics & batteries",
+      "diy": "DIY & garden",
       "other": "Other"
-    }
+    },
+    "financeVariance": "Variance",
+    "financeVarianceOver": "Over budget",
+    "financeVarianceUnder": "Saved",
+    "financeVarianceOnBudget": "On budget",
+    "financeVarianceAriaLabel": "Variance: {status}",
+    "financeProjected": "Projected total: {amount}",
+    "addAsPlanned": "Add as planned (to confirm)",
+    "paidPriceAriaLabel": "Paid {paid} (estimated {estimated})",
+    "paidPriceNoEstimateAriaLabel": "Paid {paid} (not budgeted)"
   },
   "quickShop": {
     "panelButtonAriaLabel": "Favorites and usual products",
@@ -375,7 +388,9 @@
       "categoryNone": "None",
       "categoryCreateOption": "+ Create a new space",
       "submitCreate": "Create list",
-      "submitEdit": "Save"
+      "submitEdit": "Save",
+      "templateLabel": "Start from a template",
+      "templateDelete": "Delete this template"
     },
     "newHouse": {
       "title": "New House",
@@ -423,7 +438,9 @@
       "checkPrice": "Check price now",
       "markUrgent": "Toggle urgent",
       "unmarkUrgent": "Remove urgent",
-      "delete": "Delete item"
+      "delete": "Delete item",
+      "purchaseStatus": "Purchase status",
+      "paidPriceNone": "at the estimated price"
     },
     "listActions": {
       "edit": "Edit list",
@@ -447,7 +464,8 @@
       "label": "Label"
     },
     "listOptions": {
-      "title": "List options"
+      "title": "List options",
+      "saveAsTemplate": "Save as template"
     },
     "filterItems": {
       "title": "Filters",
@@ -465,13 +483,14 @@
       "priceMinAriaLabel": "Minimum price",
       "priceMaxAriaLabel": "Maximum price",
       "storesHeading": "Store",
-      "reset": "Reset filters"
+      "reset": "Reset filters",
+      "statusPlanned": "Planned"
     },
     "editItem": {
       "title": "Edit item",
       "nameLabel": "Name",
       "urlLabel": "URL (optional)",
-      "priceLabel": "Price (€, optional)",
+      "priceLabel": "Estimated price (€ / unit, optional)",
       "autoBadge": "Auto-detected",
       "targetPriceLabel": "Trigger an alert if the price drops below (€, optional)",
       "targetPricePlaceholder": "E.g. 15.00",
@@ -485,7 +504,11 @@
       "labelsLabel": "Labels",
       "manageLabelsButton": "🏷️ Manage labels",
       "noLabels": "No labels",
-      "submit": "Save"
+      "submit": "Save",
+      "purchaseStatusLabel": "Purchase status",
+      "actualPriceLabel": "Price paid (€ / unit)",
+      "actualPricePlaceholder": "= estimated price",
+      "actualPriceValidationError": "The price paid must be a positive number."
     },
     "labelManage": {
       "searchPlaceholder": "Search or create a label…",
@@ -780,6 +803,24 @@
     },
     "userSearch": {
       "suggestionsLabel": "People suggestions"
+    },
+    "paidPrice": {
+      "title": "Price paid",
+      "inputLabel": "Price paid per unit (€)",
+      "inputLabelQuantity": "Price paid per unit (€) — quantity: {count}",
+      "lineTotal": "Total paid: {amount}",
+      "estimate": "Estimated: {amount}",
+      "noEstimate": "No estimated price: an unbudgeted purchase.",
+      "over": "{amount} over budget",
+      "under": "{amount} saved",
+      "onBudget": "Right on budget",
+      "useEstimate": "Estimated price",
+      "save": "Save"
+    },
+    "saveTemplate": {
+      "title": "Save as template",
+      "nameLabel": "Template name",
+      "submit": "Save template"
     }
   },
   "bulk": {
@@ -818,7 +859,8 @@
     "itemDeleted": "\"{title}\" deleted",
     "itemMarkedDone": "\"{title}\" marked as done",
     "itemMarkedUndone": "\"{title}\" marked as not done",
-    "categoryDeleted": "Space \"{name}\" deleted"
+    "categoryDeleted": "Space \"{name}\" deleted",
+    "setPaidPrice": "Price paid"
   },
   "emojiPicker": {
     "title": "Choose an emoji",
@@ -878,5 +920,50 @@
     "cancel": "Cancel",
     "apply": "OK",
     "summaryAriaLabel": "Custom repeat: {rule}. Edit"
+  },
+  "purchase": {
+    "status": {
+      "planned": "Planned",
+      "to_buy": "To buy",
+      "bought": "Bought"
+    },
+    "plannedBadgeAriaLabel": "\"{title}\" is planned: confirm it as to buy",
+    "plannedBadgeLabel": "Planned, to confirm",
+    "validated": "\"{title}\" is now to buy",
+    "statusChanged": "\"{title}\": {status}",
+    "validatePlannedOne": "Confirm the planned item",
+    "validatePlannedOther": "Confirm the {count} planned items",
+    "validatedPlannedOne": "1 item confirmed: to buy",
+    "validatedPlannedOther": "{count} items confirmed: to buy",
+    "paidPriceSaved": "Price paid saved for \"{title}\"",
+    "paidPriceCleared": "\"{title}\" counted at its estimated price"
+  },
+  "templates": {
+    "none": "Empty list",
+    "noneSummary": "A list with no items, for you to fill in.",
+    "itemsOne": "1 item",
+    "itemsOther": "{count} items",
+    "tasksOne": "1 task",
+    "tasksOther": "{count} tasks",
+    "entriesOne": "1 entry",
+    "entriesOther": "{count} entries",
+    "summary": "{items} · estimated budget {total} · added as \"Planned\"",
+    "summaryNoTotal": "{items} · added as \"Planned\"",
+    "summaryTasks": "{items}, {recurring}",
+    "summaryChecklist": "{items} · a one-off checklist",
+    "recurringAll": "all recurring · each comes back on its own schedule once ticked off",
+    "recurringOne": "1 of them recurring",
+    "recurringOther": "{count} of them recurring",
+    "houseBadge": "Household",
+    "loading": "Loading templates…",
+    "unavailable": "Templates are unavailable offline.",
+    "deleteConfirm": "Delete the template \"{name}\" for the whole household?",
+    "deleted": "Template \"{name}\" deleted",
+    "saved": "Template \"{name}\" saved for the household",
+    "saveHintOne": "The list's item, with its quantity, aisle and price (the price paid when one was entered), becomes a template the whole household can start a new list from.",
+    "saveHintOther": "The list's {count} items, with their quantity, aisle and price (the price paid when one was entered), become a template the whole household can start a new list from.",
+    "saveHintTasksOne": "The list's item, with its recurrence if it has one (but not its dates), becomes a template the whole household can start a new list of the same type from.",
+    "saveHintTasksOther": "The list's {count} items, with their recurrence if they have one (but not their dates), become a template the whole household can start a new list of the same type from.",
+    "needsNetwork": "Creating a list from a template needs a network connection."
   }
 }

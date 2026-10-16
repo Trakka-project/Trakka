@@ -89,3 +89,12 @@ func stringValue(s *string) string {
 	}
 	return *s
 }
+
+// sameFloat reports whether two optional amounts are equal: both unset, or
+// both set to the same value.
+func sameFloat(a, b *float64) bool {
+	if a == nil || b == nil {
+		return a == nil && b == nil
+	}
+	return *a == *b
+}

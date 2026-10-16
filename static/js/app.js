@@ -1824,6 +1824,8 @@ function setListTypeSelection(value) {
   // An empty icon field means "use the type's default" (listIcon above), so
   // the placeholder previews exactly that.
   els.listIconInput.placeholder = LIST_TYPE_BADGE_META[value]?.icon || '📋';
+  // The "Partir d'un modèle" cards (budget.js) show the type's templates.
+  syncListTemplatesToType(value);
 }
 
 // The clear button only shows while there's an icon to clear.
@@ -1850,6 +1852,8 @@ function openListModal(list) {
   // last cached) keeps the picker correct even if a category was created/
   // deleted in another tab since the last time the Spaces tab was opened.
   loadCustomCategories().then(() => populateCategorySelect(els.listCategorySelect, list?.custom_category_id ?? null));
+  // The "Partir d'un modèle" picker (budget.js), create mode only.
+  resetListTemplatePicker(!editingList);
   els.newListModal.hidden = false;
   TrakkaScrollLock.lock();
   els.listNameInput.focus();
@@ -1927,9 +1931,17 @@ els.createListForm.addEventListener('submit', async (event) => {
       });
     } else {
       if (state.currentHouseId === null) return;
+      // A template picked in the modal (budget.js): the server creates the
+      // list with its items. That can't be queued offline (sw.js refuses
+      // it), so say so up front rather than after a failed request.
+      const template = selectedListTemplatePayload();
+      if (template && !navigator.onLine) {
+        showError(t('templates.needsNetwork'));
+        return;
+      }
       await apiRequest('/lists', {
         method: 'POST',
-        body: JSON.stringify({ name, type, icon, house_id: state.currentHouseId, custom_category_id: customCategoryId }),
+        body: JSON.stringify({ name, type, icon, house_id: state.currentHouseId, custom_category_id: customCategoryId, ...template }),
       });
     }
     closeNewListModal();

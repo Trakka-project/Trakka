@@ -49,7 +49,11 @@ const listEls = {
   financeRemaining: document.getElementById('finance-remaining'),
   financeTotalCollapsed: document.getElementById('finance-total-collapsed'),
   financeSpentCollapsed: document.getElementById('finance-spent-collapsed'),
-  financeRemainingCollapsed: document.getElementById('finance-remaining-collapsed'),
+  financeVariance: document.getElementById('finance-variance'),
+  financeVarianceStatus: document.getElementById('finance-variance-status'),
+  financeVarianceCollapsed: document.getElementById('finance-variance-collapsed'),
+  financeVarianceCollapsedLabel: document.getElementById('finance-variance-collapsed-label'),
+  financeProjected: document.getElementById('finance-projected'),
   financeSummaryIcon: document.getElementById('finance-summary-icon'),
   financeFilteredBadge: document.getElementById('finance-filtered-badge'),
   financeFilteredNote: document.getElementById('finance-filtered-note'),
@@ -75,6 +79,7 @@ const listEls = {
   itemReminderOffset: document.getElementById('item-reminder-offset'),
   itemReminderTime: document.getElementById('item-reminder-time'),
   itemUrgent: document.getElementById('item-urgent'),
+  itemPlanned: document.getElementById('item-planned'),
   itemAisle: document.getElementById('item-aisle'),
   itemsActive: document.getElementById('items-active'),
   itemsDone: document.getElementById('items-done'),
@@ -99,6 +104,8 @@ const listEls = {
   editItemReminderOffset: document.getElementById('edit-item-reminder-offset'),
   editItemReminderTime: document.getElementById('edit-item-reminder-time'),
   editItemUrgent: document.getElementById('edit-item-urgent'),
+  editItemPurchaseStatus: document.getElementById('edit-item-purchase-status'),
+  editItemActualPrice: document.getElementById('edit-item-actual-price'),
   editItemAisle: document.getElementById('edit-item-aisle'),
   itemActionsSheet: document.getElementById('item-actions-sheet'),
   itemActionsSheetTitle: document.getElementById('item-actions-sheet-title'),
@@ -475,14 +482,21 @@ function typeLabel(type) {
 // existed: URL and recurrence shown, price/target month/quantity hidden.
 // `aisle` (the store aisle select, and the "Par rayon" sort) is for
 // `groceries` only — the quick shopping list type, see quick-shop.js.
+// `price` also means the purchase cycle and its budget (Prévu / À acheter /
+// Acheté, the price paid, the summary bar — budget.js): every purchase list
+// has them. `targetPrice` is the price-drop alert, which needs a product
+// link to watch, so a Courses list (no links) has prices but no alert. On a
+// Courses list the price cells and the summary only show once an item has
+// a price (listShowsPrices), so a plain grocery list stays as light as it
+// was.
 const FIELD_VISIBILITY_BY_TYPE = {
-  groceries: { url: false, price: false, targetMonth: false, recurrence: false, dueDate: false, quantity: true, urgent: true, done: true, aisle: true },
-  shopping: { url: true, price: true, targetMonth: true, recurrence: false, dueDate: false, quantity: true, urgent: true, done: true, aisle: false },
-  recurring_shopping: { url: true, price: true, targetMonth: false, recurrence: true, dueDate: true, quantity: true, urgent: true, done: true, aisle: false },
-  todo: { url: true, price: false, targetMonth: false, recurrence: true, dueDate: true, quantity: false, urgent: true, done: true, aisle: false },
-  custom: { url: false, price: false, targetMonth: false, recurrence: false, dueDate: false, quantity: false, urgent: false, done: false, aisle: false },
+  groceries: { url: false, price: true, targetPrice: false, targetMonth: false, recurrence: false, dueDate: false, quantity: true, urgent: true, done: true, aisle: true },
+  shopping: { url: true, price: true, targetPrice: true, targetMonth: true, recurrence: false, dueDate: false, quantity: true, urgent: true, done: true, aisle: false },
+  recurring_shopping: { url: true, price: true, targetPrice: true, targetMonth: false, recurrence: true, dueDate: true, quantity: true, urgent: true, done: true, aisle: false },
+  todo: { url: true, price: false, targetPrice: false, targetMonth: false, recurrence: true, dueDate: true, quantity: false, urgent: true, done: true, aisle: false },
+  custom: { url: false, price: false, targetPrice: false, targetMonth: false, recurrence: false, dueDate: false, quantity: false, urgent: false, done: false, aisle: false },
 };
-const DEFAULT_FIELD_VISIBILITY = { url: true, price: false, targetMonth: false, recurrence: true, dueDate: true, quantity: false, urgent: true, done: true, aisle: false };
+const DEFAULT_FIELD_VISIBILITY = { url: true, price: false, targetPrice: false, targetMonth: false, recurrence: true, dueDate: true, quantity: false, urgent: true, done: true, aisle: false };
 
 function fieldVisibilityFor(type) {
   return FIELD_VISIBILITY_BY_TYPE[type] || DEFAULT_FIELD_VISIBILITY;
@@ -529,6 +543,7 @@ function applyListTypeVisibility(type) {
   ensureTargetMonthOptions();
   for (const el of document.querySelectorAll('[data-item-field="url"]')) el.hidden = !visibility.url;
   for (const el of document.querySelectorAll('[data-item-field="price"]')) el.hidden = !visibility.price;
+  for (const el of document.querySelectorAll('[data-item-field="target-price"]')) el.hidden = !visibility.targetPrice;
   for (const el of document.querySelectorAll('[data-item-field="target-month"]')) el.hidden = !visibility.targetMonth;
   for (const el of document.querySelectorAll('[data-item-field="recurrence"]')) el.hidden = !visibility.recurrence;
   for (const el of document.querySelectorAll('[data-item-field="due-date"]')) el.hidden = !visibility.dueDate;
@@ -900,6 +915,8 @@ for (const button of sortOptionButtons) {
 
 function openListOptionsSheet() {
   if (!state.currentList) return;
+  // "Valider les articles prévus" / "Enregistrer comme modèle" (budget.js).
+  updateListOptionsPurchaseButtons(state.currentList);
   listEls.listOptionsSheet.hidden = false;
   TrakkaScrollLock.lock();
 }
@@ -956,7 +973,7 @@ function getFilterState(listId) {
     if (!raw) return defaultFilterState();
     const parsed = JSON.parse(raw);
     return {
-      status: ['all', 'active', 'done'].includes(parsed.status) ? parsed.status : 'all',
+      status: ['all', 'active', 'planned', 'done'].includes(parsed.status) ? parsed.status : 'all',
       labels: Array.isArray(parsed.labels) ? parsed.labels.filter((l) => typeof l === 'string') : [],
       priceMin: typeof parsed.priceMin === 'number' ? parsed.priceMin : null,
       priceMax: typeof parsed.priceMax === 'number' ? parsed.priceMax : null,
@@ -1371,12 +1388,16 @@ document.addEventListener('click', (event) => {
 // Recomputes the financial summary bar directly from state.currentList.items
 // — the same array toggleDone/removeItem/create/edit mutate optimistically —
 // so it stays in sync whether the underlying change came from the network,
-// an optimistic local edit, or the offline sync queue. `item.price` is a
-// per-unit price, so every line contributes `price * quantity` — see
-// lineTotal below, also used by buildItemRow's per-item price display so
-// the row-level subtotals and this bar's total always agree. While a filter
-// is active, renderItems passes only the items it actually shows (`items`
-// is then that subset, `totalCount` the whole list's count) — the bar's
+// an optimistic local edit, or the offline sync queue. The figures come from
+// computeBudget (budget.js, the JS port of internal/budget — the server's
+// list.budget is the same computation): the planned budget (every item's
+// estimate, `price × quantity` — see lineTotal below, also used by the rows
+// so their subtotals and this bar agree), what was actually spent (bought
+// items at their price paid, else their estimate), what is left, and the
+// variance — what the purchases made so far cost beyond their estimate,
+// green for a saving or on budget, red for an overrun. While a filter is
+// active, renderItems passes only the items it actually shows (`items` is
+// then that subset, `totalCount` the whole list's count) — the bar's
 // "Filtré" badge and its "N articles filtrés" note say so explicitly, so a
 // narrowed total is never mistaken for the whole list's.
 function updateFinanceSummary(items, { filtered = false, totalCount = items.length } = {}) {
@@ -1391,26 +1412,46 @@ function updateFinanceSummary(items, { filtered = false, totalCount = items.leng
     );
   }
 
-  let total = 0;
-  let spent = 0;
-  for (const item of items) {
-    const line = lineTotal(item);
-    total += line;
-    if (item.done) spent += line;
-  }
-  const remaining = total - spent;
-  listEls.financeTotal.textContent = formatEuro(total);
-  listEls.financeTotalCompact.textContent = formatEuro(total);
-  listEls.financeSpent.textContent = formatEuro(spent);
-  listEls.financeRemaining.textContent = formatEuro(remaining);
+  const budget = computeBudget(items);
+  listEls.financeTotal.textContent = formatEuro(budget.estimatedTotal);
+  listEls.financeTotalCompact.textContent = formatEuro(budget.estimatedTotal);
+  listEls.financeSpent.textContent = formatEuro(budget.spentTotal);
+  listEls.financeRemaining.textContent = formatEuro(budget.remainingTotal);
+  listEls.financeProjected.textContent = t('items.financeProjected', { amount: formatEuro(budget.projectedTotal) });
   // Collapsed-header compact figures (see the #finance-summary markup in
-  // index.html) mirror the same three numbers so the accordion stays
-  // informative without needing to be expanded. Every figure's color is a
-  // static --tk-money-* token (tokens.css) — no JS ever sets a color here,
-  // regardless of remaining's sign.
-  listEls.financeTotalCollapsed.textContent = formatEuro(total);
-  listEls.financeSpentCollapsed.textContent = formatEuro(spent);
-  listEls.financeRemainingCollapsed.textContent = formatEuro(remaining);
+  // index.html): budget · spent · variance, so the comparison stays visible
+  // without expanding the accordion. Budget/spent/remaining keep their
+  // static --tk-money-* tokens (tokens.css); only the variance takes its
+  // color from its sign, and always shows the sign and (for screen
+  // readers, and spelled out when expanded) the word with it.
+  listEls.financeTotalCollapsed.textContent = formatEuro(budget.estimatedTotal);
+  listEls.financeSpentCollapsed.textContent = formatEuro(budget.spentTotal);
+  const varianceText = formatSignedEuro(budget.variance);
+  const statusText = t(VARIANCE_STATUS_KEYS[budget.varianceStatus]);
+  const colorClass = budget.varianceStatus === 'over' ? 'text-[color:var(--tk-budget-over)]' : 'text-[color:var(--tk-budget-under)]';
+  for (const el of [listEls.financeVariance, listEls.financeVarianceStatus, listEls.financeVarianceCollapsed]) {
+    el.classList.remove('text-[color:var(--tk-budget-over)]', 'text-[color:var(--tk-budget-under)]');
+    el.classList.add(colorClass);
+  }
+  listEls.financeVariance.textContent = varianceText;
+  listEls.financeVarianceStatus.textContent = statusText;
+  listEls.financeVarianceCollapsed.textContent = varianceText;
+  listEls.financeVarianceCollapsedLabel.textContent = t('items.financeVarianceAriaLabel', { status: statusText });
+}
+
+// The translation key of each internal/budget variance status.
+const VARIANCE_STATUS_KEYS = {
+  under: 'items.financeVarianceUnder',
+  on_budget: 'items.financeVarianceOnBudget',
+  over: 'items.financeVarianceOver',
+};
+
+// A variance with its sign spelled out: "+2,70 €" for an overrun, "−4,10 €"
+// for a saving (a real minus sign), "0,00 €" on budget.
+function formatSignedEuro(amount) {
+  if (amount > 0) return `+${formatEuro(amount)}`;
+  if (amount < 0) return `\u2212${formatEuro(-amount)}`;
+  return formatEuro(0);
 }
 
 // #finance-summary is a plain <details> (same collapsible idiom as
@@ -1558,6 +1599,11 @@ function computeNextDueDate(item) {
 function setItemDoneOptimistic(item, done) {
   item.done = done;
   if (item.recurrence_rule) item.next_due_date = done ? computeNextDueDate(item) : null;
+  // The server's purchase rules (internal/handlers.purchaseColumns): bought
+  // is done; leaving it makes the next purchase a new one, to buy, with no
+  // price paid yet.
+  item.purchase_status = done ? 'bought' : 'to_buy';
+  if (!done) item.actual_price = null;
 }
 
 // The date a recurring item's badge announces: its own due date while
@@ -1618,6 +1664,7 @@ function buildNextDueBadge(item, { interactive = true } = {}) {
 const CLEARABLE_ITEM_FIELDS = [
   'due_date', 'due_time', 'next_due_date', 'notification_sent_at',
   'recurrence_rule', 'recurrence_end_date', 'reminder_offset_days', 'reminder_time', 'aisle',
+  'actual_price',
 ];
 function mergeServerItem(item, updated) {
   if (updated && updated.id !== undefined) {
@@ -2066,6 +2113,13 @@ function buildInlineLinkIcon(item) {
 // nothing to show yet (no price, nothing pending either) — the empty slot
 // buildItemRow falls back to in that case only.
 function buildCompactPriceLabel(item) {
+  const paid = paidLineTotal(item);
+  if (paid !== null) {
+    const label = document.createElement('span');
+    label.className = 'shrink-0 text-sm font-semibold tabular-nums';
+    decoratePaidPrice(label, item, paid);
+    return label;
+  }
   if (item.price != null) {
     // A priced item still carries its own ✨ auto-fetch indicator here — see
     // buildAutoPriceIcon just below, the exact same badge Détaillé shows in
@@ -2174,8 +2228,9 @@ function buildPriceBlock(item, { showPrice }) {
   // border/background around genuinely nothing would render as a hollow
   // "ghost chip" floating on the row with no content to justify it — so
   // that chrome is applied only when there's something to frame.
+  const paid = paidLineTotal(item);
   const hasContent =
-    item.price != null || (item.url && (isOfflineQueuedItem(item) || item.priceScrapePending));
+    item.price != null || paid !== null || (item.url && (isOfflineQueuedItem(item) || item.priceScrapePending));
 
   const block = document.createElement('div');
   block.className = hasContent
@@ -2193,7 +2248,11 @@ function buildPriceBlock(item, { showPrice }) {
   const statusSlot = document.createElement('span');
   statusSlot.className = PRICE_STATUS_SLOT_CLASS;
 
-  if (item.price != null) {
+  if (paid !== null) {
+    // Bought at a price entered by hand: what was paid, green or red
+    // against the estimate (decoratePaidPrice, budget.js).
+    decoratePaidPrice(price, item, paid);
+  } else if (item.price != null) {
     price.textContent = formatEuro(lineTotal(item));
     const movement = recentPriceMovement(item);
     if (movement) {
@@ -2366,7 +2425,7 @@ function buildItemActionsMeta(item) {
 // viewport width (see the `compact` local below), rather than keeping a
 // second row that would carry nothing but the always-reserved sync dot (and,
 // for `todo`, an empty link-icon slot on a linkless item).
-function buildItemRow(item, { showCheckbox = true, index, showQuantity = true, showPrice = true, showLink = true, showAisle = false, compactView = false } = {}) {
+function buildItemRow(item, { showCheckbox = true, index, showQuantity = true, showPrice = true, showPurchase = false, showLink = true, showAisle = false, compactView = false } = {}) {
   const li = document.createElement('li');
   const urgent = item.is_urgent && !item.done;
 
@@ -2522,11 +2581,20 @@ function buildItemRow(item, { showCheckbox = true, index, showQuantity = true, s
   // a recurrence rule keep the bare title, exactly as before.
   // A Courses item's aisle tag (buildAisleBadge, quick-shop.js) goes under
   // its title the same way: it fits within the row's 44px touch-target
-  // height, so the row doesn't grow.
-  const titleBadges = [
-    buildNextDueBadge(item, { interactive: !selecting }),
+  // height, so the row doesn't grow. So does a purchase list item's
+  // "📝 Prévu" tag (buildPlannedBadge, budget.js) — on the same line as the
+  // aisle tag when it has both, never a line of its own.
+  const tags = [
     showAisle ? buildAisleBadge(item, { interactive: !selecting }) : null,
+    showPurchase ? buildPlannedBadge(item, { interactive: !selecting }) : null,
   ].filter(Boolean);
+  let tagRow = tags[0] || null;
+  if (tags.length > 1) {
+    tagRow = document.createElement('div');
+    tagRow.className = 'flex min-w-0 flex-wrap items-center gap-1';
+    tagRow.append(...tags);
+  }
+  const titleBadges = [buildNextDueBadge(item, { interactive: !selecting }), tagRow].filter(Boolean);
   if (titleBadges.length > 0) {
     const titleBlock = document.createElement('div');
     titleBlock.className = 'flex min-w-0 flex-1 flex-col gap-1';
@@ -2816,8 +2884,11 @@ function renderItems() {
   // items out of `filteredItems` itself — that keeps filteredItems.length
   // meaningful below as "did the label/price filters match anything at all",
   // independent of which section(s) the status filter chose to show.
-  const active = filteredItems.filter((item) => !item.done && filterState.status !== 'done');
-  const done = filteredItems.filter((item) => item.done && filterState.status !== 'active');
+  // 'planned' (purchase lists, budget.js) narrows the active section to the
+  // items still "Prévu" and empties the done one, like 'active' does.
+  const active = filteredItems.filter((item) => !item.done && filterState.status !== 'done' &&
+    (filterState.status !== 'planned' || isPlannedItem(item)));
+  const done = filteredItems.filter((item) => item.done && filterState.status !== 'active' && filterState.status !== 'planned');
   // "N sur M" visible-item counter (#filter-results-summary, header row 2) —
   // active.length + done.length is what's actually rendered below,
   // regardless of which status the filter narrowed to (see the comment
@@ -2840,10 +2911,15 @@ function renderItems() {
   }
 
   const visibility = fieldVisibilityFor(list.type);
+  // listShowsPrices (budget.js): a purchase list, and on a Courses list only
+  // once some item has a price — decided on the whole list, never the
+  // filtered part, so a filter can't make the bar disappear.
+  const showPrices = listShowsPrices(list, items);
+  listEls.financeSummary.hidden = !showPrices;
   // With a filter active, the budget is computed from exactly what's
   // rendered below (active + done, i.e. after the status filter too), so a
   // "Restant" filter shows 0 € spent and an "Acheté" one 0 € remaining.
-  if (visibility.price) {
+  if (showPrices) {
     updateFinanceSummary(filterActive ? [...active, ...done] : items, {
       filtered: filterActive,
       totalCount: items.length,
@@ -2869,7 +2945,8 @@ function renderItems() {
     // when most of the list is in fact still unchecked.
     listEls.itemsActive.appendChild(emptyItemsRow(t('items.filterShowingDoneOnly')));
   } else if (active.length === 0) {
-    listEls.itemsActive.appendChild(emptyItemsRow(t('items.allDone')));
+    // Nothing left "Prévu" isn't "everything is done".
+    listEls.itemsActive.appendChild(emptyItemsRow(t(filterState.status === 'planned' ? 'items.noFilterMatches' : 'items.allDone')));
   } else {
     // "Par rayon": a heading (buildAisleHeader, quick-shop.js) above each
     // aisle's items, which applySortMode already put in shop order.
@@ -2889,7 +2966,8 @@ function renderItems() {
           showCheckbox: visibility.done,
           index,
           showQuantity: visibility.quantity,
-          showPrice: visibility.price,
+          showPrice: showPrices,
+          showPurchase: visibility.price,
           showLink: visibility.url,
           // The aisle headings already say it in "Par rayon".
           showAisle: visibility.aisle && !groupByAisle,
@@ -2911,7 +2989,8 @@ function renderItems() {
       buildItemRow(item, {
         showCheckbox: true,
         showQuantity: visibility.quantity,
-        showPrice: visibility.price,
+        showPrice: showPrices,
+        showPurchase: visibility.price,
         showLink: visibility.url,
         // The done section is never grouped by aisle.
         showAisle: visibility.aisle,
@@ -3355,6 +3434,9 @@ function toggleDone(item) {
   const pending = pendingToggles.get(item);
   const committedDone = pending ? pending.committedDone : item.done;
   const committedNextDueDate = pending ? pending.committedNextDueDate : (item.next_due_date ?? null);
+  const committedPurchase = pending
+    ? pending.committedPurchase
+    : { purchase_status: item.purchase_status ?? null, actual_price: item.actual_price ?? null };
   if (pending) pending.dismiss();
 
   setItemDoneOptimistic(item, !item.done);
@@ -3380,21 +3462,29 @@ function toggleDone(item) {
   const controller = TrakkaUndo.schedule({
     message: t(newDone ? 'undo.itemMarkedDone' : 'undo.itemMarkedUndone', { title: item.title }),
     undoLabel: t('undo.cancel'),
+    // On a list showing prices (listShowsPrices, budget.js — not a Courses
+    // list nobody prices), checking an item off offers to enter what it
+    // actually cost right away — which commits the check-off.
+    action: newDone && listShowsPrices(list, list.items || [])
+      ? { label: t('undo.setPaidPrice'), onClick: () => openPaidPriceSheet(item) }
+      : null,
     onUndo: () => {
       pendingToggles.delete(item);
       item.done = committedDone;
       item.next_due_date = committedNextDueDate;
+      Object.assign(item, committedPurchase);
       renderItems();
       notifyItemsChanged(listId, list.items);
     },
     onCommit: async () => {
       pendingToggles.delete(item);
       try {
-        const updated = await apiRequest(`/items/${item.id}`, { method: 'PATCH', body: JSON.stringify({ done: newDone }) });
+        const updated = await apiRequest(`/items/${item.id}`, { method: 'PATCH', body: JSON.stringify(donePatchPayload(list, newDone)) });
         mergeServerItem(item, updated);
       } catch (err) {
         item.done = committedDone;
         item.next_due_date = committedNextDueDate;
+        Object.assign(item, committedPurchase);
         if (!isNetworkError(err)) showError(err.message);
       } finally {
         // The real PATCH has now either landed or failed, so the server (or
@@ -3426,7 +3516,7 @@ function toggleDone(item) {
     },
   });
 
-  pendingToggles.set(item, { dismiss: controller.dismiss, committedDone, committedNextDueDate });
+  pendingToggles.set(item, { dismiss: controller.dismiss, committedDone, committedNextDueDate, committedPurchase });
 }
 
 // Deletion is deferred behind a 5s undo grace period: the item disappears
@@ -3558,12 +3648,16 @@ listEls.createItemForm.addEventListener('submit', async (event) => {
       const parsed = Number.parseFloat(raw);
       if (Number.isFinite(parsed) && parsed >= 0) price = parsed;
     }
+  }
+  if (visibility.targetPrice) {
     const rawTarget = listEls.itemTargetPrice.value.trim();
     if (rawTarget !== '') {
       const parsedTarget = Number.parseFloat(rawTarget);
       if (Number.isFinite(parsedTarget) && parsedTarget >= 0) targetPrice = parsedTarget;
     }
   }
+  // "Ajouter comme prévu": the item starts "Prévu" rather than "À acheter".
+  const planned = visibility.price && listEls.itemPlanned.checked;
   if (visibility.targetMonth) targetMonth = listEls.itemTargetMonth.value;
 
   const recurrenceRule = visibility.recurrence
@@ -3585,7 +3679,7 @@ listEls.createItemForm.addEventListener('submit', async (event) => {
     listEls.itemQuantity.value = '1';
     setQuickAddAdvancedExpanded(false);
     listEls.itemTitle.focus();
-    await addQuickShopItem({ title, quantity, aisle, aisleHint: scan.aisleHint, barcode: scan.barcode, urgent: isUrgent });
+    await addQuickShopItem({ title, quantity, aisle, aisleHint: scan.aisleHint, barcode: scan.barcode, urgent: isUrgent, price, planned });
     await refreshPendingBadge();
     return;
   }
@@ -3593,6 +3687,7 @@ listEls.createItemForm.addEventListener('submit', async (event) => {
   const payload = { list_id: state.currentListId, title, quantity };
   if (url) payload.url = url;
   if (price !== null) payload.price = price;
+  if (planned) payload.purchase_status = 'planned';
   // A target price with no separate opt-in checkbox in the UI: typing one
   // in implicitly opts the item into the alert, mirroring
   // internal/handlers.checkPriceDropAlert's two-field model server-side
@@ -3640,6 +3735,7 @@ listEls.createItemForm.addEventListener('submit', async (event) => {
     reminder_time: reminder.reminder_time ?? null,
     is_urgent: isUrgent,
     done: false,
+    purchase_status: planned ? 'planned' : 'to_buy',
     position: 0,
   };
   state.currentList.items = [...(state.currentList.items || []), optimisticItem];
@@ -3750,6 +3846,9 @@ function openEditItemModal(item, { focus } = {}) {
   updateReminderCustomFieldsVisibility(listEls.editItemReminder, listEls.editItemReminderCustomFields);
   listEls.editItemUrgent.checked = Boolean(item.is_urgent);
   listEls.editItemAisle.value = item.aisle || '';
+  listEls.editItemPurchaseStatus.value = purchaseStatusOf(item);
+  listEls.editItemActualPrice.value = item.done && typeof item.actual_price === 'number' ? item.actual_price : '';
+  syncEditItemActualPrice();
   renderEditItemLabelsPreview(item);
   listEls.editItemModal.hidden = false;
   TrakkaScrollLock.lock();
@@ -3779,6 +3878,13 @@ listEls.editItemManageLabelsButton.addEventListener('click', () => {
 listEls.editItemPrice.addEventListener('input', () => {
   listEls.editItemPriceAutoBadge.hidden = true;
 });
+
+// The price paid only applies to a bought item: the field is disabled (and
+// ignored on save) while another status is selected.
+function syncEditItemActualPrice() {
+  listEls.editItemActualPrice.disabled = listEls.editItemPurchaseStatus.value !== 'bought';
+}
+listEls.editItemPurchaseStatus.addEventListener('change', syncEditItemActualPrice);
 
 function closeEditItemModal() {
   editingItem = null;
@@ -3824,6 +3930,8 @@ function openItemActionsSheet(item, { focusLink = false } = {}) {
   // Courses list, for House members).
   updateItemActionsFavoriteButton(item);
   updateItemActionsAisleButton(item);
+  // The purchase status picker and "Prix payé" row (budget.js).
+  updateItemActionsPurchase(item);
   listEls.itemActionsSheet.hidden = false;
   TrakkaScrollLock.lock();
   if (focusLink && hasLink) {
@@ -4208,6 +4316,24 @@ listEls.editItemForm.addEventListener('submit', async (event) => {
     // Same implicit-opt-in convention as the create-item form above: a
     // filled-in target price opts the item into the alert, an emptied one
     // clears both fields together — no separate checkbox in the UI.
+    // The purchase status is sent with done (they agree), so the offline
+    // mirror sees the same item the server will; the price paid only goes
+    // with "Acheté" — anything else clears it, as the server does.
+    const status = listEls.editItemPurchaseStatus.value;
+    payload.purchase_status = status;
+    payload.done = status === 'bought';
+    payload.actual_price = null;
+    const rawActual = listEls.editItemActualPrice.value.trim();
+    if (status === 'bought' && rawActual !== '') {
+      const parsedActual = Number.parseFloat(rawActual);
+      if (!Number.isFinite(parsedActual) || parsedActual < 0) {
+        showError(t('modals.editItem.actualPriceValidationError'));
+        return;
+      }
+      payload.actual_price = parsedActual;
+    }
+  }
+  if (visibility.targetPrice) {
     const rawTarget = listEls.editItemTargetPrice.value.trim();
     if (rawTarget === '') {
       payload.target_price = null;
@@ -4254,10 +4380,18 @@ listEls.editItemForm.addEventListener('submit', async (event) => {
     reminder_time: item.reminder_time,
     is_urgent: item.is_urgent,
     aisle: item.aisle,
+    done: item.done,
+    purchase_status: item.purchase_status,
+    actual_price: item.actual_price,
   };
   item.title = title;
   item.url = url || null;
   if ('price' in payload) item.price = payload.price;
+  if ('purchase_status' in payload) {
+    if (payload.done !== Boolean(item.done)) setItemDoneOptimistic(item, payload.done);
+    item.purchase_status = payload.purchase_status;
+    item.actual_price = payload.actual_price;
+  }
   if ('target_price' in payload) item.target_price = payload.target_price;
   if ('alert_on_price_drop' in payload) item.alert_on_price_drop = payload.alert_on_price_drop;
   if ('target_month' in payload) item.target_month = payload.target_month || null;

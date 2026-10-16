@@ -8,7 +8,7 @@ importScripts('/js/db.js', '/js/recurrence.js');
 
 // Bump both on any change to APP_SHELL's contents so activate()
 // evicts the old cache instead of serving stale assets forever.
-const SHELL_CACHE = 'trakka-shell-v132';
+const SHELL_CACHE = 'trakka-shell-v134';
 const RUNTIME_CACHE = 'trakka-runtime-v126';
 const KNOWN_CACHES = [SHELL_CACHE, RUNTIME_CACHE];
 
@@ -34,6 +34,7 @@ const APP_SHELL = [
   '/js/barcode.js',
   '/js/scanner.js',
   '/js/quick-shop.js',
+  '/js/budget.js',
   '/js/planning.js',
   '/js/urgent.js',
   '/js/spaces.js',
@@ -776,6 +777,22 @@ async function queueOfflineWrite(method, url, body) {
   // item_ids here is always a set of real, numeric ids already present in
   // the mirror — no temp-id resolution is needed the way pending item/list
   // creates require below.
+  // A list created from a template (template_key/template_id, see
+  // budget.js) gets its items from the server, which a queued create
+  // couldn't show offline — an empty list would appear, then fill up on
+  // sync. Saving or deleting a House template is as rare and as
+  // House-wide as the share changes above. All three need the network.
+  if (
+    (pathname === '/api/v1/lists' && method === 'POST' && (body?.template_key || body?.template_id)) ||
+    /^\/api\/v1\/shopping-templates(\/[^/]+)?$/.test(pathname)
+  ) {
+    return jsonError(
+      { 'Content-Type': 'application/json; charset=utf-8' },
+      503,
+      'Cette action nécessite une connexion réseau.'
+    );
+  }
+
   const reorderMatch = pathname.match(/^\/api\/v1\/lists\/([^/]+)\/reorder$/);
   if (reorderMatch) {
     return queueOfflineReorder(pathname, decodeId(reorderMatch[1]), body, headers, now);

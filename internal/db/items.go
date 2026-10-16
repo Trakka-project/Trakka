@@ -31,7 +31,7 @@ const itemSelectColumns = `items.id, items.list_id, items.title, items.url, item
 		 items.target_price, items.alert_on_price_drop, items.labels, items.reminder_enabled, items.reminder_offset_days, items.reminder_time,
 		 items.due_time, items.next_due_date, items.reminder_at_due_time,
 		 CASE WHEN items.due_reminder_sent_for = ` + dueReminderKeyExpr + ` THEN items.notification_sent_at END,
-		 items.previous_price, items.price_changed_at, items.aisle`
+		 items.previous_price, items.price_changed_at, items.aisle, items.is_planned, items.actual_price`
 
 func scanItem(row rowScanner) (*models.Item, error) {
 	it := &models.Item{}
@@ -59,12 +59,14 @@ func scanItem(row rowScanner) (*models.Item, error) {
 	var previousPrice sql.NullFloat64
 	var priceChangedAt sql.NullString
 	var aisle sql.NullString
+	var isPlanned int
+	var actualPrice sql.NullFloat64
 	if err := row.Scan(&it.ID, &it.ListID, &it.Title, &it.URL, &it.Quantity, &done,
 		&it.Position, &it.CreatedAt, &it.UpdatedAt, &price, &priceAuto, &imageURL, &targetMonth,
 		&dueDate, &isRecurring, &recurrenceRule, &recurrenceEndDate, &isUrgent, &recurrenceLeadMinutes,
 		&targetPrice, &alertOnPriceDrop, &labelsJSON, &reminderEnabled, &reminderOffsetDays, &reminderTime,
 		&dueTime, &nextDueDate, &reminderAtDueTime, &notificationSentAt,
-		&previousPrice, &priceChangedAt, &aisle); err != nil {
+		&previousPrice, &priceChangedAt, &aisle, &isPlanned, &actualPrice); err != nil {
 		return nil, err
 	}
 	it.Done = done != 0
@@ -106,6 +108,11 @@ func scanItem(row rowScanner) (*models.Item, error) {
 	}
 	it.PriceChangedAt = nullStringPtr(priceChangedAt)
 	it.Aisle = nullStringPtr(aisle)
+	it.IsPlanned = isPlanned != 0
+	it.PurchaseStatus = models.PurchaseStatusOf(it.Done, it.IsPlanned)
+	if actualPrice.Valid {
+		it.ActualPrice = &actualPrice.Float64
+	}
 	return it, nil
 }
 
@@ -436,16 +443,41 @@ func (d *DB) SetItemAisle(ctx context.Context, id int64, aisle *string) (*models
 	return d.GetItem(ctx, id)
 }
 
+// SetItemPurchase writes the two purchase-cycle columns of an item (see
+// models.Item.IsPlanned/ActualPrice and migration 32) and returns the
+// updated row — a separate method for the same "too many positional
+// params" reason as SetItemLabels. The caller (internal/handlers) keeps
+// them consistent with done: planned only while not bought, an actual
+// price only while bought. Returns ErrNotFound if no such item exists.
+func (d *DB) SetItemPurchase(ctx context.Context, id int64, planned bool, actualPrice *float64) (*models.Item, error) {
+	res, err := d.conn.ExecContext(ctx,
+		`UPDATE items SET is_planned = ?, actual_price = ?, updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE id = ?`,
+		boolToInt(planned), actualPrice, id)
+	if err != nil {
+		return nil, fmt.Errorf("updating purchase status for item %d: %w", id, err)
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return nil, fmt.Errorf("reading rows affected for item %d: %w", id, err)
+	}
+	if n == 0 {
+		return nil, ErrNotFound
+	}
+	return d.GetItem(ctx, id)
+}
+
 // ReactivateItem is the write behind the "no duplicates on a Courses list"
 // rule (internal/handlers.handleItemsCreate): the product being added is
 // already item id, so that item comes back to the active part of the list
 // — done cleared, along with any pending next occurrence — with quantity as
 // computed by the caller, aisle filled in only if it had none, and urgent
-// added (never removed) by the new request. Returns ErrNotFound if no such
-// item exists.
+// added (never removed) by the new request. Adding a product is wanting it:
+// the item comes back "to buy", not planned, and a paid price from its
+// previous purchase is cleared (see migration 32). Returns ErrNotFound if
+// no such item exists.
 func (d *DB) ReactivateItem(ctx context.Context, id int64, quantity int, aisle *string, urgent bool) (*models.Item, error) {
 	res, err := d.conn.ExecContext(ctx,
-		`UPDATE items SET done = 0, next_due_date = NULL, quantity = ?, aisle = COALESCE(aisle, ?),
+		`UPDATE items SET done = 0, next_due_date = NULL, is_planned = 0, actual_price = NULL, quantity = ?, aisle = COALESCE(aisle, ?),
 		 is_urgent = CASE WHEN ? THEN 1 ELSE is_urgent END,
 		 updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE id = ?`,
 		quantity, aisle, boolToInt(urgent), id)

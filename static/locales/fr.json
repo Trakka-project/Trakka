@@ -66,8 +66,8 @@
     "reorderSuccess": "Ordre des articles enregistré.",
     "financeSummaryLabel": "Résumé du budget",
     "financeSummaryLabelShort": "Résumé",
-    "financeTotal": "Total estimé",
-    "financeSpent": "Déjà dépensé",
+    "financeTotal": "Budget prévu",
+    "financeSpent": "Dépensé (réel)",
     "financeRemaining": "Reste à dépenser",
     "financeFilteredBadge": "Filtré",
     "financeFilteredNoteOne": "Calculé uniquement sur {count} article filtré sur {total}",
@@ -82,7 +82,7 @@
     "titlePlaceholderCustom": "Prénom, idée, note...",
     "urlPlaceholder": "URL (optionnel)",
     "quantityAriaLabel": "Quantité",
-    "pricePlaceholder": "Prix € (optionnel)",
+    "pricePlaceholder": "Prix prévu € (optionnel)",
     "priceAriaLabel": "Prix en euros",
     "targetPricePlaceholder": "Alerte si prix < X €",
     "targetPriceAriaLabel": "Prix cible pour l'alerte de baisse de prix",
@@ -225,8 +225,21 @@
       "household": "Entretien & maison",
       "hygiene": "Hygiène & beauté",
       "frozen": "Surgelés",
+      "stationery": "Papeterie & fournitures",
+      "clothing": "Textile & bagagerie",
+      "electronics": "High-tech & piles",
+      "diy": "Bricolage & jardin",
       "other": "Autres"
-    }
+    },
+    "financeVariance": "Écart",
+    "financeVarianceOver": "Dépassement",
+    "financeVarianceUnder": "Économie",
+    "financeVarianceOnBudget": "Dans le budget",
+    "financeVarianceAriaLabel": "Écart : {status}",
+    "financeProjected": "Total projeté : {amount}",
+    "addAsPlanned": "Ajouter comme prévu (à valider)",
+    "paidPriceAriaLabel": "Payé {paid} (prévu {estimated})",
+    "paidPriceNoEstimateAriaLabel": "Payé {paid} (non prévu)"
   },
   "quickShop": {
     "panelButtonAriaLabel": "Favoris et produits habituels",
@@ -375,7 +388,9 @@
       "categoryNone": "Aucun",
       "categoryCreateOption": "+ Créer un nouvel espace",
       "submitCreate": "Créer la liste",
-      "submitEdit": "Enregistrer"
+      "submitEdit": "Enregistrer",
+      "templateLabel": "Partir d'un modèle",
+      "templateDelete": "Supprimer ce modèle"
     },
     "newHouse": {
       "title": "Nouvelle Maison",
@@ -423,7 +438,9 @@
       "checkPrice": "Vérifier le prix maintenant",
       "markUrgent": "Basculer en urgent",
       "unmarkUrgent": "Retirer l'urgence",
-      "delete": "Supprimer l'article"
+      "delete": "Supprimer l'article",
+      "purchaseStatus": "État d'achat",
+      "paidPriceNone": "au prix prévu"
     },
     "listActions": {
       "edit": "Modifier la liste",
@@ -447,7 +464,8 @@
       "label": "Label"
     },
     "listOptions": {
-      "title": "Options de la liste"
+      "title": "Options de la liste",
+      "saveAsTemplate": "Enregistrer comme modèle"
     },
     "filterItems": {
       "title": "Filtres",
@@ -465,13 +483,14 @@
       "priceMinAriaLabel": "Prix minimum",
       "priceMaxAriaLabel": "Prix maximum",
       "storesHeading": "Magasin / Enseigne",
-      "reset": "Réinitialiser les filtres"
+      "reset": "Réinitialiser les filtres",
+      "statusPlanned": "Prévu"
     },
     "editItem": {
       "title": "Modifier l'article",
       "nameLabel": "Nom",
       "urlLabel": "URL (optionnel)",
-      "priceLabel": "Prix (€, optionnel)",
+      "priceLabel": "Prix prévu (€ / unité, optionnel)",
       "autoBadge": "Détecté automatiquement",
       "targetPriceLabel": "Déclencher une alerte si le prix descend en dessous de (€, optionnel)",
       "targetPricePlaceholder": "Ex. 15.00",
@@ -485,7 +504,11 @@
       "labelsLabel": "Labels",
       "manageLabelsButton": "🏷️ Gérer les labels",
       "noLabels": "Aucun label",
-      "submit": "Enregistrer"
+      "submit": "Enregistrer",
+      "purchaseStatusLabel": "État d'achat",
+      "actualPriceLabel": "Prix payé (€ / unité)",
+      "actualPricePlaceholder": "= prix prévu",
+      "actualPriceValidationError": "Le prix payé doit être un nombre positif."
     },
     "labelManage": {
       "searchPlaceholder": "Rechercher ou créer un label…",
@@ -780,6 +803,24 @@
     },
     "userSearch": {
       "suggestionsLabel": "Suggestions de personnes"
+    },
+    "paidPrice": {
+      "title": "Prix payé",
+      "inputLabel": "Prix payé par unité (€)",
+      "inputLabelQuantity": "Prix payé par unité (€) — quantité : {count}",
+      "lineTotal": "Total payé : {amount}",
+      "estimate": "Prévu : {amount}",
+      "noEstimate": "Pas de prix prévu : achat hors budget.",
+      "over": "Dépassement de {amount}",
+      "under": "Économie de {amount}",
+      "onBudget": "Pile dans le budget",
+      "useEstimate": "Prix prévu",
+      "save": "Enregistrer"
+    },
+    "saveTemplate": {
+      "title": "Enregistrer comme modèle",
+      "nameLabel": "Nom du modèle",
+      "submit": "Enregistrer le modèle"
     }
   },
   "bulk": {
@@ -818,7 +859,8 @@
     "itemDeleted": "« {title} » supprimé",
     "itemMarkedDone": "« {title} » marqué comme terminé",
     "itemMarkedUndone": "« {title} » marqué comme à faire",
-    "categoryDeleted": "Espace « {name} » supprimé"
+    "categoryDeleted": "Espace « {name} » supprimé",
+    "setPaidPrice": "Prix payé"
   },
   "emojiPicker": {
     "title": "Choisir un émoji",
@@ -878,5 +920,50 @@
     "cancel": "Annuler",
     "apply": "OK",
     "summaryAriaLabel": "Répétition personnalisée : {rule}. Modifier"
+  },
+  "purchase": {
+    "status": {
+      "planned": "Prévu",
+      "to_buy": "À acheter",
+      "bought": "Acheté"
+    },
+    "plannedBadgeAriaLabel": "« {title} » est prévu : valider comme à acheter",
+    "plannedBadgeLabel": "Prévu, à valider",
+    "validated": "« {title} » est à acheter",
+    "statusChanged": "« {title} » : {status}",
+    "validatePlannedOne": "Valider l'article prévu",
+    "validatePlannedOther": "Valider les {count} articles prévus",
+    "validatedPlannedOne": "1 article validé : à acheter",
+    "validatedPlannedOther": "{count} articles validés : à acheter",
+    "paidPriceSaved": "Prix payé enregistré pour « {title} »",
+    "paidPriceCleared": "« {title} » compté au prix prévu"
+  },
+  "templates": {
+    "none": "Liste vide",
+    "noneSummary": "Une liste sans articles, à remplir vous-même.",
+    "itemsOne": "1 article",
+    "itemsOther": "{count} articles",
+    "tasksOne": "1 tâche",
+    "tasksOther": "{count} tâches",
+    "entriesOne": "1 élément",
+    "entriesOther": "{count} éléments",
+    "summary": "{items} · budget estimé {total} · ajoutés comme « Prévu »",
+    "summaryNoTotal": "{items} · ajoutés comme « Prévu »",
+    "summaryTasks": "{items}, {recurring}",
+    "summaryChecklist": "{items} · une check-list à cocher une fois",
+    "recurringAll": "toutes récurrentes · chacune revient à son rythme une fois cochée",
+    "recurringOne": "dont 1 récurrente",
+    "recurringOther": "dont {count} récurrentes",
+    "houseBadge": "Maison",
+    "loading": "Chargement des modèles…",
+    "unavailable": "Modèles indisponibles hors connexion.",
+    "deleteConfirm": "Supprimer le modèle « {name} » pour toute la maison ?",
+    "deleted": "Modèle « {name} » supprimé",
+    "saved": "Modèle « {name} » enregistré pour la maison",
+    "saveHintOne": "L'article de la liste, avec sa quantité, son rayon et son prix (le prix payé s'il a été saisi), devient un modèle que toute la maison pourra utiliser à la création d'une liste.",
+    "saveHintOther": "Les {count} articles de la liste, avec leur quantité, leur rayon et leur prix (le prix payé s'il a été saisi), deviennent un modèle que toute la maison pourra utiliser à la création d'une liste.",
+    "saveHintTasksOne": "L'élément de la liste, avec sa récurrence s'il en a une (mais sans ses dates), devient un modèle que toute la maison pourra utiliser à la création d'une liste du même type.",
+    "saveHintTasksOther": "Les {count} éléments de la liste, avec leur récurrence s'ils en ont une (mais sans leurs dates), deviennent un modèle que toute la maison pourra utiliser à la création d'une liste du même type.",
+    "needsNetwork": "Créer une liste à partir d'un modèle nécessite une connexion réseau."
   }
 }

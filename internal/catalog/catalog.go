@@ -86,8 +86,15 @@ const (
 	AislePets      = "pets"
 	AisleHousehold = "household"
 	AisleHygiene   = "hygiene"
-	AisleFrozen    = "frozen"
-	AisleOther     = "other"
+	// The non-food aisles of a hypermarket or a DIY store, which the
+	// built-in list templates (internal/shoptemplates: back to school,
+	// travel, moving, home maintenance) file their items under.
+	AisleStationery  = "stationery"
+	AisleClothing    = "clothing"
+	AisleElectronics = "electronics"
+	AisleDIY         = "diy"
+	AisleFrozen      = "frozen"
+	AisleOther       = "other"
 )
 
 // Aisles lists every valid aisle key, in store order. AisleOther is a real,
@@ -97,7 +104,8 @@ const (
 var Aisles = []string{
 	AisleProduce, AisleBakery, AisleMeatFish, AisleDairy, AislePantry,
 	AisleBreakfast, AisleDrinks, AisleBaby, AislePets, AisleHousehold,
-	AisleHygiene, AisleFrozen, AisleOther,
+	AisleHygiene, AisleStationery, AisleClothing, AisleElectronics, AisleDIY,
+	AisleFrozen, AisleOther,
 }
 
 // IsAisle reports whether key is one of Aisles.

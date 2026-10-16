@@ -70,8 +70,8 @@
     },
     items: {
       back: 'Retour au tableau de bord',
-      financeTotal: 'Total estimé',
-      financeSpent: 'Déjà dépensé',
+      financeTotal: 'Budget prévu',
+      financeSpent: 'Dépensé (réel)',
       financeRemaining: 'Reste à dépenser',
       titlePlaceholder: 'Ajouter un article ou une tâche…',
       urlPlaceholder: 'URL (optionnel)',

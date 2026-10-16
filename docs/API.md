@@ -329,7 +329,7 @@ Full replace (same fields/validation as `POST`), scoped to categories the caller
 
 ## Lists
 
-A list has a `type` of `todo`, `shopping`, `groceries`, `recurring_shopping` or `custom`, and belongs to exactly one house (`house_id`). `shopping` (one-off purchases), `groceries` (day-to-day shopping runs) and `recurring_shopping` (subscriptions/recurring purchases) are all purchase-oriented types stored the same way — the frontend just shows a different subset of the item form's fields depending on which one a list has (see `static/js/list_view.js`'s `applyListTypeVisibility`): `groceries` shows only name/quantity, `shopping` adds URL/price/target month, `recurring_shopping` adds URL/price/recurrence instead of a target month. `custom` is accepted by the API for forward compatibility but has no dedicated item-form behavior yet.
+A list has a `type` of `todo`, `shopping`, `groceries`, `recurring_shopping` or `custom`, and belongs to exactly one house (`house_id`). `shopping` (one-off purchases), `groceries` (day-to-day shopping runs) and `recurring_shopping` (subscriptions/recurring purchases) are all purchase-oriented types stored the same way — the frontend just shows a different subset of the item form's fields depending on which one a list has (see `static/js/list_view.js`'s `applyListTypeVisibility`): `groceries` shows name/quantity/aisle (and a price, shown once one of its items has one), `shopping` adds URL/price/target month, `recurring_shopping` adds URL/price/recurrence instead of a target month. Every purchase-oriented list has the [purchase cycle and budget](#purchase-cycle--budget) (planned → to buy → bought, the price actually paid, the list's `budget`). `custom` is accepted by the API for forward compatibility but has no dedicated item-form behavior yet.
 
 A list can optionally be attached to one of its house members' [custom categories](#custom-categories) via `custom_category_id` — see `POST`/`PUT` below. It's orthogonal to `type`: a `shopping` list and a `todo` list can both belong to the same "Vacances" category.
 
@@ -364,6 +364,30 @@ curl -b cookies.txt http://localhost:8080/api/v1/lists?pinned_house_spaces=true
 
 `total_amount` is the sum of `price * quantity` across every **still-unchecked** item in the list that has a price set (`done = false`) — the list's "reste à dépenser", computed by a correlated subquery in `internal/db`'s shared `listSelect` (not by summing embedded `items`, which this endpoint doesn't even return). A done/purchased item never contributes, regardless of its price. It's omitted entirely when no unchecked item in the list has a price at all (list 2 above); present, including a genuine `0`, otherwise. This is deliberately the same figure a list's own detail view shows in its finance summary as "Reste à dépenser" (`GET /api/v1/lists/{id}`'s embedded `items`, summed client-side by `static/js/list_view.js`'s `updateFinanceSummary`/`lineTotal`) — just computed once in SQL here instead of re-derived per card.
 
+`budget` is the list's budget summary, computed by the same `listSelect` (two more correlated subqueries, then `internal/budget.Summarize`): what was planned against what was actually spent. Every figure is in euros, rounded to the cent:
+
+```json
+"budget": {
+  "estimated_total": 134.9,
+  "spent_total": 55,
+  "remaining_total": 75.1,
+  "projected_total": 130.1,
+  "variance": -4.8,
+  "variance_status": "under"
+}
+```
+
+| Field | Meaning |
+|---|---|
+| `estimated_total` | the planned budget: `price × quantity` of every item that has a `price` (the estimate), whatever its status |
+| `spent_total` | what was actually spent: every bought (`done`) item at `actual_price × quantity` when a price paid was entered, else at its estimate |
+| `remaining_total` | the estimate of what isn't bought yet (planned and to buy) — the same figure as `total_amount` |
+| `projected_total` | `spent_total + remaining_total`: what the list will have cost if the rest costs what was planned |
+| `variance` | `projected_total − estimated_total`, which is also what the purchases made so far cost beyond their estimate. Positive is an overrun, negative a saving; items not bought yet never count as a saving |
+| `variance_status` | `"over"` (variance > 0), `"under"` (< 0) or `"on_budget"` (0 to the cent) |
+
+A bought item with an `actual_price` but no `price` is unplanned spending: it adds to `spent_total` and to `variance`, not to `estimated_total`. `budget` is omitted when no item of the list has a price or a price paid (like `total_amount`), and from the `?shared_with_me=true` listing, which has neither. The PWA recomputes the same figures live from the items (`computeBudget` in `static/js/budget.js`, a hand-kept port).
+
 `custom_category`/`custom_category_id` are only present when the list is attached to one — see [Custom categories](#custom-categories). `access_source`/`access_permission`/`is_pinned_to_dashboard` are only present in the `?shared_with_me=true`/`?pinned_house_spaces=true` modes above (never on this endpoint's own default, house-scoped listing) — see [Sharing](#sharing). `access_source` is `"list_share"`/`"space_share"` from `?shared_with_me=true`, or `"house_member"` from `?pinned_house_spaces=true`. For a list reached via `access_source: "space_share"` or `"house_member"`, `is_pinned_to_dashboard` reflects either that list's own individual pin ([`PATCH /api/v1/lists/{id}/share/pin`](#patch-apiv1listsidsharepin)) or the parent Space's own pin as a whole ([`PATCH /api/v1/custom-categories/{id}/share/pin`](#patch-apiv1custom-categoriesidsharepin)) — whichever says pinned wins; for `"house_member"` specifically every returned row is pinned by construction (`?pinned_house_spaces=true` never returns an unpinned one). The dashboard itself is a client-side merge of three calls, deduplicated by list id (a `house_member`-sourced list may already be present in the plain `?house_id=` listing if it happens to belong to the currently selected House): the plain `?house_id=` listing above, `?shared_with_me=true` filtered down to entries with `is_pinned_to_dashboard: true`, and `?pinned_house_spaces=true` in full (see `static/js/app.js`'s `loadDashboard` and `static/js/shares.js`'s `loadPinnedSharedLists`/`loadPinnedHouseSpaceLists`) — there's no server-side "give me my house's lists plus my pinned shares in one call" mode.
 
 ### `POST /api/v1/lists`
@@ -380,8 +404,23 @@ curl -X POST http://localhost:8080/api/v1/lists \
 | `house_id` | integer | yes | must reference an existing house, else `400` |
 | `custom_category_id` | integer | no | must reference a [custom category](#custom-categories) owned by the caller, else `400`; omitted/`null` leaves the list unattached |
 | `icon` | string | no | trimmed, control characters stripped; freeform (typically an emoji); omitted/empty leaves it unset; `400` if over 32 characters (code points). Any emoji sequence is stored unchanged — skin-tone modifiers, ZWJ sequences (👨‍👩‍👧‍👦), flags and tag sequences all fit well within the limit |
+| `template_key` | string | no | create the list from a built-in [template](#list-templates): a purchase one (`cleaning`, `travel`, `moving`, `back_to_school`, `home_maintenance`) or a task one (`cleaning_tasks`, `moving_tasks`, `back_to_school_tasks`); `400` for an unknown key |
+| `template_id` | integer | no | create the list from one of the House's own [templates](#list-templates); `400` unless it's a template of `house_id` (the same answer for a missing one and another House's). `400` if sent together with `template_key` |
+| `lang` | string | no | `fr` or `en`: the language a built-in template's names are written in. Anything else (or omitted) falls back to the caller's own language, then the instance's `DEFAULT_APP_LANGUAGE` |
 
 `201` with the created list (no `items` field).
+
+**From a template**, the list is created together with a copy of every template item — title, quantity, estimated price (as the item's `price`), aisle and recurrence rule (as its `recurrence_rule`), in order — with no due date and no reminder, in one transaction. In a purchase list (`shopping`, `groceries`, `recurring_shopping`) every item starts with `purchase_status: "planned"`; in a `todo` list, `to_buy` (a task has no purchase cycle). `name`, `type` and `icon` may then be omitted or empty: each takes the template's (a built-in purchase template creates a `groceries` list, a built-in task template a `todo` one). A `type` must belong to the template's **family** — any purchase type for a purchase template, `todo` for a task template, `custom` for a `custom` one — else `400` (`type does not match the template's list type`): a task list never receives prices and aisles, nor a purchase list tasks. A purchase list's `budget.estimated_total` is then the template's total; a task list has no `budget`. A recurring task with no due date starts its series the day it is first checked off (its next occurrence is counted from that day) or from the start date set later. The offline queue refuses this request (`503`): the items come from the server.
+
+```bash
+curl -X POST http://localhost:8080/api/v1/lists \
+  -d '{"house_id": 1, "template_key": "back_to_school", "lang": "fr"}'
+# => {"id": 7, "name": "Rentrée scolaire", "type": "groceries", "icon": "🎒", ..., "budget": {"estimated_total": 134.9, ...}}
+
+curl -X POST http://localhost:8080/api/v1/lists \
+  -d '{"house_id": 1, "template_key": "cleaning_tasks", "lang": "fr"}'
+# => {"id": 8, "name": "Tâches de Ménage & Entretien", "type": "todo", "icon": "🧹", ...}
+```
 
 ### `GET /api/v1/lists/{id}`
 
@@ -398,7 +437,7 @@ Returns the list **with its items embedded**, ordered by `position` then `id`.
   }
   ```
 - `404` if the list doesn't exist. `403` unless the caller has at least read [access](#sharing) to the list — house membership, a Space share, or a List share.
-- `total_amount` here is the same server-computed field `GET /api/v1/lists` documents above (the list's "reste à dépenser" — unchecked, priced items only) — included on this endpoint too even though `items` is already embedded, so a caller never has to re-derive it by summing `items` itself.
+- `total_amount` here is the same server-computed field `GET /api/v1/lists` documents above (the list's "reste à dépenser" — unchecked, priced items only) — included on this endpoint too even though `items` is already embedded, so a caller never has to re-derive it by summing `items` itself. So is `budget` (planned vs. actual spending and their variance, see [above](#get-apiv1lists)).
 
 ### `PUT /api/v1/lists/{id}`
 
@@ -422,6 +461,73 @@ curl -X PUT http://localhost:8080/api/v1/lists/1/reorder \
 | `item_ids` | array of integers | yes | must be exactly a permutation of the list's current item ids, else `400` |
 
 `200` with the list's items in their new order (same shape as the `items` array embedded by `GET /api/v1/lists/{id}`), each now carrying its updated `position`. `404` if the list doesn't exist. `403` unless the caller has **write** [access](#sharing) to the list — reordering is an editing action on the list's contents, the same bar `PUT`/`PATCH` on an [item](#items) already require, not a house-management-level action like deleting the list itself.
+
+## List templates
+
+Ready-made lists a new list can start from ([`POST /api/v1/lists`](#post-apiv1lists) with `template_key` or `template_id`). Server side: `internal/handlers/shopping_templates.go`, `internal/shoptemplates` (the built-in ones), `internal/db/shopping_templates.go` (the House ones, [tables](DATABASE.md#shopping_templates-and-shopping_template_items) `shopping_templates`/`shopping_template_items`). UI: the "Partir d'un modèle" picker of the "Nouvelle liste" modal and "Enregistrer comme modèle" in a list's options (`static/js/budget.js`).
+
+- **Built-in templates** ship with the code, translated (French and English), so a release can change them without a migration:
+  - **Purchase templates** (`list_type: "groceries"`): 🧹 `cleaning` (Ménage & Entretien), ✈️ `travel` (Vacances / Voyage), 📦 `moving` (Déménagement), 🎒 `back_to_school` (Rentrée scolaire), 🏡 `home_maintenance` (Entretien de la maison / Bricolage). Each has 12–15 essential items with their aisle (including the non-food aisles `stationery`, `clothing`, `electronics`, `diy`) and an estimated unit price, editable once the list exists.
+  - **Task templates** (`list_type: "todo"`): 🧹 `cleaning_tasks` (Tâches de Ménage & Entretien — 15 chores, each with its own recurrence, from weekly vacuuming to yearly boiler servicing), 📦 `moving_tasks` (To-Do Déménagement — 12 one-off tasks: notice, energy contracts, meter readings, change of address…), 🎒 `back_to_school_tasks` (Check-list Rentrée & Papiers — 12 one-off tasks: school insurance certificate, health form, canteen registration…). No price, no aisle, quantity 1.
+- **House templates** are saved by a member from one of the House's lists and belong to the House, like its [product catalog](#house-product-catalog): every member can see, use and delete them; a list-share recipient can't (`403`). A House keeps at most 100, of at most 500 items each.
+- **Families**: a template only fills lists of its own family — purchase templates any of `shopping`, `groceries`, `recurring_shopping`; task templates `todo`; a `custom` list's template another `custom` list. `GET` can filter by it (`list_type`), and `POST /api/v1/lists` refuses a mismatch.
+
+A template has this shape (`id`/`house_id`/`created_by`/`created_at` for a House template only, `key` for a built-in one):
+
+```json
+{
+  "id": 3, "builtin": false, "house_id": 1, "name": "Samedi", "icon": "🧺", "list_type": "groceries",
+  "created_by": 1, "created_at": "...", "item_count": 2, "estimated_total": 10.8,
+  "items": [
+    { "title": "Lait", "quantity": 6, "estimated_price": 1.8, "aisle": "dairy" },
+    { "title": "Pain", "quantity": 1 }
+  ]
+}
+```
+
+A task template's items carry a `recurrence_rule` instead (omitted for a one-off task):
+
+```json
+{
+  "key": "cleaning_tasks", "builtin": true, "name": "Tâches de Ménage & Entretien", "icon": "🧹", "list_type": "todo",
+  "item_count": 15, "estimated_total": 0,
+  "items": [
+    { "title": "Passer l'aspirateur", "quantity": 1, "recurrence_rule": "FREQ=WEEKLY" },
+    { "title": "Laver les vitres", "quantity": 1, "recurrence_rule": "FREQ=MONTHLY" }
+  ]
+}
+```
+
+`estimated_price` is a unit price (omitted when unknown), `estimated_total` is `Σ quantity × estimated_price` to the cent (`0` for a task template). `recurrence_rule` is a canonical [recurrence rule](#recurring-items) (`FREQ=WEEKLY`, `FREQ=MONTHLY;INTERVAL=3`, …), copied as is into the new item.
+
+### `GET /api/v1/shopping-templates`
+
+The built-in templates, then the House templates of every House the caller is a member of, newest first.
+
+- `house_id` (optional) — only that House's templates (after the built-in ones). `400` if not a positive integer, `403` if the caller isn't a member.
+- `lang` (optional) — `fr` or `en`, the language of the built-in templates; otherwise the caller's own language, then `DEFAULT_APP_LANGUAGE`.
+- `list_type` (optional) — only the templates a list of that type may start from, i.e. of its family: `todo` returns the task templates, `shopping`/`groceries`/`recurring_shopping` the purchase ones, `custom` the House's `custom` ones (there is no built-in one). `400` for an unknown type. The PWA loads them all once and filters as the type picked changes.
+
+```bash
+curl -b cookies.txt "http://localhost:8080/api/v1/shopping-templates?house_id=1&lang=en"
+curl -b cookies.txt "http://localhost:8080/api/v1/shopping-templates?house_id=1&list_type=todo"
+```
+
+### `POST /api/v1/shopping-templates`
+
+Saves a list as a template of its House: every item in list order, with its title, quantity and recurrence rule (never its dates) — and, from a purchase list, its aisle and as its estimate the price actually paid when one was entered (`actual_price` — the best guess for next time), else its `price`. A `todo` or `custom` list's template carries no price or aisle, even one an item kept from an earlier list type. The template's `list_type` is the list's type.
+
+| Field | Type | Required | Notes |
+|---|---|---|---|
+| `list_id` | integer | yes | `400` if missing or not an existing list |
+| `name` | string | no | trimmed; defaults to the list's name; `400` if over 200 characters |
+| `icon` | string | no | defaults to the list's icon; `400` if over 32 characters |
+
+`201` with the template. `403` unless the caller can read the list **and** is a member of its House. `400` if the list has no items, more than 500, or the House already has 100 templates.
+
+### `DELETE /api/v1/shopping-templates/{id}`
+
+`204`. `404` if no such template, `403` unless the caller is a member of its House. Lists created from it are not affected. Built-in templates can't be deleted.
 
 ## Sharing
 
@@ -560,7 +666,8 @@ curl -X POST http://localhost:8080/api/v1/items \
 | `title` | string | yes | trimmed; `400` if empty |
 | `url` | string | no | must be an absolute `http://`/`https://` URL if given, else `400`; empty string is stored as `null` |
 | `quantity` | integer | no | defaults to `1` if omitted or `<= 0` |
-| `price` | number | no | unit price in euros; `400` if negative; omitted/`null` means no price recorded |
+| `price` | number | no | unit price in euros — the estimate the [budget](#purchase-cycle--budget) compares spending with; `400` if negative; omitted/`null` means no price recorded |
+| `purchase_status` | string | no | `"planned"` or `"to_buy"` (the default); `"bought"` is refused (`400`): an item is bought by checking it off. See [Purchase cycle & budget](#purchase-cycle--budget) |
 | `position` | integer | no | defaults to `0`; used for manual ordering within a list |
 | `target_month` | string | no | planned purchase month, `YYYY-MM` (e.g. `"2026-11"`); `400` if given but not in that format; empty string is stored as `null` (unscheduled) |
 | `due_date` | string | no | `YYYY-MM-DD`; `400` if given but not a real calendar date in that format. For a recurring item it is the current occurrence's date, moved forward automatically (see [Recurring items](#recurring-items)) |
@@ -576,13 +683,13 @@ curl -X POST http://localhost:8080/api/v1/items \
 | `reminder_offset_days` | integer | no | how many whole days before `due_date` the reminder fires (`0` = same day, `1` = the day before); `400` if negative. Omitted/`null` resolves to the caller's own `reminder_default_offset_days` (see [`PATCH /api/v1/me`](#patch-apiv1me)) at write time |
 | `reminder_time` | string | no | `HH:MM` (24h) time of day the reminder fires at; `400` if given but not a real time. Omitted/empty resolves to the caller's own `reminder_default_time` at write time |
 | `reminder_at_due_time` | boolean | no | the "at the exact due time" mode: remind at `due_date` + `due_time`, with `reminder_offset_days`/`reminder_time` kept as the fallback for an item without a `due_time`. Omitted/`null` resolves to the caller's `reminder_default_at_due_time` — unless the request spells out `reminder_offset_days` or `reminder_time`, which then means `false` |
-| `aisle` | string | no | the store aisle, one of `produce`, `bakery`, `meat_fish`, `dairy`, `pantry`, `breakfast`, `drinks`, `baby`, `pets`, `household`, `hygiene`, `frozen`, `other` (`internal/catalog.Aisles`, in shop-walk order); `400` for anything else. Omitted/empty: on a "Courses" (`groceries`) list the server picks one — see [Quick shopping lists](#quick-shopping-lists-courses); elsewhere none |
+| `aisle` | string | no | the store aisle, one of `produce`, `bakery`, `meat_fish`, `dairy`, `pantry`, `breakfast`, `drinks`, `baby`, `pets`, `household`, `hygiene`, `stationery`, `clothing`, `electronics`, `diy`, `frozen`, `other` (`internal/catalog.Aisles`, in shop-walk order); `400` for anything else. Omitted/empty: on a "Courses" (`groceries`) list the server picks one — see [Quick shopping lists](#quick-shopping-lists-courses); elsewhere none |
 | `aisle_hint` | string | no | same values as `aisle`: a suggestion (the aisle [Open Food Facts](#get-apiv1housesidproductsbarcodecode) gave a scanned product) used on a Courses list only when the household has no aisle of its own for the product; never overrides one |
 | `barcode` | string | no | the EAN/UPC code scanned for this product: 8 to 14 digits (spaces and dashes ignored, a 12-digit UPC-A stored as its 13-digit EAN form), else `400`. On a Courses list it's filed under the product in the House catalog, so the next scan recognizes it; not stored on the item |
 
 **Courses lists never hold the same product twice.** On a `groceries` list, a `title` naming a product already on the list (compared case-, accent- and punctuation-insensitively: `"Lait demi-écrémé"` = `"LAIT DEMI ECREME"`) doesn't create a second item: that item is updated instead and returned with `200` (not `201`) and a response-only `"merged": true` — see [Quick shopping lists](#quick-shopping-lists-courses) for exactly what changes.
 
-Responses also carry three read-only fields: `next_due_date` (`YYYY-MM-DD`, only on a checked-off recurring item — see [Recurring items](#recurring-items)), `notification_sent_at` (ISO-8601 UTC time the reminder for the *current* due date/time was pushed, absent while it's still pending) and `reminder_at_due_time`. Like every optional field, they're omitted when empty.
+Responses also carry `purchase_status` (always) and `actual_price` (once entered) — see [Purchase cycle & budget](#purchase-cycle--budget) — and three read-only fields: `next_due_date` (`YYYY-MM-DD`, only on a checked-off recurring item — see [Recurring items](#recurring-items)), `notification_sent_at` (ISO-8601 UTC time the reminder for the *current* due date/time was pushed, absent while it's still pending) and `reminder_at_due_time`. Like every optional field, they're omitted when empty.
 
 `400` if `list_id` doesn't reference an existing list. `403` unless the caller has **write** [access](#sharing) to the list. `201` with the created item. If `url` is given, the server kicks off a **best-effort** lookup against that URL (see `internal/scraper` in [CLAUDE.md](../CLAUDE.md)) for whichever of `price`/`image_url` the item is still missing (an explicit `price` in the request skips price detection but the image is still looked up), and waits up to ~2.5s for it before responding: if it finishes in time, the `201` response already carries `price` (with `price_auto: true`) and `image_url`, and reports `price_status: "found"`; if the site is slow to respond, the lookup keeps running in the background and the response instead carries `price_status: "pending"` — poll `GET /api/v1/items/{id}` (or re-fetch the list) a few seconds later to pick it up. `price_status: "none"` means there was no `url` to scrape or no price was found in time — this is unaffected by whether an image was found. `image_url`, when present, is always an absolute `http://`/`https://` URL. `price_status` is response-only — it's never persisted and never appears on a plain `GET`.
 
@@ -692,13 +799,46 @@ The answer is that item, with its own `id`, `200` and `"merged": true`. When sev
 
 **History.** Every addition (and every check-off, which counts as a purchase with its date) is recorded in the House's [product catalog](#house-product-catalog), whoever made it — a share recipient included — and feeds autocomplete, favorites and "time to buy it again" suggestions.
 
+### Purchase cycle & budget
+
+On a purchase list (`shopping`, `groceries`, `recurring_shopping`) an item goes through three states, reported as `purchase_status`:
+
+| `purchase_status` | Meaning | Stored as |
+|---|---|---|
+| `planned` ("Prévu") | added while planning or estimating, not yet confirmed as needed — every item of a list created from a [template](#list-templates) starts here | `done = 0`, `is_planned = 1` |
+| `to_buy` ("À acheter") | confirmed for the shopping run — the default for a new item | `done = 0`, `is_planned = 0` |
+| `bought` ("Acheté") | checked off in the shop | `done = 1` |
+
+`done` stays the source of truth for "bought" (recurrence, reminders, the offline queue all read it); `purchase_status` is derived from it and from `is_planned` on every read, and accepted on writes as a way to set both:
+
+- **`POST`**: `planned` or `to_buy`. On a Courses list, adding a product already there brings it back `to_buy` whatever the request says (adding a product is wanting it).
+- **`PATCH`**: `purchase_status` sets `done` itself (`bought` ⇔ `done: true`); sent together with `done`, the two must agree, else `400`. `done: true` alone makes an item `bought`; `done: false` alone leaves a not-bought item planned or to buy as it was, and brings a bought one back `to_buy`.
+- **`PUT`** (full replace): `purchase_status`, when sent, decides `done` (`done` can't be told absent from `false` here); omitted, the item is `bought` or `to_buy` per `done`.
+- Buying an item clears `is_planned`, so a bought item unchecked later comes back `to_buy`.
+
+**The price actually paid**, `actual_price`, is a unit price like `price`, which stays the estimate it is compared with in the list's [`budget`](#get-apiv1lists). It can only be set on an item that is bought — in the same request or before — else `400` (`"actual_price can only be set on a bought item"`); `null` clears it (the purchase then counts at its estimate); negative is `400`. Taking an item out of `bought` (`PATCH`/`PUT`, a Courses re-add, a recurring item's next occurrence) clears it: the next purchase is a new one. `PUT` clears it when omitted. `POST` doesn't accept it.
+
+```bash
+# confirm a planned item
+curl -X PATCH http://localhost:8080/api/v1/items/1 -d '{"purchase_status": "to_buy"}'
+
+# check it off at the price actually paid: 34.50 a unit instead of the estimated 30
+curl -X PATCH http://localhost:8080/api/v1/items/1 -d '{"done": true, "actual_price": 34.5}'
+# => {..., "price": 30, "done": true, "purchase_status": "bought", "actual_price": 34.5}
+
+# it cost the estimate after all
+curl -X PATCH http://localhost:8080/api/v1/items/1 -d '{"actual_price": null}'
+```
+
+The PWA offers to enter the price paid right when an item is checked off ("Prix payé" in the check-off toast), and from the item's actions sheet and edit modal.
+
 ### `GET /api/v1/items/{id}`
 
 `200` with the item, `404` if not found, `403` unless the caller has at least read [access](#sharing) to the item's list.
 
 ### `PUT /api/v1/items/{id}`
 
-Full replace — every field below is required except `url`, `quantity`, `price`, `done`, `position`, `target_month`, `due_date`, `due_time`, `recurrence_rule`, `recurrence_end_date`, `is_urgent`, `recurrence_lead_minutes`, `target_price`, `alert_on_price_drop`, `labels`, `reminder_enabled`, `reminder_offset_days`, `reminder_time`, `reminder_at_due_time`, `aisle` fall back to their zero/default value if omitted (note: unlike `PATCH`, omitting a field here **resets** it, since this is a full replace — an omitted `price` clears any previously recorded price, an omitted `target_month` unschedules the item, an omitted `recurrence_rule` turns off recurrence, an omitted `is_urgent` clears the urgent flag, an omitted `recurrence_lead_minutes` reverts to the instance-wide default lead time, an omitted `target_price`/`alert_on_price_drop` clears the price-drop threshold and turns the alert off, an omitted `labels` clears the label set back to `[]`, an omitted `aisle` clears the aisle, and an omitted `reminder_enabled` turns the reminder off — same as every other boolean field here — clearing `reminder_offset_days`/`reminder_time` along with it). `list_id` cannot be changed via this endpoint.
+Full replace — every field below is required except `url`, `quantity`, `price`, `done`, `position`, `target_month`, `due_date`, `due_time`, `recurrence_rule`, `recurrence_end_date`, `is_urgent`, `recurrence_lead_minutes`, `target_price`, `alert_on_price_drop`, `labels`, `reminder_enabled`, `reminder_offset_days`, `reminder_time`, `reminder_at_due_time`, `aisle`, `purchase_status`, `actual_price` fall back to their zero/default value if omitted (note: unlike `PATCH`, omitting a field here **resets** it, since this is a full replace — an omitted `price` clears any previously recorded price, an omitted `target_month` unschedules the item, an omitted `recurrence_rule` turns off recurrence, an omitted `is_urgent` clears the urgent flag, an omitted `recurrence_lead_minutes` reverts to the instance-wide default lead time, an omitted `target_price`/`alert_on_price_drop` clears the price-drop threshold and turns the alert off, an omitted `labels` clears the label set back to `[]`, an omitted `aisle` clears the aisle, and an omitted `reminder_enabled` turns the reminder off — same as every other boolean field here — clearing `reminder_offset_days`/`reminder_time` along with it). `list_id` cannot be changed via this endpoint.
 
 ```bash
 curl -X PUT http://localhost:8080/api/v1/items/1 \
@@ -715,7 +855,7 @@ Partial update — only send the fields you want to change. This is the endpoint
 curl -X PATCH http://localhost:8080/api/v1/items/1 -d '{"done": true}'
 ```
 
-All fields (`title`, `url`, `quantity`, `price`, `done`, `position`, `target_month`, `due_date`, `due_time`, `recurrence_rule`, `recurrence_end_date`, `is_urgent`, `recurrence_lead_minutes`, `target_price`, `alert_on_price_drop`, `labels`, `reminder_enabled`, `reminder_offset_days`, `reminder_time`, `reminder_at_due_time`, `aisle`) are optional. `aisle`, if given, must be one of the [aisles](#post-apiv1items) or an empty string (clears it); on a Courses list it also becomes the household's usual aisle for the product, and checking an item off there (`done` false → true) records a purchase in the [catalog](#house-product-catalog). `labels`, if given (including an explicit `[]`), replaces the item's whole label set — omitting it entirely leaves the existing labels untouched, the same "absent = untouched" convention as `target_month`/`recurrence_rule`; see [Labels](#labels) above for the cleaning/validation rules. `title`, if given, cannot be empty; `quantity`, if given, must be positive; `price`, if given, must be a non-negative number or `null` (unlike the other fields, `price` distinguishes "omitted" — leave unchanged — from an explicit `null` — clear the recorded price). Sending `price` (either a number or `null`) resets `price_auto` to `false`, since a `price` supplied in the request is a manual value — except the item's current scraper-found price re-sent unchanged with an unchanged `url` (the edit form re-sends the price with every save), which keeps `price_auto: true` so the price keeps [following its page](#price-tracking). `target_month`, if given, must be `YYYY-MM` or an empty string (clears it back to unscheduled) — omitting it entirely leaves the item's schedule untouched. `due_date`/`recurrence_end_date`, if given, must be `YYYY-MM-DD` or an empty string (clears them); clearing `due_date` also clears `due_time`. `due_time`, if given, must be `HH:MM` or an empty string (clears it); a non-empty `due_time` on an item left without a `due_date` is a `400`. `recurrence_rule`, if given, must be one of the recognized forms or an empty string — clearing it this way also clears `recurrence_end_date` (and any pending `next_due_date`), but keeps `due_date`/`due_time`. `recurrence_lead_minutes`, like `price`, distinguishes "omitted" (leave unchanged) from an explicit `null` (revert to the instance-wide default lead time) — a number must be non-negative. `target_price`, like `price`, distinguishes "omitted" (leave unchanged) from an explicit `null` (clear the threshold) — a number must be non-negative; `alert_on_price_drop`, if given, is a plain boolean. `reminder_enabled`, if given, is a plain boolean (`is_urgent`'s "omitted = unchanged" shape, not `price`'s three-way one — there's no "clear" state distinct from `false`); `reminder_offset_days`, like `recurrence_lead_minutes`, distinguishes "omitted" (leave unchanged) from an explicit `null` (resolve from the caller's own current `reminder_default_offset_days`) — a number must be non-negative; `reminder_time`, if given, must be `HH:MM` or an empty string (also resolves from the caller's own current `reminder_default_time`); `reminder_at_due_time`, like `reminder_offset_days`, distinguishes "omitted" (leave unchanged) from `null` (resolve from the caller's `reminder_default_at_due_time`) — see [Reminders](#reminders) above. There is no `image_url` field to set directly — it's scraper-only. If `url` changes to something new, `image_url` is cleared (same reasoning as `PUT` above) and the bounded lookup described under `POST` kicks off for whichever of `price`/`image_url` is still missing, with the same `price_status` values in the response; an unrelated `PATCH` (e.g. `{"done": true}`) never re-triggers it, since `url` isn't changing. If `done` changes on a recurring item, see "Recurring items" above — the response carries the resulting `next_due_date`. See [Price drop alerts](#price-drop-alerts) for `target_price`/`alert_on_price_drop`/`price_alert_triggered`. `404` if not found, `403` unless the caller has **write** [access](#sharing) to the item's list.
+All fields (`title`, `url`, `quantity`, `price`, `done`, `position`, `target_month`, `due_date`, `due_time`, `recurrence_rule`, `recurrence_end_date`, `is_urgent`, `recurrence_lead_minutes`, `target_price`, `alert_on_price_drop`, `labels`, `reminder_enabled`, `reminder_offset_days`, `reminder_time`, `reminder_at_due_time`, `aisle`, `purchase_status`, `actual_price`) are optional — see [Purchase cycle & budget](#purchase-cycle--budget) for the last two. `aisle`, if given, must be one of the [aisles](#post-apiv1items) or an empty string (clears it); on a Courses list it also becomes the household's usual aisle for the product, and checking an item off there (`done` false → true) records a purchase in the [catalog](#house-product-catalog). `labels`, if given (including an explicit `[]`), replaces the item's whole label set — omitting it entirely leaves the existing labels untouched, the same "absent = untouched" convention as `target_month`/`recurrence_rule`; see [Labels](#labels) above for the cleaning/validation rules. `title`, if given, cannot be empty; `quantity`, if given, must be positive; `price`, if given, must be a non-negative number or `null` (unlike the other fields, `price` distinguishes "omitted" — leave unchanged — from an explicit `null` — clear the recorded price). Sending `price` (either a number or `null`) resets `price_auto` to `false`, since a `price` supplied in the request is a manual value — except the item's current scraper-found price re-sent unchanged with an unchanged `url` (the edit form re-sends the price with every save), which keeps `price_auto: true` so the price keeps [following its page](#price-tracking). `target_month`, if given, must be `YYYY-MM` or an empty string (clears it back to unscheduled) — omitting it entirely leaves the item's schedule untouched. `due_date`/`recurrence_end_date`, if given, must be `YYYY-MM-DD` or an empty string (clears them); clearing `due_date` also clears `due_time`. `due_time`, if given, must be `HH:MM` or an empty string (clears it); a non-empty `due_time` on an item left without a `due_date` is a `400`. `recurrence_rule`, if given, must be one of the recognized forms or an empty string — clearing it this way also clears `recurrence_end_date` (and any pending `next_due_date`), but keeps `due_date`/`due_time`. `recurrence_lead_minutes`, like `price`, distinguishes "omitted" (leave unchanged) from an explicit `null` (revert to the instance-wide default lead time) — a number must be non-negative. `target_price`, like `price`, distinguishes "omitted" (leave unchanged) from an explicit `null` (clear the threshold) — a number must be non-negative; `alert_on_price_drop`, if given, is a plain boolean. `reminder_enabled`, if given, is a plain boolean (`is_urgent`'s "omitted = unchanged" shape, not `price`'s three-way one — there's no "clear" state distinct from `false`); `reminder_offset_days`, like `recurrence_lead_minutes`, distinguishes "omitted" (leave unchanged) from an explicit `null` (resolve from the caller's own current `reminder_default_offset_days`) — a number must be non-negative; `reminder_time`, if given, must be `HH:MM` or an empty string (also resolves from the caller's own current `reminder_default_time`); `reminder_at_due_time`, like `reminder_offset_days`, distinguishes "omitted" (leave unchanged) from `null` (resolve from the caller's `reminder_default_at_due_time`) — see [Reminders](#reminders) above. There is no `image_url` field to set directly — it's scraper-only. If `url` changes to something new, `image_url` is cleared (same reasoning as `PUT` above) and the bounded lookup described under `POST` kicks off for whichever of `price`/`image_url` is still missing, with the same `price_status` values in the response; an unrelated `PATCH` (e.g. `{"done": true}`) never re-triggers it, since `url` isn't changing. If `done` changes on a recurring item, see "Recurring items" above — the response carries the resulting `next_due_date`. See [Price drop alerts](#price-drop-alerts) for `target_price`/`alert_on_price_drop`/`price_alert_triggered`. `404` if not found, `403` unless the caller has **write** [access](#sharing) to the item's list.
 
 ```bash
 # clear a previously recorded price without touching anything else
