@@ -84,7 +84,8 @@ func TestPrepareRestoreFileMigratesOlderSchema(t *testing.T) {
 	// 21, 23, 24, 25, 26 and 27 (backup_runs, the task-scheduling columns
 	// and index, the due-reminder index, the notification-vibration column,
 	// the calendar feed tokens, the notification preferences, the price
-	// tracking tables and columns; 22 only
+	// tracking tables and columns, the quick shopping and purchase-cycle
+	// tables and columns; 22 only
 	// rewrites rows) and rewinding
 	// user_version on the staged copy.
 	old, err := Open(snap, logger)
@@ -125,6 +126,7 @@ func TestPrepareRestoreFileMigratesOlderSchema(t *testing.T) {
 			t.Fatalf("%s: %v", stmt, err)
 		}
 	}
+	undoMigrationsSince32(t, old.conn)
 	if _, err := old.conn.Exec(`PRAGMA user_version = 19`); err != nil {
 		t.Fatalf("rewinding user_version: %v", err)
 	}

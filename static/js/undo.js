@@ -24,7 +24,11 @@
     return document.getElementById('toast-container');
   }
 
-  function schedule({ message, undoLabel, delay = DEFAULT_DELAY_MS, onCommit, onUndo }) {
+  // `action` optionally adds a second button ({ label, onClick }) before
+  // "Annuler": clicking it commits right away (onCommit) and then runs
+  // onClick — a follow-up to the very change being confirmed, such as
+  // entering the price paid for an item just checked off (budget.js).
+  function schedule({ message, undoLabel, delay = DEFAULT_DELAY_MS, onCommit, onUndo, action = null }) {
     const root = getContainer();
     if (!root) {
       // No toast host on this page — fail safe by committing right away
@@ -58,7 +62,16 @@
     progress.className = 'absolute inset-x-0 bottom-0 h-0.5 bg-sky-400/70';
     progress.style.width = '100%';
 
-    toast.append(text, undoBtn, progress);
+    let actionBtn = null;
+    if (action) {
+      actionBtn = document.createElement('button');
+      actionBtn.type = 'button';
+      actionBtn.className =
+        'shrink-0 rounded-lg bg-emerald-500/10 px-3 py-1.5 text-sm font-semibold text-emerald-700 dark:text-emerald-300 hover:bg-emerald-500/20';
+      actionBtn.textContent = action.label;
+    }
+
+    toast.append(...[text, actionBtn, undoBtn, progress].filter(Boolean));
     root.appendChild(toast);
 
     // Deferred to the next frame so the browser paints the starting
@@ -85,6 +98,12 @@
     }
 
     undoBtn.addEventListener('click', () => finish(onUndo));
+    if (actionBtn) {
+      actionBtn.addEventListener('click', () => {
+        finish(onCommit);
+        action.onClick();
+      });
+    }
 
     return {
       // Tears the toast down without running either callback — used when a

@@ -401,19 +401,27 @@
               <span class="sr-only" data-i18n="items.financeFilteredBadge">Filtré</span>
             </span>
             <span class="hidden group-open:inline" data-i18n="items.financeSummaryLabel">Résumé du budget</span>
-            <span class="group-open:hidden" data-i18n="items.financeSummaryLabelShort">Résumé</span>
+            <!-- Spoken only on the narrowest phones (< 360 px), where the
+                 three collapsed figures need the room — the 📊 still says
+                 what the row is. -->
+            <span class="group-open:hidden max-[359px]:sr-only" data-i18n="items.financeSummaryLabelShort">Résumé</span>
           </span>
+          <!-- Collapsed: planned budget · actual spending · variance — the
+               comparison the summary exists for. The variance's color comes
+               from its sign (--tk-budget-under/-over, set by
+               updateFinanceSummary) and is never the only cue: it always
+               carries its sign, and its word for screen readers. -->
           <span class="flex min-w-0 items-center gap-2">
             <span id="finance-total-compact" class="hidden whitespace-nowrap text-base font-semibold text-[color:var(--tk-money-total)] group-open:inline">0,00&nbsp;€</span>
             <span class="flex min-w-0 items-center gap-1.5 whitespace-nowrap text-[13px] sm:text-sm group-open:hidden">
-              <span class="sr-only" data-i18n="items.financeTotal">Total estimé</span>
+              <span class="sr-only" data-i18n="items.financeTotal">Budget prévu</span>
               <span id="finance-total-collapsed" class="font-bold text-[color:var(--tk-money-total)]">0,00&nbsp;€</span>
               <span class="text-slate-300 dark:text-slate-600" aria-hidden="true">·</span>
-              <span class="sr-only" data-i18n="items.financeSpent">Déjà dépensé</span>
+              <span class="sr-only" data-i18n="items.financeSpent">Dépensé (réel)</span>
               <span id="finance-spent-collapsed" class="font-semibold text-[color:var(--tk-money-spent)]">0,00&nbsp;€</span>
               <span class="text-slate-300 dark:text-slate-600" aria-hidden="true">·</span>
-              <span class="sr-only" data-i18n="items.financeRemaining">Reste à dépenser</span>
-              <span id="finance-remaining-collapsed" class="font-semibold text-[color:var(--tk-money-remaining)]">0,00&nbsp;€</span>
+              <span id="finance-variance-collapsed-label" class="sr-only"></span>
+              <span id="finance-variance-collapsed" class="font-semibold text-[color:var(--tk-budget-under)]">0,00&nbsp;€</span>
             </span>
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="h-4 w-4 shrink-0 text-slate-400 transition-transform group-open:rotate-180" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>
           </span>
@@ -422,18 +430,30 @@
              visibility rule as #finance-filtered-badge above; the explicit,
              spelled-out warning that these figures aren't the whole list's. -->
         <p id="finance-filtered-note" hidden class="mt-3 text-xs font-medium text-sky-600 dark:text-sky-400"></p>
-        <div class="mt-3 grid grid-cols-1 gap-3 border-t border-slate-200 dark:border-slate-700 pt-3 sm:grid-cols-3">
-          <div class="flex flex-col gap-1">
-            <span data-i18n="items.financeTotal" class="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Total estimé</span>
+        <!-- 2 × 2 on a phone, one row from sm. "Écart" is what the purchases
+             made so far cost beyond their estimate (computeBudget, budget.js
+             — the JS port of internal/budget): green for a saving or on
+             budget, red for an overrun, with the projected total under it. -->
+        <div class="mt-3 grid grid-cols-2 gap-3 border-t border-slate-200 dark:border-slate-700 pt-3 sm:grid-cols-4">
+          <div class="flex min-w-0 flex-col gap-1">
+            <span data-i18n="items.financeTotal" class="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Budget prévu</span>
             <span id="finance-total" class="text-lg font-semibold text-[color:var(--tk-money-total)]">0,00&nbsp;€</span>
           </div>
-          <div class="flex flex-col gap-1">
-            <span data-i18n="items.financeSpent" class="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Déjà dépensé</span>
+          <div class="flex min-w-0 flex-col gap-1">
+            <span data-i18n="items.financeSpent" class="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Dépensé (réel)</span>
             <span id="finance-spent" class="text-lg font-semibold text-[color:var(--tk-money-spent)]">0,00&nbsp;€</span>
           </div>
-          <div class="flex flex-col gap-1">
+          <div class="flex min-w-0 flex-col gap-1">
             <span data-i18n="items.financeRemaining" class="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Reste à dépenser</span>
             <span id="finance-remaining" class="text-lg font-semibold text-[color:var(--tk-money-remaining)]">0,00&nbsp;€</span>
+          </div>
+          <div class="flex min-w-0 flex-col gap-1">
+            <span data-i18n="items.financeVariance" class="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Écart</span>
+            <span class="flex flex-wrap items-baseline gap-x-1.5">
+              <span id="finance-variance" class="text-lg font-semibold text-[color:var(--tk-budget-under)]">0,00&nbsp;€</span>
+              <span id="finance-variance-status" class="text-xs font-semibold text-[color:var(--tk-budget-under)]"></span>
+            </span>
+            <span id="finance-projected" class="text-xs text-slate-500 dark:text-slate-400"></span>
           </div>
         </div>
       </details>
@@ -514,9 +534,9 @@
                     class="min-w-0 flex-1 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-3 text-base text-slate-900 dark:text-slate-100 focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500/30">
               <option value="" data-i18n="items.aisleAuto">Rayon : automatique</option>
             </select>
-            <input type="number" id="item-price" data-item-field="price" hidden step="0.01" min="0" data-i18n-placeholder="items.pricePlaceholder" placeholder="Prix € (optionnel)" data-i18n-aria-label="items.priceAriaLabel" aria-label="Prix en euros"
+            <input type="number" id="item-price" data-item-field="price" hidden step="0.01" min="0" data-i18n-placeholder="items.pricePlaceholder" placeholder="Prix prévu € (optionnel)" data-i18n-aria-label="items.priceAriaLabel" aria-label="Prix en euros"
                    class="w-36 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-3 text-base text-slate-900 dark:text-slate-100 placeholder:text-slate-500 focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500/30">
-            <input type="number" id="item-target-price" data-item-field="price" hidden step="0.01" min="0" data-i18n-placeholder="items.targetPricePlaceholder" placeholder="Alerte si prix < X €" data-i18n-aria-label="items.targetPriceAriaLabel" aria-label="Prix cible pour l'alerte"
+            <input type="number" id="item-target-price" data-item-field="target-price" hidden step="0.01" min="0" data-i18n-placeholder="items.targetPricePlaceholder" placeholder="Alerte si prix < X €" data-i18n-aria-label="items.targetPriceAriaLabel" aria-label="Prix cible pour l'alerte"
                    class="w-44 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-3 text-base text-slate-900 dark:text-slate-100 placeholder:text-slate-500 focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500/30">
             <select id="item-target-month" data-item-field="target-month" hidden data-i18n-aria-label="items.targetMonthAriaLabel" aria-label="Mois prévu (optionnel)"
                     class="min-w-[11rem] rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-4 py-3 text-base text-slate-900 dark:text-slate-100 focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500/30"></select>
@@ -575,6 +595,14 @@
                      class="h-4 w-4 rounded border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 text-rose-600 dark:text-rose-500 focus:ring-rose-500/40">
               <span aria-hidden="true">🚨</span>
               <span data-i18n="items.urgentLabel">Marquer comme urgent</span>
+            </label>
+            <!-- Purchase lists: add the item as "Prévu" (planned, not yet
+                 confirmed as needed) rather than "À acheter" — budget.js. -->
+            <label data-item-field="price" hidden class="flex min-h-[44px] cursor-pointer items-center gap-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 text-sm font-medium text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-800">
+              <input type="checkbox" id="item-planned"
+                     class="h-4 w-4 rounded border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 text-amber-600 dark:text-amber-500 focus:ring-amber-500/40">
+              <span aria-hidden="true">📝</span>
+              <span data-i18n="items.addAsPlanned">Ajouter comme prévu (à valider)</span>
             </label>
           </div>
         </form>
@@ -660,7 +688,7 @@
   </main>
 
   <div id="new-list-modal" hidden class="fixed inset-0 z-40 flex items-end justify-center bg-slate-950/30 dark:bg-slate-950/70 p-0 sm:items-center sm:p-4">
-    <div role="dialog" aria-modal="true" aria-labelledby="new-list-modal-title" class="w-full max-w-md rounded-t-2xl bg-slate-100 dark:bg-slate-800 p-5 shadow-xl sm:rounded-2xl">
+    <div role="dialog" aria-modal="true" aria-labelledby="new-list-modal-title" class="max-h-[92vh] w-full max-w-md overflow-y-auto rounded-t-2xl bg-slate-100 dark:bg-slate-800 p-5 shadow-xl sm:rounded-2xl">
       <div class="mb-4 flex items-center justify-between">
         <h2 id="new-list-modal-title" data-i18n="modals.newList.titleCreate" class="text-lg font-semibold">Nouvelle liste</h2>
         <button type="button" id="close-modal-button" data-i18n-aria-label="modals.close" aria-label="Fermer"
@@ -723,6 +751,35 @@
               <input type="radio" name="list-type" value="custom" class="sr-only">
               <span aria-hidden="true">📝</span> <span data-i18n="modals.newList.typeCustom">Liste Libre / Notes</span>
             </label>
+          </div>
+        </div>
+
+        <!-- Create mode only: start from a template (budget.js:
+             resetListTemplatePicker/renderListTemplates) — "Liste vide",
+             then the templates of the type picked just above: the purchase
+             ones for Courses / Achats ponctuels / Abonnements, the task ones
+             for Tâches (syncListTemplatesToType), the built-in ones first,
+             then the House's own. Hidden when that type has none. Picking
+             one fills in the name, icon and type; the list is then created
+             with its items ("Prévu" in a purchase list).
+             The cards scroll sideways inside the dialog's padding: the
+             scroller is exactly as wide as the fields around it, snaps each
+             card to its left edge, and the row it scrolls (w-max) ends with
+             1rem of padding, so the last card never ends flush against the
+             edge. The padding sits on the row, not the scroller: a
+             scroller's own end padding isn't scrollable in every engine. -->
+        <div id="list-template-field" hidden>
+          <span id="list-template-label" data-i18n="modals.newList.templateLabel" class="mb-1 block text-sm font-medium text-slate-600 dark:text-slate-300">Partir d'un modèle</span>
+          <div id="list-template-scroller" class="snap-x snap-mandatory overflow-x-auto overscroll-x-contain pb-1">
+            <div id="list-template-options" role="radiogroup" aria-labelledby="list-template-label"
+                 class="flex w-max gap-2 pr-4"></div>
+          </div>
+          <div class="mt-1 flex min-h-[28px] items-center gap-2">
+            <p id="list-template-summary" aria-live="polite" class="min-w-0 flex-1 text-xs text-slate-500 dark:text-slate-400"></p>
+            <button type="button" id="list-template-delete-button" hidden
+                    class="shrink-0 rounded-lg px-2 py-1 text-xs font-semibold text-rose-600 dark:text-rose-400 hover:bg-rose-500/10">
+              <span data-i18n="modals.newList.templateDelete">Supprimer ce modèle</span>
+            </button>
           </div>
         </div>
 
@@ -1769,7 +1826,7 @@
 
         <div id="edit-item-price-field" data-item-field="price" hidden>
           <div class="mb-1 flex flex-wrap items-center gap-2">
-            <label for="edit-item-price" data-i18n="modals.editItem.priceLabel" class="block text-sm font-medium text-slate-600 dark:text-slate-300">Prix (€, optionnel)</label>
+            <label for="edit-item-price" data-i18n="modals.editItem.priceLabel" class="block text-sm font-medium text-slate-600 dark:text-slate-300">Prix prévu (€ / unité, optionnel)</label>
             <span id="edit-item-price-auto-badge" hidden data-i18n="modals.editItem.autoBadge"
                   class="inline-flex items-center rounded-full bg-emerald-500/10 px-2 py-0.5 text-xs font-medium text-emerald-600 dark:text-emerald-300">Détecté automatiquement</span>
           </div>
@@ -1777,7 +1834,27 @@
                  class="w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-4 py-3 text-base text-slate-900 dark:text-slate-100 placeholder:text-slate-500 focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500/30">
         </div>
 
-        <div id="edit-item-target-price-field" data-item-field="price" hidden>
+        <!-- Purchase lists: where the item is in the purchase cycle, and what
+             one unit actually cost once bought (budget.js). The paid price
+             is only editable while "Acheté" is selected. -->
+        <div id="edit-item-purchase-field" data-item-field="price" hidden class="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <div>
+            <label for="edit-item-purchase-status" data-i18n="modals.editItem.purchaseStatusLabel" class="mb-1 block text-sm font-medium text-slate-600 dark:text-slate-300">État d'achat</label>
+            <select id="edit-item-purchase-status"
+                    class="w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-4 py-3 text-base text-slate-900 dark:text-slate-100 focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500/30">
+              <option value="planned" data-i18n="purchase.status.planned">Prévu</option>
+              <option value="to_buy" data-i18n="purchase.status.to_buy">À acheter</option>
+              <option value="bought" data-i18n="purchase.status.bought">Acheté</option>
+            </select>
+          </div>
+          <div>
+            <label for="edit-item-actual-price" data-i18n="modals.editItem.actualPriceLabel" class="mb-1 block text-sm font-medium text-slate-600 dark:text-slate-300">Prix payé (€ / unité)</label>
+            <input type="number" id="edit-item-actual-price" step="0.01" min="0" inputmode="decimal" data-i18n-placeholder="modals.editItem.actualPricePlaceholder" placeholder="= prix prévu"
+                   class="w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-4 py-3 text-base text-slate-900 dark:text-slate-100 placeholder:text-slate-500 focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500/30 disabled:opacity-50">
+          </div>
+        </div>
+
+        <div id="edit-item-target-price-field" data-item-field="target-price" hidden>
           <label for="edit-item-target-price" data-i18n="modals.editItem.targetPriceLabel" class="mb-1 block text-sm font-medium text-slate-600 dark:text-slate-300">Déclencher une alerte si le prix descend en dessous de (€, optionnel)</label>
           <input type="number" id="edit-item-target-price" step="0.01" min="0" placeholder="Ex. 15.00"
                  data-i18n-placeholder="modals.editItem.targetPricePlaceholder"
@@ -1995,6 +2072,33 @@
           <span aria-hidden="true">✏️</span>
           <span data-i18n="modals.itemActions.edit">Modifier l'article</span>
         </button>
+        <!-- Purchase lists: the item's place in the purchase cycle, one tap
+             to move it (Prévu → À acheter → Acheté), and — once bought —
+             the price actually paid, opening #paid-price-sheet (budget.js:
+             updateItemActionsPurchase). -->
+        <div id="item-actions-purchase-row" hidden class="px-3 py-2">
+          <span id="item-actions-purchase-label" data-i18n="modals.itemActions.purchaseStatus" class="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">État d'achat</span>
+          <div role="radiogroup" aria-labelledby="item-actions-purchase-label" class="grid grid-cols-3 gap-1 rounded-xl bg-slate-200/70 dark:bg-slate-700/50 p-1">
+            <button type="button" role="radio" aria-checked="false" data-purchase-status="planned"
+                    class="min-h-[40px] min-w-0 rounded-lg px-1 text-sm font-medium text-slate-600 dark:text-slate-300 aria-checked:bg-white aria-checked:text-slate-900 aria-checked:shadow-sm dark:aria-checked:bg-slate-900 dark:aria-checked:text-slate-100">
+              <span aria-hidden="true">📝</span> <span data-i18n="purchase.status.planned">Prévu</span>
+            </button>
+            <button type="button" role="radio" aria-checked="false" data-purchase-status="to_buy"
+                    class="min-h-[40px] min-w-0 rounded-lg px-1 text-sm font-medium text-slate-600 dark:text-slate-300 aria-checked:bg-white aria-checked:text-slate-900 aria-checked:shadow-sm dark:aria-checked:bg-slate-900 dark:aria-checked:text-slate-100">
+              <span aria-hidden="true">🛒</span> <span data-i18n="purchase.status.to_buy">À acheter</span>
+            </button>
+            <button type="button" role="radio" aria-checked="false" data-purchase-status="bought"
+                    class="min-h-[40px] min-w-0 rounded-lg px-1 text-sm font-medium text-slate-600 dark:text-slate-300 aria-checked:bg-white aria-checked:text-slate-900 aria-checked:shadow-sm dark:aria-checked:bg-slate-900 dark:aria-checked:text-slate-100">
+              <span aria-hidden="true">✅</span> <span data-i18n="purchase.status.bought">Acheté</span>
+            </button>
+          </div>
+        </div>
+        <button type="button" id="item-actions-paid-price-button" hidden aria-haspopup="dialog" aria-controls="paid-price-sheet"
+                class="flex items-center gap-3 rounded-xl px-3 py-3 text-left text-base font-medium text-slate-900 dark:text-slate-100 hover:bg-slate-200 dark:hover:bg-slate-700">
+          <span aria-hidden="true">💶</span>
+          <span data-i18n="modals.paidPrice.title" class="shrink-0">Prix payé</span>
+          <span id="item-actions-paid-price-value" class="ml-auto min-w-0 truncate text-sm font-normal text-slate-500 dark:text-slate-400"></span>
+        </button>
         <!-- The item's store aisle on a "Courses" list, opening #aisle-picker-sheet
              (quick-shop.js) to change it. -->
         <button type="button" id="item-actions-aisle-button" hidden aria-haspopup="dialog" aria-controls="aisle-picker-sheet"
@@ -2204,6 +2308,21 @@
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="h-5 w-5" aria-hidden="true"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4Z"/></svg>
           <span data-i18n="items.editList">Modifier la liste</span>
         </button>
+        <!-- Purchase lists with "Prévu" items: confirm them all as "À
+             acheter" at once — the step after starting from a template
+             (budget.js: validatePlannedItems). Label carries the count. -->
+        <button type="button" id="validate-planned-button" hidden
+                class="flex items-center gap-3 rounded-xl px-3 py-3 text-left text-base font-medium text-slate-900 dark:text-slate-100 hover:bg-slate-200 dark:hover:bg-slate-700">
+          <span aria-hidden="true" class="inline-flex h-5 w-5 shrink-0 items-center justify-center">📝</span>
+          <span id="validate-planned-label">Valider les articles prévus</span>
+        </button>
+        <!-- House members, on a list with items: save it as a House
+             template (#save-template-sheet, budget.js). -->
+        <button type="button" id="save-template-button" hidden aria-haspopup="dialog" aria-controls="save-template-sheet"
+                class="flex items-center gap-3 rounded-xl px-3 py-3 text-left text-base font-medium text-slate-900 dark:text-slate-100 hover:bg-slate-200 dark:hover:bg-slate-700">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="h-5 w-5" aria-hidden="true"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><path d="M17 21v-8H7v8"/><path d="M7 3v5h8"/></svg>
+          <span data-i18n="modals.listOptions.saveAsTemplate">Enregistrer comme modèle</span>
+        </button>
       </div>
     </div>
   </div>
@@ -2267,6 +2386,11 @@
             <button type="button" id="filter-status-active" data-filter-status="active"
                     class="rounded-full px-3.5 py-1.5 text-sm font-semibold">
               <span data-i18n="modals.filterItems.statusActive">Restant</span>
+            </button>
+            <!-- Purchase lists only: the items still "Prévu" (budget.js). -->
+            <button type="button" id="filter-status-planned" data-filter-status="planned" data-item-field="price" hidden
+                    class="rounded-full px-3.5 py-1.5 text-sm font-semibold">
+              <span data-i18n="modals.filterItems.statusPlanned">Prévu</span>
             </button>
             <button type="button" id="filter-status-done" data-filter-status="done"
                     class="rounded-full px-3.5 py-1.5 text-sm font-semibold">
@@ -2472,6 +2596,73 @@
     </div>
   </div>
 
+  <!-- "Prix payé" bottom sheet (budget.js: openPaidPriceSheet): what one
+       unit of a bought item actually cost, prefilled with what was entered
+       before or the estimate, with the line total and the gap to the
+       estimate updating as you type. Opened from the check-off toast's
+       "Prix payé" button and from #item-actions-sheet. "Prix prévu" clears
+       it (the purchase then counts at its estimate). -->
+  <div id="paid-price-sheet" hidden class="fixed inset-0 z-40 flex items-end justify-center bg-slate-950/30 dark:bg-slate-950/70 p-0 sm:items-center sm:p-4">
+    <div role="dialog" aria-modal="true" aria-labelledby="paid-price-sheet-title" class="w-full rounded-t-2xl bg-slate-100 dark:bg-slate-800 p-5 shadow-xl sm:max-w-md sm:rounded-2xl">
+      <div class="mb-3 flex items-center justify-between gap-3">
+        <div class="min-w-0 flex-1">
+          <h2 id="paid-price-sheet-title" data-i18n="modals.paidPrice.title" class="truncate text-lg font-semibold">Prix payé</h2>
+          <p id="paid-price-item" class="truncate text-sm text-slate-500 dark:text-slate-400"></p>
+        </div>
+        <button type="button" id="close-paid-price-sheet-button" data-i18n-aria-label="modals.close" aria-label="Fermer"
+                class="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-slate-500 dark:text-slate-400 hover:bg-slate-300 dark:hover:bg-slate-700 hover:text-slate-900 dark:hover:text-slate-200">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" class="h-5 w-5" aria-hidden="true"><path d="M18 6L6 18M6 6l12 12"/></svg>
+        </button>
+      </div>
+      <form id="paid-price-form" class="space-y-3">
+        <div>
+          <label for="paid-price-input" id="paid-price-input-label" class="mb-1 block text-sm font-medium text-slate-600 dark:text-slate-300"></label>
+          <input type="number" id="paid-price-input" step="0.01" min="0" inputmode="decimal" required
+                 class="w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-4 py-3 text-lg font-semibold tabular-nums text-slate-900 dark:text-slate-100 focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500/30">
+        </div>
+        <p id="paid-price-details" aria-live="polite" class="text-sm text-slate-600 dark:text-slate-300"></p>
+        <div class="flex gap-2">
+          <button type="button" id="paid-price-estimate-button"
+                  class="min-h-[48px] flex-1 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 text-sm font-semibold text-slate-700 dark:text-slate-200 hover:bg-slate-200 dark:hover:bg-slate-700">
+            <span data-i18n="modals.paidPrice.useEstimate">Prix prévu</span>
+          </button>
+          <button type="submit"
+                  class="min-h-[48px] flex-1 rounded-xl bg-sky-500 px-3 text-sm font-semibold text-white hover:bg-sky-400 active:scale-[0.98]">
+            <span data-i18n="modals.paidPrice.save">Enregistrer</span>
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- "Enregistrer comme modèle" bottom sheet (budget.js): saves the open
+       list as a template of its House — every item with its quantity, aisle
+       and price (the price paid when one was entered). House members only,
+       like the server (POST /api/v1/shopping-templates). -->
+  <div id="save-template-sheet" hidden class="fixed inset-0 z-40 flex items-end justify-center bg-slate-950/30 dark:bg-slate-950/70 p-0 sm:items-center sm:p-4">
+    <div role="dialog" aria-modal="true" aria-labelledby="save-template-sheet-title" class="w-full rounded-t-2xl bg-slate-100 dark:bg-slate-800 p-5 shadow-xl sm:max-w-md sm:rounded-2xl">
+      <div class="mb-3 flex items-center justify-between gap-3">
+        <h2 id="save-template-sheet-title" data-i18n="modals.saveTemplate.title" class="min-w-0 flex-1 truncate text-lg font-semibold">Enregistrer comme modèle</h2>
+        <button type="button" id="close-save-template-sheet-button" data-i18n-aria-label="modals.close" aria-label="Fermer"
+                class="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-slate-500 dark:text-slate-400 hover:bg-slate-300 dark:hover:bg-slate-700 hover:text-slate-900 dark:hover:text-slate-200">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" class="h-5 w-5" aria-hidden="true"><path d="M18 6L6 18M6 6l12 12"/></svg>
+        </button>
+      </div>
+      <form id="save-template-form" class="space-y-3">
+        <div>
+          <label for="save-template-name" data-i18n="modals.saveTemplate.nameLabel" class="mb-1 block text-sm font-medium text-slate-600 dark:text-slate-300">Nom du modèle</label>
+          <input type="text" id="save-template-name" required maxlength="200"
+                 class="w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-4 py-3 text-base text-slate-900 dark:text-slate-100 focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500/30">
+        </div>
+        <p id="save-template-hint" class="text-sm text-slate-600 dark:text-slate-300"></p>
+        <button type="submit" id="save-template-submit"
+                class="min-h-[48px] w-full rounded-xl bg-sky-500 px-4 text-base font-semibold text-white hover:bg-sky-400 active:scale-[0.98] disabled:opacity-60">
+          <span data-i18n="modals.saveTemplate.submit">Enregistrer le modèle</span>
+        </button>
+      </form>
+    </div>
+  </div>
+
   <div id="toast-container" aria-live="polite" class="pointer-events-none fixed inset-x-0 bottom-0 z-50 flex flex-col items-center gap-2 p-4"></div>
 
   <!-- defer on every one of these (rather than plain <script> tags, which
@@ -2503,6 +2694,7 @@
   <script src="/js/barcode.js" defer></script>
   <script src="/js/scanner.js" defer></script>
   <script src="/js/quick-shop.js" defer></script>
+  <script src="/js/budget.js" defer></script>
   <script src="/js/planning.js" defer></script>
   <script src="/js/urgent.js" defer></script>
   <script src="/js/spaces.js" defer></script>

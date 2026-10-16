@@ -72,6 +72,12 @@ func (app *Application) handleListsIndex(w http.ResponseWriter, r *http.Request)
 	writeJSON(w, http.StatusOK, lists)
 }
 
+// handleListsCreate creates a list, empty or — with template_key (a
+// built-in template, served in lang) or template_id (one of the House's own)
+// — filled with a copy of a template's items, all planned in a purchase
+// list (see shopping_templates.go). With a template, an empty name, type or
+// icon takes the template's, and a type outside the template's family
+// (models.ListTemplateFamily) is a 400.
 func (app *Application) handleListsCreate(w http.ResponseWriter, r *http.Request) {
 	var in struct {
 		Name             string `json:"name"`
@@ -79,13 +85,17 @@ func (app *Application) handleListsCreate(w http.ResponseWriter, r *http.Request
 		HouseID          int64  `json:"house_id"`
 		CustomCategoryID *int64 `json:"custom_category_id"`
 		Icon             string `json:"icon"`
+		TemplateKey      string `json:"template_key"`
+		TemplateID       *int64 `json:"template_id"`
+		Lang             string `json:"lang"`
 	}
 	if !decodeJSON(w, r, &in) {
 		return
 	}
+	usesTemplate := in.TemplateKey != "" || in.TemplateID != nil
 
 	in.Name = validate.Text(in.Name)
-	if in.Name == "" {
+	if in.Name == "" && !usesTemplate {
 		writeError(w, http.StatusBadRequest, "name is required")
 		return
 	}
@@ -93,10 +103,10 @@ func (app *Application) handleListsCreate(w http.ResponseWriter, r *http.Request
 		writeError(w, http.StatusBadRequest, "name is too long")
 		return
 	}
-	if in.Type == "" {
+	if in.Type == "" && !usesTemplate {
 		in.Type = "shopping"
 	}
-	if !models.ValidListTypes[in.Type] {
+	if in.Type != "" && !models.ValidListTypes[in.Type] {
 		writeError(w, http.StatusBadRequest, "type must be one of 'todo', 'shopping', 'groceries', 'recurring_shopping', 'custom'")
 		return
 	}
@@ -122,8 +132,31 @@ func (app *Application) handleListsCreate(w http.ResponseWriter, r *http.Request
 	if !app.validateCustomCategoryOwnership(w, r, in.CustomCategoryID) {
 		return
 	}
+	template, ok := app.resolveListTemplate(w, r, in.TemplateKey, in.TemplateID, in.HouseID, in.Lang)
+	if !ok {
+		return
+	}
 
-	list, err := app.DB.CreateList(r.Context(), in.Name, in.Type, in.HouseID, in.CustomCategoryID, in.Icon)
+	var list *models.List
+	var err error
+	if template == nil {
+		list, err = app.DB.CreateList(r.Context(), in.Name, in.Type, in.HouseID, in.CustomCategoryID, in.Icon)
+	} else {
+		if in.Name == "" {
+			in.Name = template.Name
+		}
+		if in.Type == "" {
+			in.Type = template.ListType
+		}
+		if models.ListTemplateFamily(in.Type) != models.ListTemplateFamily(template.ListType) {
+			writeError(w, http.StatusBadRequest, "type does not match the template's list type")
+			return
+		}
+		if in.Icon == "" {
+			in.Icon = template.Icon
+		}
+		list, err = app.DB.CreateListFromTemplate(r.Context(), in.Name, in.Type, in.HouseID, in.CustomCategoryID, in.Icon, template.Items, models.IsPurchaseListType(in.Type))
+	}
 	if err != nil {
 		app.serverError(w, r, err)
 		return

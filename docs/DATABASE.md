@@ -48,11 +48,11 @@ Since the `house_members` table (below) was added, every house also needs an own
 | `title` | `TEXT NOT NULL` | |
 | `url` | `TEXT` | nullable; used for shopping-list product links |
 | `quantity` | `INTEGER NOT NULL DEFAULT 1` | |
-| `price` | `REAL` | nullable; unit price in euros, optional, primarily used on `shopping` lists |
+| `price` | `REAL` | nullable; unit price in euros, optional, used on the purchase lists (`shopping`, `groceries`, `recurring_shopping`). It is the **estimate** a list's budget is planned with; what one unit actually cost is `actual_price` |
 | `price_auto` | `INTEGER NOT NULL DEFAULT 0` | booleans stored as 0/1, same convention as `done`; `1` when `price` was filled in by `internal/scraper`'s background lookup rather than typed in by a user — see [API.md](API.md#post-apiv1items) |
 | `image_url` | `TEXT` | nullable; product image found by the same background lookup as `price` (og:image/JSON-LD/twitter:image). Scraper-only — there is no request field to set it manually — and cleared back to `NULL` whenever `url` changes to something new, since an image found for the previous `url` no longer describes the item |
 | `target_month` | `TEXT` | nullable; planned purchase month in `YYYY-MM` form (validated by `internal/validate.Month`), used by the "Budget & Prévisions Achats" planning view (`static/js/planning.js`) to group and total upcoming spending — see [API.md](API.md#post-apiv1items) |
-| `done` | `INTEGER NOT NULL DEFAULT 0` | `CHECK (done IN (0, 1))` — booleans are stored as 0/1, converted to Go `bool` in `scanItem()` |
+| `done` | `INTEGER NOT NULL DEFAULT 0` | `CHECK (done IN (0, 1))` — booleans are stored as 0/1, converted to Go `bool` in `scanItem()`. On a purchase list, `done = 1` is the "bought" purchase status |
 | `position` | `INTEGER NOT NULL DEFAULT 0` | manual ordering within a list; settable per-item via `POST`/`PUT`/`PATCH /api/v1/items`, or in bulk (a full drag-and-drop reorder) via `PUT /api/v1/lists/{id}/reorder` — see [API.md](API.md#put-apiv1listsidreorder) and `db.ReorderItems` |
 | `due_date` | `TEXT` | nullable; `YYYY-MM-DD` (validated by `internal/validate.Date`). For a recurring item, this is the current occurrence's due date; it moves to `next_due_date` when the next occurrence starts — see `recurrence_rule` below and [API.md](API.md#recurring-items) |
 | `due_time` | `TEXT` | nullable (migration 21); optional `HH:MM` (24h, `internal/validate.TimeOfDay`) time for `due_date`, in `APP_TIMEZONE`. Always `NULL` without a `due_date` (the handlers clear it) |
@@ -72,7 +72,9 @@ Since the `house_members` table (below) was added, every house also needs an own
 | `reminder_at_due_time` | `INTEGER NOT NULL DEFAULT 0` | 0/1 boolean (migration 21); the "at the exact due time" mode — the reminder fires at `due_date` + `due_time`, and `reminder_offset_days`/`reminder_time` are only the fallback for an item without a `due_time`. Resolved at write time like the other two |
 | `previous_price` | `REAL` | nullable (migration 28); the price before the last time a background scan moved `price` (`db.UpdateItemPriceFromScan`, only when replacing an earlier price, not when filling in a missing one). With `price_changed_at`, drives the list view's green/red price indicator. Cleared by a manual `price` or `url` edit (`UpdateItem`, a `CASE` against the row's old values) and by accepting a [price alert](API.md#price-alerts) |
 | `price_changed_at` | `TEXT` | nullable (migration 28); ISO-8601 UTC time of that movement |
-| `aisle` | `TEXT` | nullable (migration 30); the store aisle, one of `internal/catalog.Aisles` (`produce`, `bakery`, `meat_fish`, `dairy`, `pantry`, `breakfast`, `drinks`, `baby`, `pets`, `household`, `hygiene`, `frozen`, `other`), validated by `internal/validate.Aisle`. On a "Courses" (`groceries`) list a new item without one gets the household's usual aisle for the product, else a keyword guess (`internal/handlers.resolveItemAisle`); the list view's "Par rayon" sort groups by it. Written by `db.SetItemAisle` (another "separate method, not one more `CreateItem`/`UpdateItem` parameter", like `SetItemLabels`) and by `db.ReactivateItem`, which only fills it in when empty. Migration 31 guessed it for the items Courses lists already held. See [API.md](API.md#quick-shopping-lists-courses) |
+| `aisle` | `TEXT` | nullable (migration 30); the store aisle, one of `internal/catalog.Aisles` (`produce`, `bakery`, `meat_fish`, `dairy`, `pantry`, `breakfast`, `drinks`, `baby`, `pets`, `household`, `hygiene`, `stationery`, `clothing`, `electronics`, `diy`, `frozen`, `other` — the four non-food ones added in code alongside migration 32, no schema change needed), validated by `internal/validate.Aisle`. On a "Courses" (`groceries`) list a new item without one gets the household's usual aisle for the product, else a keyword guess (`internal/handlers.resolveItemAisle`); the list view's "Par rayon" sort groups by it. Written by `db.SetItemAisle` (another "separate method, not one more `CreateItem`/`UpdateItem` parameter", like `SetItemLabels`) and by `db.ReactivateItem`, which only fills it in when empty. Migration 31 guessed it for the items Courses lists already held. See [API.md](API.md#quick-shopping-lists-courses) |
+| `is_planned` | `INTEGER NOT NULL DEFAULT 0` | 0/1 boolean (migration 32); splits the items not bought yet (`done = 0`) into "planned" (`1`: added while estimating — every item of a list created from a template — not confirmed as needed) and "to buy" (`0`). Never exposed as such: the API reports `purchase_status` (`planned`/`to_buy`/`bought`), derived by `models.PurchaseStatusOf` from `done` and this column, `done` winning. Cleared when the item is bought (`internal/handlers.purchaseColumns`) and by `db.ReactivateItem` (a product added again is wanted) — see [API.md](API.md#purchase-cycle--budget) |
+| `actual_price` | `REAL` | nullable (migration 32); what one unit actually cost, entered when the item was bought — a unit price like `price`, which stays the estimate it's compared with in the list's budget. `NULL` means "cost the estimate". Only ever set while `done = 1`: every write that takes an item out of "bought" clears it — the item handlers, `db.ReactivateItem` (a Courses re-add), `db.ActivateNextOccurrence` (a recurring item's next occurrence) — since the next purchase is a new one |
 | `labels` | `TEXT NOT NULL DEFAULT '[]'` | a JSON array of strings — a freeform, user-managed set of short tags (e.g. `"Bio"`, `"Promo"`), independent of every other column. Stored as JSON rather than a normalized join table since a label has no attributes of its own worth a dedicated table for, the same reasoning `recurrence_rule`/`target_month` already established for a small freeform value with no cross-item querying need. Defaults to `'[]'` rather than `NULL` so `scanItem` never has to special-case a missing column; cleaned and deduplicated by `internal/validate.Labels` before every write via `internal/db.SetItemLabels`, a dedicated method rather than another `CreateItem`/`UpdateItem` parameter — see [API.md](API.md#labels) |
 | `created_at` | `TEXT NOT NULL` | |
 | `updated_at` | `TEXT NOT NULL` | |
@@ -312,6 +314,41 @@ The EAN/UPC codes scanned for catalog products (migration 30): several per produ
 | `barcode` | `TEXT NOT NULL` | digits only, a 12-digit UPC-A stored as its 13-digit EAN-13 form (`internal/validate.Barcode`), so both spellings of one code match |
 | `product_id` | `INTEGER NOT NULL` | `REFERENCES house_products(id) ON DELETE CASCADE` — forgetting a product drops its codes; index `idx_house_product_barcodes_product` |
 | `created_at` | `TEXT NOT NULL` | ISO-8601 UTC |
+
+### `shopping_templates` and `shopping_template_items`
+
+A House's own list templates (migrations 32 and 33), saved by a member from one of the House's lists ("Enregistrer comme modèle") and offered by the "Nouvelle liste" modal to every member — [API.md](API.md#list-templates), `internal/db/shopping_templates.go`. The built-in templates (the purchase ones — cleaning, travel, moving, back to school, home maintenance — and the task ones — cleaning chores, moving to-do, back-to-school paperwork) are **not** stored here: they live in `internal/shoptemplates`, translated, so a release can change them without a migration.
+
+`shopping_templates`:
+
+| Column | Type | Notes |
+|---|---|---|
+| `id` | `INTEGER PRIMARY KEY AUTOINCREMENT` | |
+| `house_id` | `INTEGER NOT NULL` | `REFERENCES houses(id) ON DELETE CASCADE`; index `idx_shopping_templates_house`. Only this House's members read, use or delete the template (`authorizeHouseAccess`) |
+| `name` | `TEXT NOT NULL` | defaults to the list's name when saved |
+| `icon` | `TEXT NOT NULL DEFAULT ''` | defaults to the list's icon |
+| `list_type` | `TEXT NOT NULL DEFAULT 'groceries'` | the type a list created from the template gets unless the request names one — the saved list's type (`models.ValidListTypes`). Its family (`models.ListTemplateFamily`: every purchase type, else the type itself) is the only one the template may fill |
+| `created_by` | `INTEGER` | nullable; `REFERENCES users(id) ON DELETE SET NULL` — the member who saved it |
+| `created_at` | `TEXT NOT NULL` | ISO-8601 UTC |
+
+`shopping_template_items` (its items, `ON DELETE CASCADE` with the template; index `idx_shopping_template_items_template (template_id, position)`):
+
+| Column | Type | Notes |
+|---|---|---|
+| `id` | `INTEGER PRIMARY KEY AUTOINCREMENT` | |
+| `template_id` | `INTEGER NOT NULL` | `REFERENCES shopping_templates(id) ON DELETE CASCADE` |
+| `title` | `TEXT NOT NULL` | |
+| `quantity` | `INTEGER NOT NULL DEFAULT 1` | |
+| `estimated_price` | `REAL` | nullable; unit price in euros, copied into the new item's `price`. Saved from the item's `actual_price` when one was entered (the best estimate for next time), else its `price` |
+| `aisle` | `TEXT` | nullable; one of `internal/catalog.Aisles` |
+| `position` | `INTEGER NOT NULL DEFAULT 0` | list order |
+| `recurrence_rule` | `TEXT` | nullable (migration 33); a canonical [recurrence rule](#items) (`internal/recurrence`), copied into the new item's `recurrence_rule` — never a date: the series starts when the task is first checked off, or on the start date set later. Saved from the item's own rule |
+
+A template saved from a `todo` or `custom` list gets no `estimated_price` or `aisle` (`internal/handlers.handleShoppingTemplatesCreate`).
+
+A list created from a template (`db.CreateListFromTemplate`) gets one `items` row per template item — `is_recurring`/`recurrence_rule` from the template item's rule, no `due_date`, `reminder_enabled = 0`, and `is_planned = 1` in a purchase list only — in the same transaction as the `lists` row.
+
+**List budget.** No column stores it: `internal/db`'s `listSelect` computes it on every list read from three correlated subqueries over `items` (the estimate of what isn't bought — `total_amount` —, the estimate of what is, and what that cost: `COALESCE(actual_price, price) × quantity`), and `internal/budget.Summarize` derives the planned budget, spending, projection and variance from them (`models.List.Budget`, [API.md](API.md#get-apiv1lists)).
 
 ## Evolving the schema
 

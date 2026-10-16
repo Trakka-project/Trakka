@@ -86,6 +86,14 @@
   --tk-price-drop-glow:     rgb(5 150 105 / 0.35);
   --tk-price-increase-glow: rgb(225 29 72 / 0.35);
 
+  /* The budget summary's variance (list_view.js's updateFinanceSummary):
+   * green when the purchases made so far cost their estimate or less, red
+   * for an overrun — always next to a sign and a word ("Économie",
+   * "Dépassement"), never the color alone. Light values measure ≥ 5:1 on
+   * the summary's slate-50 background, dark ones ≥ 6:1 on slate-900. */
+  --tk-budget-under: #047857;
+  --tk-budget-over:  #be123c;
+
   color-scheme: light;
 }
 
@@ -126,6 +134,9 @@
     --tk-price-drop-glow:     rgb(52 211 153 / 0.35);
     --tk-price-increase-glow: rgb(251 113 133 / 0.35);
 
+    --tk-budget-under: #34d399;
+    --tk-budget-over:  #fb7185;
+
     color-scheme: dark;
   }
 }
@@ -153,6 +164,9 @@
   --tk-price-increase:      #fb7185;
   --tk-price-drop-glow:     rgb(52 211 153 / 0.35);
   --tk-price-increase-glow: rgb(251 113 133 / 0.35);
+
+  --tk-budget-under: #34d399;
+  --tk-budget-over:  #fb7185;
 
   color-scheme: dark;
 }

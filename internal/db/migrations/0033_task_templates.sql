@@ -1,0 +1,12 @@
+-- Migration 33: list templates for task lists (see
+-- internal/shoptemplates and internal/handlers/shopping_templates.go).
+--
+-- A template item can now repeat: recurrence_rule is copied as is into the
+-- recurrence_rule of the item a new list gets from it — the canonical
+-- iCalendar RRULE subset of internal/recurrence, NULL for a one-off item.
+-- Only the rule is kept, never a due date: the series of a list created
+-- from the template is anchored on the day each task is first done (see
+-- internal/handlers.nextOccurrence), or on the start date set afterwards.
+-- A purchase template's items have none, a task template's no price or
+-- aisle; shopping_templates.list_type says which kind a template is.
+ALTER TABLE shopping_template_items ADD COLUMN recurrence_rule TEXT;

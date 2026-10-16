@@ -47,6 +47,18 @@ SHOTS_DIR=/tmp/shots npm run test:quick-shopping  # also saves a screenshot at e
 
 It checks that adding a product already on the list tops it up or brings it back instead of duplicating it (in the browser, online and offline with the service worker, then after the offline queue syncs), autocomplete from the House catalog, the "Par rayon" grouping, favorites and the ⭐ panel, the aisle in the edit modal, and the barcode scanner: Chromium's fake camera plays a generated video of an EAN-13 symbol (`--use-file-for-fake-video-capture`), so the camera, `static/js/barcode.js`'s decoder, the House catalog lookup and the addition all run for real. It also checks that nothing is wider than a 320 px phone. Requirements as above.
 
+## `test-budget-templates.js`
+
+End-to-end check of the purchase cycle with budget tracking and list templates in headless Chromium, against a freshly built server on a throwaway database:
+
+```bash
+cd scripts
+npm run test:budget-templates                       # prints ok/FAIL per check, exits 1 on any failure
+SHOTS_DIR=/tmp/shots npm run test:budget-templates  # also saves a screenshot at each step
+```
+
+It creates a list from the "Rentrée scolaire" built-in template through the "Nouvelle liste" modal's picker (name, icon and type filled in, a typed name kept), checks its items arrive planned with their prices and aisles and its budget, confirms planned items (one tag tap, then "Valider les articles prévus"), checks an item off and enters the price paid from the toast's "Prix payé" button, checks the variance in the summary (red overrun, then a green saving, in step with the server's `budget`), moves an item back to "Prévu" from its actions sheet, edits a price paid in the edit modal, saves the list as a House template (the price paid becoming the estimate), creates a list from it and deletes it from the picker, switches the type to "Tâches" and checks the picker then offers the task templates only (no price, the type picked automatically, a task template dropped again on a switch back to a purchase type, no picker for "Liste libre"), creates the chores list (recurring tasks, no budget, no "Prévu", 🔁 cadence badges) and saves it as a House template offered under "Tâches" only, measures the template carousel at 390, 360 and 320 px (inside the dialog's padding, aligned with the fields, a 16 px margin after the last card at full scroll) and swipes it with raw touch events to check it snaps to a card, checks the picker's offline message and that a Courses list without prices shows no budget, and that nothing is wider than a 320 px phone — the collapsed summary included. Requirements as above.
+
 ## `test-barcode-decoder.js`
 
 Unit test of `static/js/barcode.js`, the scanner's own EAN-13/EAN-8 decoder, with no browser: synthetic symbols with blur, noise, a lighting gradient, upside down and vertical must be read; random stripes and a wrong check digit must not. `npm run test:barcode`.

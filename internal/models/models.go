@@ -79,6 +79,13 @@ type List struct {
 	// badge in the first place; otherwise always present, including a
 	// genuine 0.
 	TotalAmount *float64 `json:"total_amount,omitempty"`
+	// Budget is a response-only field (never persisted), populated by every
+	// read that goes through internal/db's listSelect, like TotalAmount: the
+	// list's budget summary — planned budget, actual spending and their
+	// variance (see ListBudget, internal/budget). nil when no item of the
+	// list has an estimated or an actual price, the same "nothing to show"
+	// signal as TotalAmount.
+	Budget *ListBudget `json:"budget,omitempty"`
 }
 
 // Item represents a single entry within a List.
@@ -254,12 +261,113 @@ type Item struct {
 	// household's usual aisle for that product, else a keyword guess (see
 	// internal/handlers.resolveItemAisle); the list view can group by it.
 	Aisle *string `json:"aisle,omitempty"`
+	// IsPlanned is the items.is_planned flag: a not-yet-bought item added
+	// while estimating (a list created from a template, or "Prévu" chosen
+	// on the item) rather than confirmed as needed. Never serialized: the
+	// API reports it through PurchaseStatus.
+	IsPlanned bool `json:"-"`
+	// PurchaseStatus is the item's place in the purchase cycle, derived from
+	// Done and IsPlanned by PurchaseStatusOf (PurchasePlanned,
+	// PurchaseToBuy or PurchaseBought) every time an item is read. Clients
+	// may set it on POST/PUT/PATCH /api/v1/items instead of done — see
+	// internal/handlers/items.go.
+	PurchaseStatus string `json:"purchase_status"`
+	// ActualPrice is what one unit actually cost, entered when the item was
+	// bought — a unit price like Price, which stays the estimate it is
+	// compared with in the list's Budget. nil means "cost what was
+	// estimated". Only ever set while the item is bought: taking it out of
+	// "bought" clears it (see migration 32).
+	ActualPrice *float64 `json:"actual_price,omitempty"`
 	// Merged is a transient, response-only field (like PriceStatus): true
 	// when POST /api/v1/items found the same product already on the
 	// "Courses" list and updated that item — unchecked it, adjusted its
 	// quantity — instead of creating a duplicate. The response is then that
 	// existing item, with its own id, and a 200 rather than a 201.
 	Merged bool `json:"merged,omitempty"`
+}
+
+// Purchase statuses (Item.PurchaseStatus): planned while estimating, to buy
+// once confirmed, bought once checked off. Bought is Item.Done.
+const (
+	PurchasePlanned = "planned"
+	PurchaseToBuy   = "to_buy"
+	PurchaseBought  = "bought"
+)
+
+// ValidPurchaseStatuses enumerates the values Item.PurchaseStatus accepts
+// on a write.
+var ValidPurchaseStatuses = map[string]bool{
+	PurchasePlanned: true,
+	PurchaseToBuy:   true,
+	PurchaseBought:  true,
+}
+
+// PurchaseStatusOf derives an item's purchase status from its done flag and
+// its is_planned flag: done wins, whatever is_planned says.
+func PurchaseStatusOf(done, planned bool) string {
+	switch {
+	case done:
+		return PurchaseBought
+	case planned:
+		return PurchasePlanned
+	default:
+		return PurchaseToBuy
+	}
+}
+
+// ListBudget is a list's budget summary (List.Budget): the planned budget
+// vs. what was actually spent, every figure in euros, rounded to the cent —
+// see internal/budget.Summary for what each one means.
+type ListBudget struct {
+	EstimatedTotal float64 `json:"estimated_total"`
+	SpentTotal     float64 `json:"spent_total"`
+	RemainingTotal float64 `json:"remaining_total"`
+	ProjectedTotal float64 `json:"projected_total"`
+	Variance       float64 `json:"variance"`
+	// VarianceStatus is "under" (a saving), "on_budget" or "over" (an
+	// overrun) — see internal/budget's Status constants.
+	VarianceStatus string `json:"variance_status"`
+}
+
+// ShoppingTemplate is a list template: either one of the built-in ones
+// (Builtin, identified by Key, translated — internal/shoptemplates) or a
+// House's own, saved from one of its lists (identified by ID, stored in
+// shopping_templates). ListType says which lists may start from it: those
+// of the same ListTemplateFamily — a purchase template ("groceries" for the
+// built-in ones) or a task template ("todo"). A list created from it (POST
+// /api/v1/lists with template_key or template_id) starts with a copy of its
+// Items — planned, in a purchase list.
+type ShoppingTemplate struct {
+	ID       int64  `json:"id,omitempty"`
+	Key      string `json:"key,omitempty"`
+	Builtin  bool   `json:"builtin"`
+	HouseID  int64  `json:"house_id,omitempty"`
+	Name     string `json:"name"`
+	Icon     string `json:"icon,omitempty"`
+	ListType string `json:"list_type"`
+	// CreatedBy is the member who saved a House template (nil for a
+	// built-in one, or once that account is deleted).
+	CreatedBy *int64 `json:"created_by,omitempty"`
+	CreatedAt string `json:"created_at,omitempty"`
+	// ItemCount and EstimatedTotal (Σ quantity × estimated_price) are
+	// response-only conveniences for the template picker.
+	ItemCount      int                     `json:"item_count"`
+	EstimatedTotal float64                 `json:"estimated_total"`
+	Items          []*ShoppingTemplateItem `json:"items"`
+}
+
+// ShoppingTemplateItem is one item of a ShoppingTemplate. EstimatedPrice is
+// a unit price, copied into the new item's Price; Aisle is one of
+// internal/catalog.Aisles, or "" for none; RecurrenceRule is a canonical
+// rule (internal/recurrence) copied into the new item's RecurrenceRule, or
+// "" for a one-off item (migration 33). A built-in task template's items
+// have no price or aisle, a built-in purchase template's no rule.
+type ShoppingTemplateItem struct {
+	Title          string   `json:"title"`
+	Quantity       int      `json:"quantity"`
+	EstimatedPrice *float64 `json:"estimated_price,omitempty"`
+	Aisle          string   `json:"aisle,omitempty"`
+	RecurrenceRule string   `json:"recurrence_rule,omitempty"`
 }
 
 // Product is one entry of a House's product catalog (house_products): a
@@ -327,6 +435,26 @@ var ValidListTypes = map[string]bool{
 	"groceries":          true,
 	"recurring_shopping": true,
 	"custom":             true,
+}
+
+// IsPurchaseListType reports whether lists of listType are purchase lists
+// — shopping, groceries, recurring_shopping: items with prices, going
+// through the purchase cycle (PurchaseStatusOf) — rather than todo or
+// custom ones.
+func IsPurchaseListType(listType string) bool {
+	return ValidListTypes[listType] && listType != "todo" && listType != "custom"
+}
+
+// ListTemplateFamily is the family of list types that share templates
+// (ShoppingTemplate): "purchase" for every purchase type, since their items
+// have the same fields, else the type itself — a todo template's tasks
+// never land in a purchase list, nor a purchase template's prices and
+// aisles in a task list.
+func ListTemplateFamily(listType string) string {
+	if IsPurchaseListType(listType) {
+		return "purchase"
+	}
+	return listType
 }
 
 // User is the API-facing account shape. It never carries a password hash

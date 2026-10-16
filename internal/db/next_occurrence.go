@@ -65,10 +65,11 @@ func (d *DB) ListItemsAwaitingNextOccurrence(ctx context.Context) ([]*NextOccurr
 // done, next_due_date still nextDueDate), so a user who un-checked or
 // edited the item in the meantime is never overridden. Reports whether the
 // row was actually updated. The due date change re-arms the reminder by
-// itself (see ListItemsForDueReminderScan).
+// itself (see ListItemsForDueReminderScan). The price paid for the previous
+// occurrence is cleared: the next one is a new purchase (migration 32).
 func (d *DB) ActivateNextOccurrence(ctx context.Context, itemID int64, nextDueDate string) (bool, error) {
 	res, err := d.conn.ExecContext(ctx,
-		`UPDATE items SET done = 0, due_date = next_due_date, next_due_date = NULL,
+		`UPDATE items SET done = 0, due_date = next_due_date, next_due_date = NULL, actual_price = NULL,
 		 updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now')
 		 WHERE id = ? AND done = 1 AND next_due_date = ?`,
 		itemID, nextDueDate)

@@ -16,6 +16,8 @@ internal/handlers/     routing, request validation, JSON responses, session midd
 internal/validate/     small reusable input validators (currently: URL scheme)
 internal/recurrence/   recurrence rules: parse/normalize the RRULE subset items store (Parse/String), step to the next occurrence (After) and past today (Next); no deps beyond the stdlib; imported by validate (write-path normalization) and handlers (task lifecycle)
 internal/catalog/      quick shopping lists: product name key (Key), store aisles (Aisles, GuessAisle, AisleFromCategories), buying rhythm (Assess, RankRepurchases); stdlib only, knows nothing about the DB; imported by validate, db (migration 31) and handlers
+internal/budget/       a list's budget summary: planned budget vs. actual spending, projection and variance (Summarize), cent rounding (RoundCents); stdlib only, fed the three SQL sums by db's listSelect; ported to JS as budget.js's computeBudget
+internal/shoptemplates/ the built-in list templates (cleaning, travel, moving, back to school, home maintenance), translated fr/en, with aisles and estimated prices (Builtins, Builtin, FillTotals); imports only models, catalog and budget; House templates live in the DB instead
 internal/scraper/      best-effort background price lookup for an item's URL (OpenGraph/JSON-LD/microdata), Dealabs deal search, Open Food Facts barcode lookup
 internal/webpush/      hand-rolled Web Push: VAPID (RFC 8292) JWT signing, aes128gcm (RFC 8291) payload encryption, delivery
 internal/backup/       encrypted WebDAV backups: key file, chunked AES-256-GCM stream format, minimal WebDAV client (SSRF-guarded), scheduler, restore
