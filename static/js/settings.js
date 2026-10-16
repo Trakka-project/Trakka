@@ -41,13 +41,13 @@ const userSettingsEls = {
     general: document.getElementById('user-settings-tab-general'),
     notifications: document.getElementById('user-settings-tab-notifications'),
     prices: document.getElementById('user-settings-tab-prices'),
-    calendar: document.getElementById('user-settings-tab-calendar'),
+    integrations: document.getElementById('user-settings-tab-integrations'),
   },
   panels: {
     general: document.getElementById('user-settings-panel-general'),
     notifications: document.getElementById('user-settings-panel-notifications'),
     prices: document.getElementById('user-settings-panel-prices'),
-    calendar: document.getElementById('user-settings-panel-calendar'),
+    integrations: document.getElementById('user-settings-panel-integrations'),
   },
   themeSelect: document.getElementById('user-settings-theme'),
   languageSelect: document.getElementById('user-settings-language'),
@@ -86,14 +86,14 @@ const userSettingsEls = {
 // aria-selected-driven styling as admin.js's setAdminConsoleTab (base.css).
 // Every panel stays inside the one form, so "Enregistrer" (pinned in the
 // footer) saves the fields of all three form-backed tabs at once; the
-// calendar tab has nothing to save, so the footer is hidden there.
+// integrations tab has nothing to save, so the footer is hidden there.
 function setUserSettingsTab(tab) {
   for (const [name, button] of Object.entries(userSettingsEls.tabButtons)) {
     const active = name === tab;
     button.setAttribute('aria-selected', String(active));
     userSettingsEls.panels[name].hidden = !active;
   }
-  userSettingsEls.footer.hidden = tab === 'calendar';
+  userSettingsEls.footer.hidden = tab === 'integrations';
   userSettingsEls.body.scrollTop = 0;
 }
 
@@ -230,6 +230,8 @@ function openUserSettingsModal() {
   // this file, called only on click like refreshAdminConsoleButtonVisibility
   // above): whether a feed link is active, and when an app last used it.
   refreshCalendarFeedSection();
+  // Same for api-tokens.js: the account's API tokens.
+  refreshApiTokensSection();
   userSettingsEls.modal.hidden = false;
   // setUserSettingsTab's own reset above ran while the modal was still
   // display:none, where scrollTop can't be set: redo it now it's shown.

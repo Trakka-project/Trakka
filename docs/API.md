@@ -2,7 +2,7 @@
 
 Base URL: `http://<host>:<port>` (default port `8080`). All endpoints are under `/api/v1`.
 
-All responses are `application/json; charset=utf-8`, except the [calendar feed](#calendar-feed) (`text/calendar`). Every `/api/v1/...` endpoint requires an authenticated session (see [Authentication](#authentication) below) — there is no anonymous access to the JSON API. The one exception is `GET /api/v1/calendar/feed.ics`, which calendar apps poll without a session and which is authenticated by a secret token in its URL instead (see [Calendar feed](#calendar-feed)). `/auth/...` endpoints and static assets stay unauthenticated, since `/auth/...` is how a session gets established in the first place.
+All responses are `application/json; charset=utf-8`, except the [calendar feed](#calendar-feed) (`text/calendar`). Every `/api/v1/...` endpoint requires an authenticated session (see [Authentication](#authentication) below) — there is no anonymous access to the JSON API. A few list and item endpoints also accept a personal [API token](#api-tokens) (`Authorization: Bearer trk_…`) instead of the session cookie, for integrations such as Home Assistant. The one exception is `GET /api/v1/calendar/feed.ics`, which calendar apps poll without a session and which is authenticated by a secret token in its URL instead (see [Calendar feed](#calendar-feed)). `/auth/...` endpoints and static assets stay unauthenticated, since `/auth/...` is how a session gets established in the first place.
 
 ## Conventions
 
@@ -34,6 +34,8 @@ These are classic server-rendered, form-POST endpoints (not JSON) — `/auth/log
 | `/auth/oidc/callback` | `GET` | The provider's redirect target. Verifies the id_token, provisions the account on first login (with a personal house, same as local registration), sets the session cookie, redirects to `/`. For a flow started with `app_challenge`, sets no cookie and redirects to the Android app instead (below). |
 | `/auth/oidc/app-session` | `POST` | Form fields: `code`, `verifier`. Redeems the Android app's handoff code (below): sets the session cookie and redirects to `/`, or redirects to `/auth/login?error=oidc_failed`. `404` if OIDC isn't configured. |
 
+Integrations that can't hold a browser session (Home Assistant, scripts) authenticate with a personal **API token** instead: `Authorization: Bearer trk_…` on each request, accepted by a fixed set of list and item routes only — see [API tokens](#api-tokens).
+
 A first-time OIDC login is rejected (`?error=email_taken`) if the claimed email already belongs to a different account (local, or a different OIDC issuer) — accounts are never silently auto-linked by email, since an OIDC provider's email claim isn't guaranteed to be verified.
 
 Both `/auth/login` and `/auth/register` require a `csrf_token` form field matching the `trakka_csrf` cookie set by a prior `GET /auth/login` — see the CSRF paragraph below. There is no way to submit either form correctly without first loading the page, so a scripted login/registration (curl, a test harness) must fetch the page first and extract the token:
@@ -63,7 +65,7 @@ Another app registering the same URL scheme can receive the code but cannot rede
 
 ### `GET /api/v1/me`
 
-Returns the authenticated user. `401 {"error": "authentication required"}` if the session cookie is missing, invalid, or expired.
+Returns the authenticated user. `401 {"error": "authentication required"}` if the session cookie is missing, invalid, or expired (`401 {"error": "invalid API token"}` for an unknown or revoked [API token](#api-tokens)).
 
 ```json
 { "id": 1, "email": "alice@example.com", "display_name": "Alice", "is_admin": false, "created_at": "...", "keep_last_page": true, "language": "en", "reminder_default_offset_days": 0, "reminder_default_time": "09:00", "reminder_default_at_due_time": false, "vibrate_on_notification": true, "reminders_enabled": true, "overdue_tasks_summary_enabled": false, "overdue_tasks_summary_time": "08:00", "collaborator_actions_enabled": true, "item_additions_enabled": true, "list_sharing_enabled": true }
@@ -116,11 +118,13 @@ curl -b cookies.txt -X PATCH http://localhost:8080/api/v1/me \
 
 ### `GET /api/v1/config`
 
-Instance-wide settings any signed-in user's frontend needs (as opposed to the admin-only [`GET /api/v1/admin/settings`](#admin-settings)). Read once by `static/js/user-search.js` to adapt the [sharing autocomplete](#get-apiv1userssearch).
+Instance-wide settings any signed-in user's frontend needs (as opposed to the admin-only [`GET /api/v1/admin/settings`](#admin-settings)). Read once by `static/js/user-search.js` to adapt the [sharing autocomplete](#get-apiv1userssearch), and by the Home Assistant integration at setup.
 
 ```json
-{ "saas_mode": false }
+{ "saas_mode": false, "timezone": "Europe/Paris" }
 ```
+
+`timezone` is the IANA name of `APP_TIMEZONE` (`UTC` when unset or unrecognized), the zone an item's `due_time` and reminder times are wall-clock times in.
 
 `saas_mode` (`bool`) mirrors the `SAAS_MODE` env var (default `false`, see [docs/DEPLOYMENT.md](DEPLOYMENT.md#configuration-environment-variables)): `false` for a self-hosted household/group, `true` for a multi-tenant deployment where accounts don't know each other. Env-only — not editable from the admin console.
 
@@ -337,12 +341,15 @@ A list also carries a freeform `icon` (typically an emoji, e.g. `🛒`/`🖥️`
 
 ### `GET /api/v1/lists`
 
-Returns lists belonging to houses the caller is a member of, newest first. Items are **not** embedded here (see `GET /api/v1/lists/{id}` for that).
+Returns lists belonging to houses the caller is a member of, newest first. Items are **not** embedded here unless `?include=items` asks for them (see `GET /api/v1/lists/{id}`).
 
 Query parameters:
 - `type` (optional) — filter to `todo`, `shopping`, `groceries`, `recurring_shopping` or `custom`. `400` if any other value is given.
 - `house_id` (optional) — filter to lists belonging to that house. `400` if not a positive integer; `403` if the caller isn't a member of that house.
 - `shared_with_me` (optional) — when `"true"`, switches to a different, mutually exclusive mode: instead of the caller's own house-scoped lists, returns every list reachable only via a [List or Space share](#sharing) (see `access_source`/`access_permission` below), excluding any whose house they're already a plain member of. `type`/`house_id` don't apply in this mode.
+- `scope` (optional) — `"all"` is a fourth mutually exclusive mode, for integrations: **every** list the caller can open, in one request — the lists of all their houses (newest first), then the `?shared_with_me=true` ones. Each list then carries `access_source`/`access_permission`: `"house_member"`/`"write"` for a house list, the share's own values otherwise, so a client knows which lists are read-only. `type` applies; `house_id` doesn't (`400` if combined). Any other value is a `400`.
+- `name` (optional, any mode) — keeps only the lists with that name, compared case-insensitively after trimming (`?scope=all&name=courses`). Names aren't unique, so the result is still an array.
+- `include` (optional, any mode) — `"items"` embeds each list's `items`, ordered as in [`GET /api/v1/lists/{id}`](#get-apiv1listsid) (`items` is omitted for an empty list). Any other value is a `400`. The Home Assistant integration polls `?scope=all&include=items`.
 - `pinned_house_spaces` (optional) — when `"true"`, a third mutually exclusive mode: every list the caller reaches purely by pinning a Space that's merely *visible* to them through House membership rather than an explicit share (`access_source: "house_member"` — see [Pinning a House-visible Space](#patch-apiv1custom-categoriesidsharepin)). Deliberately not folded into `?shared_with_me=true`'s own query: every row this mode returns already belongs to a House the caller is a member of, which `?shared_with_me=true`'s own exclusion (above) would filter straight back out. This is what lets a pinned House Space's lists show up on the caller's dashboard even while a *different* House they also belong to is the one currently selected. `type`/`house_id` don't apply in this mode either.
 
 ```bash
@@ -351,6 +358,8 @@ curl -b cookies.txt http://localhost:8080/api/v1/lists?type=shopping
 curl -b cookies.txt http://localhost:8080/api/v1/lists?house_id=1
 curl -b cookies.txt http://localhost:8080/api/v1/lists?shared_with_me=true
 curl -b cookies.txt http://localhost:8080/api/v1/lists?pinned_house_spaces=true
+curl -H "Authorization: Bearer trk_…" "http://localhost:8080/api/v1/lists?scope=all&include=items"
+curl -H "Authorization: Bearer trk_…" "http://localhost:8080/api/v1/lists?scope=all&name=Courses"
 ```
 
 ```json
@@ -388,7 +397,7 @@ curl -b cookies.txt http://localhost:8080/api/v1/lists?pinned_house_spaces=true
 
 A bought item with an `actual_price` but no `price` is unplanned spending: it adds to `spent_total` and to `variance`, not to `estimated_total`. `budget` is omitted when no item of the list has a price or a price paid (like `total_amount`), and from the `?shared_with_me=true` listing, which has neither. The PWA recomputes the same figures live from the items (`computeBudget` in `static/js/budget.js`, a hand-kept port).
 
-`custom_category`/`custom_category_id` are only present when the list is attached to one — see [Custom categories](#custom-categories). `access_source`/`access_permission`/`is_pinned_to_dashboard` are only present in the `?shared_with_me=true`/`?pinned_house_spaces=true` modes above (never on this endpoint's own default, house-scoped listing) — see [Sharing](#sharing). `access_source` is `"list_share"`/`"space_share"` from `?shared_with_me=true`, or `"house_member"` from `?pinned_house_spaces=true`. For a list reached via `access_source: "space_share"` or `"house_member"`, `is_pinned_to_dashboard` reflects either that list's own individual pin ([`PATCH /api/v1/lists/{id}/share/pin`](#patch-apiv1listsidsharepin)) or the parent Space's own pin as a whole ([`PATCH /api/v1/custom-categories/{id}/share/pin`](#patch-apiv1custom-categoriesidsharepin)) — whichever says pinned wins; for `"house_member"` specifically every returned row is pinned by construction (`?pinned_house_spaces=true` never returns an unpinned one). The dashboard itself is a client-side merge of three calls, deduplicated by list id (a `house_member`-sourced list may already be present in the plain `?house_id=` listing if it happens to belong to the currently selected House): the plain `?house_id=` listing above, `?shared_with_me=true` filtered down to entries with `is_pinned_to_dashboard: true`, and `?pinned_house_spaces=true` in full (see `static/js/app.js`'s `loadDashboard` and `static/js/shares.js`'s `loadPinnedSharedLists`/`loadPinnedHouseSpaceLists`) — there's no server-side "give me my house's lists plus my pinned shares in one call" mode.
+`custom_category`/`custom_category_id` are only present when the list is attached to one — see [Custom categories](#custom-categories). `access_source`/`access_permission`/`is_pinned_to_dashboard` are only present in the `?shared_with_me=true`/`?pinned_house_spaces=true`/`?scope=all` modes above (never on this endpoint's own default, house-scoped listing) — see [Sharing](#sharing). `access_source` is `"list_share"`/`"space_share"` from `?shared_with_me=true`, or `"house_member"` from `?pinned_house_spaces=true`; `?scope=all` has all three, `"house_member"` then meaning any list of one of the caller's houses. For a list reached via `access_source: "space_share"` or `"house_member"`, `is_pinned_to_dashboard` reflects either that list's own individual pin ([`PATCH /api/v1/lists/{id}/share/pin`](#patch-apiv1listsidsharepin)) or the parent Space's own pin as a whole ([`PATCH /api/v1/custom-categories/{id}/share/pin`](#patch-apiv1custom-categoriesidsharepin)) — whichever says pinned wins; for `"house_member"` specifically every returned row is pinned by construction (`?pinned_house_spaces=true` never returns an unpinned one). The dashboard itself is a client-side merge of three calls, deduplicated by list id (a `house_member`-sourced list may already be present in the plain `?house_id=` listing if it happens to belong to the currently selected House): the plain `?house_id=` listing above, `?shared_with_me=true` filtered down to entries with `is_pinned_to_dashboard: true`, and `?pinned_house_spaces=true` in full (see `static/js/app.js`'s `loadDashboard` and `static/js/shares.js`'s `loadPinnedSharedLists`/`loadPinnedHouseSpaceLists`) — there's no server-side "give me my house's lists plus my pinned shares in one call" mode.
 
 ### `POST /api/v1/lists`
 
@@ -649,8 +658,11 @@ Revokes a share. `204` on success, `404` if no such share exists (also on a repe
 
 `list_id` is required. Returns `200` with an array. `400` if `list_id` is missing, not a positive integer, or doesn't reference an existing list. `403` unless the caller has at least read [access](#sharing) to the list.
 
+`title` (optional) keeps only the items with that title, compared case-insensitively after trimming — how a script that knows an item by name finds the id the write routes take. Titles aren't unique, so the result is still an array (possibly empty).
+
 ```bash
 curl -b cookies.txt "http://localhost:8080/api/v1/items?list_id=1"
+curl -H "Authorization: Bearer trk_…" "http://localhost:8080/api/v1/items?list_id=1&title=lait"
 ```
 
 ### `POST /api/v1/items`
@@ -1120,6 +1132,57 @@ Contents: one `VEVENT` per task with a date on any list the token's owner can ac
 | Reminder enabled | `VALARM` with a `TRIGGER` relative to the event start (all-day events start at local midnight), so it applies to every occurrence: `-PT4H` for "la veille à 20:00", `PT9H` for "le jour même à 09:00", `PT0S` for "à l'heure de l'échéance" |
 
 Every event also carries `UID` `trakka-item-<id>@<host>` (`BASE_URL`'s host, else the request's), `SUMMARY` (the title), `CATEGORIES` and `DESCRIPTION` (the list name), `URL` (`<BASE_URL>/?list=<id>`, only when `BASE_URL` is set), `LAST-MODIFIED` and `TRANSP:TRANSPARENT`. The calendar is named `Trakka — <display name>` and advertises a one-hour refresh (`REFRESH-INTERVAL`, `X-PUBLISHED-TTL`).
+
+## API tokens
+
+Personal tokens for integrations that call the API without a browser session — the [Home Assistant integration](HOME_ASSISTANT.md) first, or a script. Implementation: `internal/handlers/api_tokens.go`; table [`api_tokens`](DATABASE.md#api_tokens).
+
+A token is `trk_` followed by 32 random bytes in base64url (47 characters). It is stored only as its SHA-256 hash, so it is returned exactly once, by the `POST` that creates it. Send it on every request:
+
+```bash
+curl -H "Authorization: Bearer trk_…" "http://localhost:8080/api/v1/lists?scope=all&include=items"
+```
+
+The request then runs as the token's user, with that user's access rules: a list shared read-only stays read-only (`403`), someone else's list stays out of reach (`403`). But a token opens **only these routes**, whatever its user may do with a session:
+
+| Route | Use |
+|---|---|
+| `GET /api/v1/me`, `GET /api/v1/config` | who the token belongs to; the instance's time zone |
+| `GET /api/v1/lists`, `GET /api/v1/lists/{id}` | the lists and their items (`?scope=all&include=items`, `?name=`) |
+| `PUT /api/v1/lists/{id}/reorder` | reorder a list's items |
+| `GET`/`POST /api/v1/items`, `GET`/`PUT`/`PATCH`/`DELETE /api/v1/items/{id}` | read, add, change, check off and delete items (`?title=`) |
+
+Every other `/api/v1/...` route answers a token with `403 {"error": "this endpoint is not available to API tokens"}` — the account, houses, sharing, admin, push, the calendar feed and the token routes below (a leaked token can't create another). An unknown or revoked token is a `401 {"error": "invalid API token"}` with `WWW-Authenticate: Bearer realm="trakka", error="invalid_token"`, even if a valid session cookie comes along. An `Authorization` header that isn't `Bearer trk_…` (a reverse proxy's own `Basic` login, or the `id_token` oauth2-proxy forwards) is ignored, and the session cookie decides as usual.
+
+Token requests need no CSRF precaution (a browser never attaches an `Authorization` header by itself); the usual cross-origin check still applies to writes, and lets through clients that send no `Origin`, like Home Assistant. Each use records `last_used_at`, at most once a minute.
+
+The three management routes need a session, like the rest of the API; their writes go through the usual cross-origin check. The PWA offers them in Paramètres → Intégrations → Jetons d'API.
+
+### `GET /api/v1/api-tokens`
+
+The calling user's tokens, oldest first. Never returns the tokens themselves.
+
+```json
+[
+  { "id": 3, "name": "Home Assistant", "created_at": "2026-10-16T12:13:08.541Z", "last_used_at": "2026-10-16T12:14:02.118Z" }
+]
+```
+
+`last_used_at` is `null` until the token is first used.
+
+### `POST /api/v1/api-tokens`
+
+Creates a token. Body: `{"name": "Home Assistant"}` — required, at most 200 characters, so the user can tell tokens apart. `201`:
+
+```json
+{ "id": 3, "name": "Home Assistant", "token": "trk_0vrV…", "created_at": "2026-10-16T12:13:08.541Z", "last_used_at": null }
+```
+
+`400` for a missing or too long name; `409` once the user holds 20 tokens.
+
+### `DELETE /api/v1/api-tokens/{id}`
+
+Revokes a token: it stops working at once. `204`; `404` if the calling user has no such token (including another user's).
 
 ## Admin settings
 

@@ -1,0 +1,4 @@
+# Pins Home Assistant 2026.10.1 (Python >= 3.14.2). Run from this directory:
+#   python3 -m venv .venv && .venv/bin/pip install -r requirements_test.txt
+#   .venv/bin/pytest
+pytest-homeassistant-custom-component==0.13.372

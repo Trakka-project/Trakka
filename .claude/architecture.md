@@ -25,6 +25,8 @@ internal/ical/         minimal iCalendar (RFC 5545) writer — content lines, fo
 static/                PWA assets served at "/" (index.html, js/, locales/ (FR/EN dictionaries), emoji/ (emoji picker data, generated), sw.js, manifest.json, icons/)
 tools/genemoji/        build-ignored maintenance tool (`go run tools/genemoji/main.go`) regenerating static/emoji/{fr,en}.json from a pinned emojibase-data release
 templates/             login.html, rendered via html/template
+custom_components/trakka/ the Home Assistant integration (Python, HACS; hacs.json at the root): one to-do entity per list over the API-token routes; no Go, never in the server image — docs/HOME_ASSISTANT.md
+tests/home_assistant/  its pytest suite, run in a real Home Assistant core against an in-memory fake Trakka API (fake_trakka.py), plus an opt-in live-server test
 android/               optional Android app: a Capacitor shell (native/ Android Studio project, www/ connect screen) that opens any Trakka server's PWA, built by the root Makefile in its own container; no Go, never in the server image — docs/MOBILE_BUILD.md
 ```
 

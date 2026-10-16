@@ -33,10 +33,15 @@ const (
 // /api/v1/admin/settings.
 type instanceConfig struct {
 	SaaSMode bool `json:"saas_mode"`
+	// Timezone is the IANA name of APP_TIMEZONE, the zone an item's
+	// due_time and reminder times are wall-clock times in. The Home
+	// Assistant integration reads it to turn due_date + due_time into an
+	// absolute time.
+	Timezone string `json:"timezone"`
 }
 
 func (app *Application) handleConfig(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, http.StatusOK, instanceConfig{SaaSMode: app.Config.SaaSMode})
+	writeJSON(w, http.StatusOK, instanceConfig{SaaSMode: app.Config.SaaSMode, Timezone: app.location().String()})
 }
 
 // handleUsersSearch answers GET /api/v1/users/search?q=... with up to

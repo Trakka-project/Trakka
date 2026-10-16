@@ -1,0 +1,141 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Connect to Trakka",
+        "description": "Create an API token in Trakka (Settings → Integrations → API tokens), then enter it here with your Trakka server's address.",
+        "data": {
+          "url": "Server URL",
+          "api_token": "API token",
+          "verify_ssl": "Verify the SSL certificate"
+        },
+        "data_description": {
+          "url": "The address you open Trakka at, e.g. https://trakka.example.com or http://192.168.1.10:8080.",
+          "api_token": "Starts with trk_. It is shown only once, when you create it.",
+          "verify_ssl": "Turn off only for a server with a self-signed certificate."
+        }
+      },
+      "reauth_confirm": {
+        "title": "New Trakka API token",
+        "description": "The API token for {url} no longer works (it was probably revoked). Create a new one in Trakka (Settings → Integrations → API tokens) and enter it here.",
+        "data": {
+          "api_token": "API token"
+        },
+        "data_description": {
+          "api_token": "Starts with trk_. It must belong to the same Trakka account."
+        }
+      },
+      "reconfigure": {
+        "title": "Reconfigure Trakka",
+        "description": "Change the server's address, the API token or the certificate check. The account must stay the same.",
+        "data": {
+          "url": "Server URL",
+          "api_token": "API token",
+          "verify_ssl": "Verify the SSL certificate"
+        },
+        "data_description": {
+          "url": "The address you open Trakka at, e.g. https://trakka.example.com or http://192.168.1.10:8080.",
+          "api_token": "Starts with trk_. It is shown only once, when you create it.",
+          "verify_ssl": "Turn off only for a server with a self-signed certificate."
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Can't reach the Trakka API at this address. Check the URL, and that Home Assistant can reach the server (no login page of a reverse proxy in front of /api/v1).",
+      "invalid_auth": "This API token is unknown or was revoked.",
+      "invalid_token_format": "A Trakka API token starts with trk_.",
+      "invalid_url": "Enter a full address starting with http:// or https://.",
+      "unknown": "Unexpected error, see the Home Assistant logs."
+    },
+    "abort": {
+      "already_configured": "This Trakka account is already configured.",
+      "reauth_successful": "The new API token is saved.",
+      "reconfigure_successful": "The new settings are saved.",
+      "wrong_account": "This API token belongs to another Trakka account."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Trakka options",
+        "data": {
+          "scan_interval": "Polling interval"
+        },
+        "data_description": {
+          "scan_interval": "How often Home Assistant fetches your lists, in seconds. Changes made from Home Assistant show at once."
+        }
+      }
+    }
+  },
+  "selector": {
+    "aisle": {
+      "options": {
+        "produce": "Fruit & vegetables",
+        "bakery": "Bakery",
+        "meat_fish": "Meat & fish",
+        "dairy": "Dairy & chilled",
+        "pantry": "Pantry",
+        "breakfast": "Breakfast & sweets",
+        "drinks": "Drinks",
+        "baby": "Baby",
+        "pets": "Pets",
+        "household": "Household",
+        "hygiene": "Health & beauty",
+        "stationery": "Stationery & school supplies",
+        "clothing": "Clothing & luggage",
+        "electronics": "Electronics & batteries",
+        "diy": "DIY & garden",
+        "frozen": "Frozen",
+        "other": "Other"
+      }
+    }
+  },
+  "services": {
+    "add_item": {
+      "name": "Add an item with details",
+      "description": "Adds an item to a Trakka list, with a quantity, an aisle, a price or the urgent flag. On a Courses list, a product already there is updated instead of added twice.",
+      "fields": {
+        "item": {
+          "name": "Item",
+          "description": "The name of the item."
+        },
+        "quantity": {
+          "name": "Quantity",
+          "description": "How many."
+        },
+        "aisle": {
+          "name": "Aisle",
+          "description": "The store aisle to file the item under."
+        },
+        "price": {
+          "name": "Price",
+          "description": "The unit price, in euros."
+        },
+        "urgent": {
+          "name": "Urgent",
+          "description": "Flag the item as urgent."
+        }
+      }
+    }
+  },
+  "exceptions": {
+    "auth_failed": {
+      "message": "The Trakka API token is unknown or was revoked."
+    },
+    "update_failed": {
+      "message": "Error fetching the Trakka lists: {error}"
+    },
+    "cannot_connect": {
+      "message": "Can't reach the Trakka server: {error}"
+    },
+    "request_refused": {
+      "message": "Trakka refused the change to {list}: {error}"
+    },
+    "read_only_list": {
+      "message": "The list {list} is shared with you read-only."
+    },
+    "item_not_found": {
+      "message": "No item {item} on the list {list}."
+    }
+  }
+}

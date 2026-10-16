@@ -1,0 +1,14 @@
+{
+  "entity": {
+    "todo": {
+      "groceries": { "default": "mdi:basket" },
+      "shopping": { "default": "mdi:cart" },
+      "recurring_shopping": { "default": "mdi:cart-arrow-down" },
+      "todo": { "default": "mdi:clipboard-check-outline" },
+      "custom": { "default": "mdi:format-list-bulleted" }
+    }
+  },
+  "services": {
+    "add_item": { "service": "mdi:cart-plus" }
+  }
+}

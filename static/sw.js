@@ -8,7 +8,7 @@ importScripts('/js/db.js', '/js/recurrence.js');
 
 // Bump both on any change to APP_SHELL's contents so activate()
 // evicts the old cache instead of serving stale assets forever.
-const SHELL_CACHE = 'trakka-shell-v136';
+const SHELL_CACHE = 'trakka-shell-v137';
 const RUNTIME_CACHE = 'trakka-runtime-v128';
 const KNOWN_CACHES = [SHELL_CACHE, RUNTIME_CACHE];
 
@@ -47,6 +47,7 @@ const APP_SHELL = [
   '/js/push.js',
   '/js/local-reminders.js',
   '/js/calendar-feed.js',
+  '/js/api-tokens.js',
   '/js/install-help.js',
   '/css/base.css',
   '/css/tokens.css',
@@ -271,6 +272,13 @@ self.addEventListener('fetch', (event) => {
   // the live response. And the feed itself, should someone open the link in
   // this browser, is a token-bearing URL with nothing to mirror offline.
   if (url.pathname.startsWith(API_PREFIX + '/calendar/')) {
+    return;
+  }
+
+  // API tokens (api-tokens.js, docs/HOME_ASSISTANT.md) likewise: a new token
+  // is only ever shown in the live POST response, so creating one must never
+  // be queued and replayed, nor revoking one deferred.
+  if (url.pathname === API_PREFIX + '/api-tokens' || url.pathname.startsWith(API_PREFIX + '/api-tokens/')) {
     return;
   }
 

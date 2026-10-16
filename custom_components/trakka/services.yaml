@@ -1,0 +1,55 @@
+add_item:
+  target:
+    entity:
+      integration: trakka
+      domain: todo
+      supported_features:
+        - todo.TodoListEntityFeature.CREATE_TODO_ITEM
+  fields:
+    item:
+      required: true
+      example: "Lait"
+      selector:
+        text:
+    quantity:
+      example: 2
+      selector:
+        number:
+          min: 1
+          max: 100000
+          mode: box
+    aisle:
+      example: "dairy"
+      selector:
+        select:
+          translation_key: aisle
+          options:
+            - produce
+            - bakery
+            - meat_fish
+            - dairy
+            - pantry
+            - breakfast
+            - drinks
+            - baby
+            - pets
+            - household
+            - hygiene
+            - stationery
+            - clothing
+            - electronics
+            - diy
+            - frozen
+            - other
+    price:
+      example: 1.15
+      selector:
+        number:
+          min: 0
+          max: 1000000
+          step: 0.01
+          mode: box
+          unit_of_measurement: "€"
+    urgent:
+      selector:
+        boolean:

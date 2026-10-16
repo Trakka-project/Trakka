@@ -683,7 +683,7 @@
         "general": "General",
         "notifications": "Notifications",
         "prices": "Prices",
-        "calendar": "Calendar"
+        "integrations": "Integrations"
       },
       "appearanceLabel": "Appearance",
       "appearanceHint": "Choose the app's appearance.",
@@ -782,6 +782,35 @@
         "apple": "On iPhone or iPad, tap \"Subscribe on this device\", or go to Settings → Apps → Calendar → Calendar Accounts → Add Account → Other → \"Add Subscribed Calendar\". On a Mac: Calendar → File → \"New Calendar Subscription…\". Untick \"Remove alerts\" to keep the reminders.",
         "thunderbird": "In the Calendar tab, \"+ New Calendar\" → \"On the Network\", then paste the HTTPS link.",
         "readOnlyNote": "The subscription is read-only: check off and edit your tasks in Trakka, and your calendar follows."
+      },
+      "apiTokens": {
+        "title": "API tokens (Home Assistant)",
+        "hint": "Connect Home Assistant or a script to your lists. A token reads and changes your lists and their items, never your account or your shares.",
+        "loading": "Loading…",
+        "none": "No tokens yet.",
+        "createdUnused": "Created {created} · never used",
+        "createdUsed": "Created {created} · used {used}",
+        "nameLabel": "Token name",
+        "namePlaceholder": "Name (e.g. Home Assistant)",
+        "defaultName": "Home Assistant",
+        "create": "Create a token",
+        "revoke": "Revoke",
+        "confirmRevoke": "Confirm",
+        "revokeAriaLabel": "Revoke the token {name}",
+        "revoked": "Token “{name}” revoked",
+        "copyNowWarning": "Copy this token now: for your security, it won't be shown again. Anyone who has it can read and change your lists.",
+        "tokenLabel": "API token",
+        "serverUrlLabel": "Server address, to enter with the token",
+        "copy": "Copy",
+        "copied": "Copied",
+        "copyFailed": "Couldn't copy: select the text and copy it by hand.",
+        "networkRequired": "This action requires a network connection.",
+        "tooMany": "You have reached the maximum number of tokens: revoke one you no longer use.",
+        "howTo": "Set up Home Assistant",
+        "step1": "Install the Trakka integration with HACS (custom repository), then restart Home Assistant.",
+        "step2": "Create a token named “Home Assistant” here, and copy it along with the server address.",
+        "step3": "In Home Assistant: Settings → Devices & services → Add integration → Trakka, then paste the address and the token.",
+        "revokeNote": "Each of your lists becomes a to-do list in Home Assistant. Revoking a token here cuts its access at once."
       }
     },
     "installHelp": {

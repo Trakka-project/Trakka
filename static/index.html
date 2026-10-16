@@ -1359,16 +1359,16 @@
           <span aria-hidden="true" class="text-base leading-none">🏷️</span>
           <span data-i18n="modals.userSettings.tabs.prices">Prix</span>
         </button>
-        <button type="button" id="user-settings-tab-calendar" role="tab" aria-selected="false" aria-controls="user-settings-panel-calendar"
+        <button type="button" id="user-settings-tab-integrations" role="tab" aria-selected="false" aria-controls="user-settings-panel-integrations"
                 class="flex min-h-[48px] min-w-0 flex-col items-center justify-center gap-0.5 rounded-xl border px-1 py-1.5 text-[11px] font-medium leading-tight focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-500/50 sm:text-xs">
-          <span aria-hidden="true" class="text-base leading-none">📅</span>
-          <span data-i18n="modals.userSettings.tabs.calendar">Calendrier</span>
+          <span aria-hidden="true" class="text-base leading-none">🔌</span>
+          <span data-i18n="modals.userSettings.tabs.integrations">Intégrations</span>
         </button>
       </div>
 
       <!-- The form spans every panel (all its fields are read by id in settings.js, so a
            field on a hidden panel is still saved), with the submit button in the pinned
-           footer. The calendar panel's buttons act at once (type="button"). -->
+           footer. The integrations panel's buttons act at once (type="button"). -->
       <form id="user-settings-form" class="flex min-h-0 flex-1 flex-col">
         <div id="user-settings-body" class="min-h-0 flex-1 overflow-y-auto">
           <div id="user-settings-panel-general" role="tabpanel" aria-labelledby="user-settings-tab-general" class="space-y-4">
@@ -1660,7 +1660,7 @@
             </section>
           </div>
 
-          <div id="user-settings-panel-calendar" role="tabpanel" aria-labelledby="user-settings-tab-calendar" hidden class="space-y-4">
+          <div id="user-settings-panel-integrations" role="tabpanel" aria-labelledby="user-settings-tab-integrations" hidden class="space-y-4">
             <!-- "Export de calendrier": the personal iCalendar feed link (calendar-feed.js,
                  internal/handlers/calendar_feed.go). Outside the form: its buttons act at once. -->
             <section aria-labelledby="calendar-feed-title" class="space-y-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-4 py-3">
@@ -1734,6 +1734,70 @@
                     <p class="mt-0.5" data-i18n="modals.userSettings.calendarFeed.thunderbird">Dans l'onglet Agenda, « + Nouvel agenda » → « Sur le réseau », puis collez le lien HTTPS.</p>
                   </div>
                   <p data-i18n="modals.userSettings.calendarFeed.readOnlyNote">L'abonnement est en lecture seule : cochez et modifiez vos tâches dans Trakka, votre agenda suivra.</p>
+                </div>
+              </details>
+            </section>
+
+            <!-- "Jetons d'API": personal tokens for integrations such as Home Assistant
+                 (api-tokens.js, internal/handlers/api_tokens.go, docs/HOME_ASSISTANT.md). -->
+            <section aria-labelledby="api-tokens-title" class="space-y-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-4 py-3">
+              <div>
+                <h3 id="api-tokens-title" class="flex items-center gap-2 text-sm font-semibold text-slate-700 dark:text-slate-200">
+                  <span aria-hidden="true">🏠</span>
+                  <span data-i18n="modals.userSettings.apiTokens.title">Jetons d'API (Home Assistant)</span>
+                </h3>
+                <p class="mt-0.5 text-xs font-normal text-slate-500 dark:text-slate-400" data-i18n="modals.userSettings.apiTokens.hint">Reliez Home Assistant ou un script à vos listes. Un jeton lit et modifie vos listes et leurs articles, jamais votre compte ni vos partages.</p>
+              </div>
+
+              <p id="api-tokens-status" class="text-xs text-slate-600 dark:text-slate-300" role="status"></p>
+              <ul id="api-tokens-list" class="space-y-2"></ul>
+
+              <!-- Shown only right after a token is created: the server keeps only its hash,
+                   so this is the one moment it can be displayed. -->
+              <div id="api-tokens-created" hidden class="space-y-3 rounded-lg border border-amber-300 dark:border-amber-700 bg-amber-50 dark:bg-amber-950/30 p-3">
+                <p class="text-xs font-medium text-amber-800 dark:text-amber-300" data-i18n="modals.userSettings.apiTokens.copyNowWarning">Copiez ce jeton maintenant : pour votre sécurité, il ne sera plus affiché. Toute personne qui le possède peut lire et modifier vos listes.</p>
+                <div>
+                  <label for="api-tokens-created-value" class="block text-xs font-medium text-slate-600 dark:text-slate-300" data-i18n="modals.userSettings.apiTokens.tokenLabel">Jeton d'API</label>
+                  <div class="mt-1 flex gap-2">
+                    <input type="text" id="api-tokens-created-value" readonly
+                           class="min-h-[44px] min-w-0 flex-1 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 font-mono text-xs text-slate-900 dark:text-slate-100 focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500/30">
+                    <button type="button" id="api-tokens-copy-token" data-i18n="modals.userSettings.apiTokens.copy"
+                            class="min-h-[44px] shrink-0 rounded-xl bg-sky-500 px-3 py-2 text-sm font-semibold text-white hover:bg-sky-400">Copier</button>
+                  </div>
+                </div>
+                <div>
+                  <label for="api-tokens-server-url" class="block text-xs font-medium text-slate-600 dark:text-slate-300" data-i18n="modals.userSettings.apiTokens.serverUrlLabel">Adresse du serveur, à saisir avec le jeton</label>
+                  <div class="mt-1 flex gap-2">
+                    <input type="text" id="api-tokens-server-url" readonly
+                           class="min-h-[44px] min-w-0 flex-1 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 font-mono text-xs text-slate-900 dark:text-slate-100 focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500/30">
+                    <button type="button" id="api-tokens-copy-url" data-i18n="modals.userSettings.apiTokens.copy"
+                            class="min-h-[44px] shrink-0 rounded-xl bg-sky-500 px-3 py-2 text-sm font-semibold text-white hover:bg-sky-400">Copier</button>
+                  </div>
+                </div>
+              </div>
+
+              <div class="flex gap-2">
+                <label for="api-tokens-name" class="sr-only" data-i18n="modals.userSettings.apiTokens.nameLabel">Nom du jeton</label>
+                <input type="text" id="api-tokens-name" maxlength="200" autocomplete="off" enterkeyhint="done"
+                       data-i18n-placeholder="modals.userSettings.apiTokens.namePlaceholder" placeholder="Nom (ex. Home Assistant)"
+                       class="min-h-[44px] min-w-0 flex-1 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 text-sm text-slate-900 dark:text-slate-100 focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500/30">
+                <button type="button" id="api-tokens-create-button" data-i18n="modals.userSettings.apiTokens.create"
+                        class="min-h-[44px] shrink-0 rounded-xl bg-sky-500 px-4 py-2.5 text-sm font-semibold text-white hover:bg-sky-400 disabled:opacity-60">Créer un jeton</button>
+              </div>
+              <p id="api-tokens-error" hidden class="text-xs text-rose-600 dark:text-rose-400" role="alert"></p>
+
+              <details class="group border-t border-slate-200 dark:border-slate-700 pt-3">
+                <summary class="flex cursor-pointer list-none items-center justify-between text-sm font-medium text-slate-600 dark:text-slate-300">
+                  <span data-i18n="modals.userSettings.apiTokens.howTo">Configurer Home Assistant</span>
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="h-4 w-4 transition-transform group-open:rotate-180" aria-hidden="true"><polyline points="6 9 12 15 18 9"/></svg>
+                </summary>
+                <div class="mt-3 space-y-2 text-xs text-slate-600 dark:text-slate-300">
+                  <ol class="list-decimal space-y-1 pl-4">
+                    <li data-i18n="modals.userSettings.apiTokens.step1">Installez l'intégration Trakka avec HACS (dépôt personnalisé), puis redémarrez Home Assistant.</li>
+                    <li data-i18n="modals.userSettings.apiTokens.step2">Créez ici un jeton nommé « Home Assistant », et copiez-le avec l'adresse du serveur.</li>
+                    <li data-i18n="modals.userSettings.apiTokens.step3">Dans Home Assistant : Paramètres → Appareils et services → Ajouter une intégration → Trakka, puis collez l'adresse et le jeton.</li>
+                  </ol>
+                  <p data-i18n="modals.userSettings.apiTokens.revokeNote">Chacune de vos listes devient une liste de tâches dans Home Assistant. Révoquer un jeton ici coupe son accès aussitôt.</p>
                 </div>
               </details>
             </section>
@@ -2783,6 +2847,7 @@
   <script src="/js/push.js" defer></script>
   <script src="/js/local-reminders.js" defer></script>
   <script src="/js/calendar-feed.js" defer></script>
+  <script src="/js/api-tokens.js" defer></script>
   <script src="/js/install-help.js" defer></script>
   <script src="/js/admin.js" defer></script>
 </body>

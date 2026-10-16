@@ -3,7 +3,9 @@ package handlers
 import (
 	"errors"
 	"net/http"
+	"slices"
 	"strconv"
+	"strings"
 
 	"trakka/internal/db"
 	"trakka/internal/models"
@@ -25,51 +27,132 @@ import (
 // dashboard even while a *different* House they also belong to is the one
 // currently selected — see the "Pinning shared lists (and shared Spaces)"
 // bullet in CLAUDE.md.
+//
+// ?scope=all is a fourth mode, for integrations (the Home Assistant one,
+// docs/HOME_ASSISTANT.md) that want every list the caller can open in one
+// request: the House lists of the default mode (all Houses) followed by the
+// shared_with_me ones — the three access paths AccessLevelForList combines,
+// with no duplicates since ListSharedListsForUser leaves House lists out.
+// Every list then says how it's reached: access_source "house_member"
+// (as in the pinned_house_spaces mode) with access_permission "write" for
+// a House list, the share's own source and permission otherwise. type applies, house_id doesn't.
+//
+// Two options apply to every mode: ?name= keeps the lists with that name
+// (compared case-insensitively), and ?include=items embeds each list's
+// items, as GET /api/v1/lists/{id} does.
 func (app *Application) handleListsIndex(w http.ResponseWriter, r *http.Request) {
-	if r.URL.Query().Get("shared_with_me") == "true" {
-		lists, err := app.DB.ListSharedListsForUser(r.Context(), userFromContext(r).ID)
-		if err != nil {
-			app.serverError(w, r, err)
-			return
-		}
-		writeJSON(w, http.StatusOK, lists)
+	query := r.URL.Query()
+	includeItems := false
+	if include := query.Get("include"); include == "items" {
+		includeItems = true
+	} else if include != "" {
+		writeError(w, http.StatusBadRequest, "include must be 'items'")
 		return
 	}
-	if r.URL.Query().Get("pinned_house_spaces") == "true" {
-		lists, err := app.DB.ListPinnedHouseSpaceLists(r.Context(), userFromContext(r).ID)
+	nameFilter := validate.Text(query.Get("name"))
+
+	lists, ok := app.listsForIndex(w, r)
+	if !ok {
+		return
+	}
+	if nameFilter != "" {
+		lists = slices.DeleteFunc(lists, func(l *models.List) bool { return !strings.EqualFold(l.Name, nameFilter) })
+	}
+	if includeItems {
+		// One query per list: SQLite answers each from the items(list_id)
+		// index in-process, and the lists one person can open stay few.
+		for _, l := range lists {
+			items, err := app.DB.ListItemsByList(r.Context(), l.ID)
+			if err != nil {
+				app.serverError(w, r, err)
+				return
+			}
+			l.Items = items
+		}
+	}
+	writeJSON(w, http.StatusOK, lists)
+}
+
+// listsForIndex returns the lists of handleListsIndex's mode, before its
+// name and include options. On failure it writes the response itself and
+// returns ok=false.
+func (app *Application) listsForIndex(w http.ResponseWriter, r *http.Request) ([]*models.List, bool) {
+	query := r.URL.Query()
+	userID := userFromContext(r).ID
+	if query.Get("shared_with_me") == "true" {
+		lists, err := app.DB.ListSharedListsForUser(r.Context(), userID)
 		if err != nil {
 			app.serverError(w, r, err)
-			return
+			return nil, false
 		}
-		writeJSON(w, http.StatusOK, lists)
-		return
+		return lists, true
+	}
+	if query.Get("pinned_house_spaces") == "true" {
+		lists, err := app.DB.ListPinnedHouseSpaceLists(r.Context(), userID)
+		if err != nil {
+			app.serverError(w, r, err)
+			return nil, false
+		}
+		return lists, true
 	}
 
-	typeFilter := r.URL.Query().Get("type")
+	typeFilter := query.Get("type")
 	if typeFilter != "" && !models.ValidListTypes[typeFilter] {
 		writeError(w, http.StatusBadRequest, "invalid type filter")
-		return
+		return nil, false
+	}
+
+	switch scope := query.Get("scope"); scope {
+	case "":
+	case "all":
+		if query.Get("house_id") != "" {
+			writeError(w, http.StatusBadRequest, "house_id can't be combined with scope=all")
+			return nil, false
+		}
+		lists, err := app.DB.ListListsForUser(r.Context(), userID, typeFilter, 0)
+		if err != nil {
+			app.serverError(w, r, err)
+			return nil, false
+		}
+		for _, l := range lists {
+			l.AccessSource = "house_member"
+			l.AccessPermission = "write"
+		}
+		shared, err := app.DB.ListSharedListsForUser(r.Context(), userID)
+		if err != nil {
+			app.serverError(w, r, err)
+			return nil, false
+		}
+		for _, l := range shared {
+			if typeFilter == "" || l.Type == typeFilter {
+				lists = append(lists, l)
+			}
+		}
+		return lists, true
+	default:
+		writeError(w, http.StatusBadRequest, "scope must be 'all'")
+		return nil, false
 	}
 
 	var houseID int64
-	if houseIDStr := r.URL.Query().Get("house_id"); houseIDStr != "" {
+	if houseIDStr := query.Get("house_id"); houseIDStr != "" {
 		var err error
 		houseID, err = strconv.ParseInt(houseIDStr, 10, 64)
 		if err != nil || houseID <= 0 {
 			writeError(w, http.StatusBadRequest, "invalid house_id")
-			return
+			return nil, false
 		}
 		if !app.authorizeHouseAccess(w, r, houseID) {
-			return
+			return nil, false
 		}
 	}
 
-	lists, err := app.DB.ListListsForUser(r.Context(), userFromContext(r).ID, typeFilter, houseID)
+	lists, err := app.DB.ListListsForUser(r.Context(), userID, typeFilter, houseID)
 	if err != nil {
 		app.serverError(w, r, err)
-		return
+		return nil, false
 	}
-	writeJSON(w, http.StatusOK, lists)
+	return lists, true
 }
 
 // handleListsCreate creates a list, empty or — with template_key (a

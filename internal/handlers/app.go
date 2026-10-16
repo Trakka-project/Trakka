@@ -151,7 +151,7 @@ func (app *Application) location() *time.Location {
 //
 // /api/v1/... is gated behind RequireSession as a whole (wrapped once,
 // below) rather than per-route — every JSON API endpoint requires a valid
-// session. /auth/... and static files stay unauthenticated: /auth/... is
+// session, or an API token for the few routes tokens open (api_tokens.go). /auth/... and static files stay unauthenticated: /auth/... is
 // how a session gets established in the first place, and gating static
 // files would break the service worker's cache-first app-shell strategy
 // (the client-side redirect in app.js's apiRequest() handles the UX layer
@@ -268,6 +268,12 @@ func (app *Application) Routes() http.Handler {
 	apiMux.HandleFunc("GET /api/v1/calendar/feed-token", app.handleCalendarFeedTokenShow)
 	apiMux.HandleFunc("POST /api/v1/calendar/feed-token", app.handleCalendarFeedTokenCreate)
 	apiMux.HandleFunc("DELETE /api/v1/calendar/feed-token", app.handleCalendarFeedTokenDelete)
+
+	// Managing API tokens needs a session: a token opens none of these (see
+	// apiTokenRoutes in api_tokens.go for the routes it does open).
+	apiMux.HandleFunc("GET /api/v1/api-tokens", app.handleAPITokensIndex)
+	apiMux.HandleFunc("POST /api/v1/api-tokens", app.handleAPITokensCreate)
+	apiMux.HandleFunc("DELETE /api/v1/api-tokens/{id}", app.handleAPITokensDelete)
 
 	mux.Handle("/api/v1/", app.RequireSession(apiMux))
 	// The one /api/v1/... route outside RequireSession: calendar apps poll

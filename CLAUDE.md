@@ -48,8 +48,8 @@ Install/version details, and the container fallback when a tool isn't installed,
 | Working on... | Read |
 |---|---|
 | Package layout/import boundaries, `internal/config`, DB driver/connection pool/migration engine, Go & dependency version pinning, `cmd/server` (healthcheck/shutdown/logging), Dockerfile/`compose.yml` | [.claude/architecture.md](.claude/architecture.md) |
-| `internal/handlers`, `internal/db`, `internal/auth`, `internal/scraper`, `internal/webpush`, `internal/backup`, `internal/ical`, `internal/catalog`, `internal/budget`, `internal/shoptemplates` — API/RBAC/sharing/pinning/recurring-items/price-lookup/quick-shopping-lists/purchase-cycle-budget-and-list-templates/task-assignments/push-notification/encrypted-WebDAV-backup/calendar-feed design — and the **full** non-negotiable security rules | [.claude/backend.md](.claude/backend.md) |
-| `static/js/*.js`, `static/sw.js`, `static/css/*.css`, `templates/login.html` — PWA/offline mechanism, i18n, theming, mobile layout rules, quick shopping lists (aisles, autocomplete, barcode scanner), purchase cycle/budget summary/list templates, task assignments ("Par membre") | [.claude/frontend-pwa.md](.claude/frontend-pwa.md) |
+| `internal/handlers`, `internal/db`, `internal/auth`, `internal/scraper`, `internal/webpush`, `internal/backup`, `internal/ical`, `internal/catalog`, `internal/budget`, `internal/shoptemplates` — API/RBAC/sharing/pinning/recurring-items/price-lookup/quick-shopping-lists/purchase-cycle-budget-and-list-templates/task-assignments/push-notification/encrypted-WebDAV-backup/calendar-feed/API-token design — and the **full** non-negotiable security rules | [.claude/backend.md](.claude/backend.md) |
+| `static/js/*.js`, `static/sw.js`, `static/css/*.css`, `templates/login.html` — PWA/offline mechanism, i18n, theming, mobile layout rules, quick shopping lists (aisles, autocomplete, barcode scanner), purchase cycle/budget summary/list templates, task assignments ("Par membre"), Paramètres → Intégrations (calendar feed, API tokens) | [.claude/frontend-pwa.md](.claude/frontend-pwa.md) |
 | `.github/workflows/ci.yml` and `build-apk.yml` (Android release APK), `.golangci.yml`, gosec/gitleaks/Trivy findings & exemptions, `.github/` templates | [.claude/ci-security.md](.claude/ci-security.md) |
 | "What's built, what's verified, what's left", session handoff, the copy-paste prompt for a new session | [.claude/status.md](.claude/status.md) |
 | REST endpoint reference | [docs/API.md](docs/API.md) |
@@ -60,6 +60,7 @@ Install/version details, and the container fallback when a tool isn't installed,
 | Local dev setup, pre-commit hooks | [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) |
 | Past security audit | [docs/AUDIT.md](docs/AUDIT.md) |
 | End-user PWA install steps | [docs/INSTALLATION.md](docs/INSTALLATION.md) |
+| `custom_components/trakka/`, `tests/home_assistant/`, `hacs.json` — the Home Assistant integration (Python, HACS): to-do entities, config flow, `trakka.add_item`, item events, its tests and how to run them | [docs/HOME_ASSISTANT.md](docs/HOME_ASSISTANT.md); the server side (API tokens) in [.claude/backend.md](.claude/backend.md#api-tokens-integrations-home-assistant) |
 | `android/`, root `Makefile` — the Android app (Capacitor shell connecting to any Trakka server: connect screen, `TrakkaApp` native plugin, QR scanner, containerized build, signing key) | [docs/MOBILE_BUILD.md](docs/MOBILE_BUILD.md) |
 
 ## Non-negotiable security rules
@@ -68,8 +69,8 @@ Standing constraints for this codebase — full text, rationale, and code pointe
 
 - **SQL**: parameterized (`?`) placeholders only, confined to `internal/db` — never concatenate or `fmt.Sprintf` a user-supplied value into a query.
 - **URLs**: any user-supplied URL must pass `internal/validate.URL` (absolute `http://`/`https://`, non-empty host) — blocks `javascript:`/`data:` schemes.
-- **Passwords & sessions**: `bcrypt` only, never logged in plaintext. Session tokens are `crypto/rand`, stored **hashed** (SHA-256); cookie is `HttpOnly`, `SameSite=Lax`.
-- **Session gate**: every `/api/v1/...` route sits behind `RequireSession`, except `GET /api/v1/calendar/feed.ics` — read-only, authenticated by a per-user `crypto/rand` token stored **hashed** like a session. Don't add another route outside the gate.
+- **Passwords & sessions**: `bcrypt` only, never logged in plaintext. Session, calendar-feed and API tokens are `crypto/rand`, stored **hashed** (SHA-256); cookie is `HttpOnly`, `SameSite=Lax`.
+- **Session gate**: every `/api/v1/...` route sits behind `RequireSession`, except `GET /api/v1/calendar/feed.ics` — read-only, authenticated by a per-user `crypto/rand` token stored **hashed** like a session. Don't add another route outside the gate. `RequireSession` also accepts a personal API token (`Authorization: Bearer trk_…`), but only on the explicit `apiTokenRoutes` allowlist (list reads, item reads/writes) — never widen it implicitly.
 - **CSRF**: every `/api/v1/...` write checks `Origin`/`Sec-Fetch-Site`; `/auth/login` and `/auth/register` additionally require a double-submit `csrf_token`.
 - **SSRF**: any outbound request to a user-supplied URL (the scraper, Web Push, the WebDAV backup client) must go through a dial guard (`safeDialContext`/`dialGuard`: resolve host → verify public IP → dial that literal IP). Never call `http.Get`/`http.Client.Do` directly on untrusted input.
 - **CSP / frontend**: strict `Content-Security-Policy` (two narrow, documented exceptions for the Tailwind Play CDN); never `innerHTML` with interpolated data; don't add a new inline `<script>`/`<style>` without revisiting the CSP.
