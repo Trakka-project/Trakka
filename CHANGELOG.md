@@ -1,5 +1,39 @@
 ## [unreleased]
 
+## [1.3.0] - 2026-10-16
+
+### 🚀 Features
+
+- *(android)* Add Capacitor app connecting to any Trakka server
+- *(android)* Sign in through the browser for SSO with passkeys
+- *(settings)* Explain missing push support in the Android app
+- *(chore)* Add calDAV export functionality
+- *(notifications)* Improve notifications and add notification for tasks not done
+- *(scraper)* Add Dealabs deal search, price history, and visual indicators
+- *(chore)* Improve price scraper and add funcionality to check price manually
+- *(users)* Add dynamic search and autocomplete with SaaS privacy mode
+- *(groceries)* Add aisle badges and set default aisle sorting for shopping lists
+- *(templates)* Fix modal scrolling, filter by type, and add todo list templates
+- *(assignees)* Expand assignable scope for self-hosted spaces and shared lists
+- *(home-assistant)* Add API token management and HACS custom component for todo integration
+
+### 🐛 Bug Fixes
+
+- *(android)* Fix notifications for android application
+- *(ci)* Fix go linter
+- *(ui)* Fix scroll on background instead of first plan
+- *(scraper)* Preserve price_auto flag on item update and sync live list prices
+- *(security)* Update x/net to v0.60.0 and Go toolchain to 1.27.2
+- *(linter)* Fix go linter and add rules to claude to check linter after finishing work
+- *(ci)* Build gosec against x/tools v0.50.0 for Go 1.27.2
+- *(auth)* Fix authentication OIDC for android app
+- *(pwa)* Force cache-control no-cache on static files and improve SW update purge
+
+### ⚙️ Miscellaneous Tasks
+
+- *(android)* Build the APK and attach it to GitHub releases
+## [unreleased]
+
 ## [1.2.0] - 2026-09-30
 
 ### 🚀 Features
