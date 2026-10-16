@@ -14,9 +14,15 @@ const userContextKey contextKey = "trakka_user"
 
 // RequireSession gates next behind a valid session cookie, injecting the
 // resolved user into the request context. It's applied once, around the
-// whole /api/v1/ subtree, in Routes().
+// whole /api/v1/ subtree, in Routes(). A request carrying an API token
+// ("Authorization: Bearer trk_...") is authenticated by that token instead,
+// and only reaches the routes tokens may use (see api_tokens.go).
 func (app *Application) RequireSession(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if token, ok := bearerAPIToken(r); ok {
+			app.serveWithAPIToken(w, r, token, next)
+			return
+		}
 		cookie, err := r.Cookie(auth.SessionCookieName)
 		if err != nil {
 			writeError(w, http.StatusUnauthorized, "authentication required")

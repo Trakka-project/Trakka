@@ -138,6 +138,20 @@ func (s *Service) ValidateSession(ctx context.Context, rawToken string) (*models
 	return s.DB.GetUser(ctx, session.UserID)
 }
 
+// ValidateAPIToken resolves a raw API token (see NewAPIToken) to its user,
+// recording the use. Returns db.ErrNotFound if the token is malformed,
+// unknown or revoked.
+func (s *Service) ValidateAPIToken(ctx context.Context, rawToken string) (*models.User, error) {
+	if !strings.HasPrefix(rawToken, APITokenPrefix) || len(rawToken) > MaxAPITokenLength {
+		return nil, db.ErrNotFound
+	}
+	userID, err := s.DB.UseAPIToken(ctx, HashToken(rawToken))
+	if err != nil {
+		return nil, err
+	}
+	return s.DB.GetUser(ctx, userID)
+}
+
 // RevokeSession deletes a session (logout). Returns db.ErrNotFound if the
 // token is unknown.
 func (s *Service) RevokeSession(ctx context.Context, rawToken string) error {

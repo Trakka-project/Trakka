@@ -41,12 +41,14 @@ type List struct {
 	// direct List share) or "space_share" (via the list's parent Space
 	// being shared with them). Empty on every other read (GetList,
 	// ListListsForUser's ordinary House-scoped listing, ...), since those
-	// aren't about a sharing relationship. The frontend uses it to show the
-	// 👥 "shared with you" indicator (see static/js/shares.js).
+	// aren't about a sharing relationship — except GET
+	// /api/v1/lists?scope=all, which lists both kinds and tags a House list
+	// "house_member" (see internal/handlers.handleListsIndex). The frontend uses it
+	// to show the 👥 "shared with you" indicator (see static/js/shares.js).
 	AccessSource string `json:"access_source,omitempty"`
 	// AccessPermission mirrors AccessSource: the "read"/"write" level the
-	// requesting user actually holds via that share. Always empty wherever
-	// AccessSource is.
+	// requesting user actually holds via that share ("write" for a
+	// "house_member" list from ?scope=all). Always empty wherever AccessSource is.
 	AccessPermission string `json:"access_permission,omitempty"`
 	// IsPinnedToDashboard is a response-only field, populated only by
 	// db.ListSharedListsForUser (never GetList/ListListsForUser's ordinary

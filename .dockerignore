@@ -16,3 +16,8 @@ docs/
 # part of the server image
 android/
 Makefile
+# Home Assistant integration and its tests (docs/HOME_ASSISTANT.md): installed
+# into Home Assistant by HACS, never part of the server image
+custom_components/
+tests/
+hacs.json

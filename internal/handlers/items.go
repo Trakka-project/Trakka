@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -134,6 +135,12 @@ func (app *Application) handleItemsIndex(w http.ResponseWriter, r *http.Request)
 	if err != nil {
 		app.serverError(w, r, err)
 		return
+	}
+	// ?title= finds an item by name, compared case-insensitively: how a
+	// script or an automation that knows "Lait" gets the id the write
+	// routes take. Titles aren't unique, so it's still an array.
+	if title := validate.Text(r.URL.Query().Get("title")); title != "" {
+		items = slices.DeleteFunc(items, func(it *models.Item) bool { return !strings.EqualFold(it.Title, title) })
 	}
 	writeJSON(w, http.StatusOK, items)
 }

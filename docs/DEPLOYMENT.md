@@ -166,7 +166,7 @@ The image's `HEALTHCHECK` runs `trakka -healthcheck`, which performs an in-proce
 
 ## Calendar export
 
-Each user can subscribe their calendar app (Nextcloud, Google Calendar, Apple Calendar, Thunderbird) to their own tasks through a personal feed link they generate in **Paramètres → Export de calendrier**. It's built into Trakka: no extra service, nothing to configure per user. For it to work well:
+Each user can subscribe their calendar app (Nextcloud, Google Calendar, Apple Calendar, Thunderbird) to their own tasks through a personal feed link they generate in **Paramètres → Intégrations → Export de calendrier**. It's built into Trakka: no extra service, nothing to configure per user. For it to work well:
 
 - Set `BASE_URL`, so events link back to Trakka and keep stable IDs.
 - Make Trakka reachable, over HTTPS with a trusted certificate, from wherever the calendar app fetches the feed: Google Calendar fetches from Google's servers (so Trakka must be on the internet), Nextcloud from the Nextcloud server.

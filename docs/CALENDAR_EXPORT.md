@@ -40,7 +40,7 @@ Trakka suggests a one-hour refresh to calendar apps. Each app decides on its own
 
 ## Getting your link
 
-1. In Trakka, open **Paramètres** (the gear in the header) and scroll to **Export de calendrier (CalDAV / WebCAL)**.
+1. In Trakka, open **Paramètres** (the gear in the header), then the **Intégrations** tab: the first section is **Export de calendrier (CalDAV / WebCAL)**.
 2. Tap **Générer mon lien**.
 3. Trakka shows two forms of the same link. The `webcal://` link suits Apple Calendar, Nextcloud and Thunderbird. The `https://` link suits Google Calendar, which doesn't accept `webcal://` everywhere. Copy the one your app needs with **Copier l'URL**. On an iPhone, iPad or Mac, **S'abonner sur cet appareil** opens the calendar app directly.
 

@@ -1,0 +1,141 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Connexion à Trakka",
+        "description": "Créez un jeton d'API dans Trakka (Paramètres → Intégrations → Jetons d'API), puis saisissez-le ici avec l'adresse de votre serveur Trakka.",
+        "data": {
+          "url": "URL du serveur",
+          "api_token": "Jeton d'API",
+          "verify_ssl": "Vérifier le certificat SSL"
+        },
+        "data_description": {
+          "url": "L'adresse à laquelle vous ouvrez Trakka, par ex. https://trakka.example.com ou http://192.168.1.10:8080.",
+          "api_token": "Commence par trk_. Il n'est affiché qu'une fois, à sa création.",
+          "verify_ssl": "À désactiver seulement pour un serveur avec un certificat auto-signé."
+        }
+      },
+      "reauth_confirm": {
+        "title": "Nouveau jeton d'API Trakka",
+        "description": "Le jeton d'API de {url} ne fonctionne plus (il a sans doute été révoqué). Créez-en un nouveau dans Trakka (Paramètres → Intégrations → Jetons d'API) et saisissez-le ici.",
+        "data": {
+          "api_token": "Jeton d'API"
+        },
+        "data_description": {
+          "api_token": "Commence par trk_. Il doit appartenir au même compte Trakka."
+        }
+      },
+      "reconfigure": {
+        "title": "Reconfigurer Trakka",
+        "description": "Modifiez l'adresse du serveur, le jeton d'API ou la vérification du certificat. Le compte doit rester le même.",
+        "data": {
+          "url": "URL du serveur",
+          "api_token": "Jeton d'API",
+          "verify_ssl": "Vérifier le certificat SSL"
+        },
+        "data_description": {
+          "url": "L'adresse à laquelle vous ouvrez Trakka, par ex. https://trakka.example.com ou http://192.168.1.10:8080.",
+          "api_token": "Commence par trk_. Il n'est affiché qu'une fois, à sa création.",
+          "verify_ssl": "À désactiver seulement pour un serveur avec un certificat auto-signé."
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Impossible de joindre l'API Trakka à cette adresse. Vérifiez l'URL, et que Home Assistant peut joindre le serveur (sans page de connexion d'un reverse proxy devant /api/v1).",
+      "invalid_auth": "Ce jeton d'API est inconnu ou a été révoqué.",
+      "invalid_token_format": "Un jeton d'API Trakka commence par trk_.",
+      "invalid_url": "Saisissez une adresse complète commençant par http:// ou https://.",
+      "unknown": "Erreur inattendue, consultez les journaux de Home Assistant."
+    },
+    "abort": {
+      "already_configured": "Ce compte Trakka est déjà configuré.",
+      "reauth_successful": "Le nouveau jeton d'API est enregistré.",
+      "reconfigure_successful": "Les nouveaux réglages sont enregistrés.",
+      "wrong_account": "Ce jeton d'API appartient à un autre compte Trakka."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Options de Trakka",
+        "data": {
+          "scan_interval": "Intervalle d'interrogation"
+        },
+        "data_description": {
+          "scan_interval": "Fréquence à laquelle Home Assistant récupère vos listes, en secondes. Les modifications faites depuis Home Assistant apparaissent aussitôt."
+        }
+      }
+    }
+  },
+  "selector": {
+    "aisle": {
+      "options": {
+        "produce": "Fruits & légumes",
+        "bakery": "Boulangerie",
+        "meat_fish": "Boucherie & poissonnerie",
+        "dairy": "Produits frais",
+        "pantry": "Épicerie salée",
+        "breakfast": "Épicerie sucrée",
+        "drinks": "Boissons",
+        "baby": "Bébé",
+        "pets": "Animaux",
+        "household": "Entretien & maison",
+        "hygiene": "Hygiène & beauté",
+        "stationery": "Papeterie & fournitures",
+        "clothing": "Textile & bagagerie",
+        "electronics": "High-tech & piles",
+        "diy": "Bricolage & jardin",
+        "frozen": "Surgelés",
+        "other": "Autres"
+      }
+    }
+  },
+  "services": {
+    "add_item": {
+      "name": "Ajouter un article détaillé",
+      "description": "Ajoute un article à une liste Trakka, avec une quantité, un rayon, un prix ou le marqueur urgent. Sur une liste de courses, un produit déjà présent est mis à jour au lieu d'être ajouté deux fois.",
+      "fields": {
+        "item": {
+          "name": "Article",
+          "description": "Le nom de l'article."
+        },
+        "quantity": {
+          "name": "Quantité",
+          "description": "Combien."
+        },
+        "aisle": {
+          "name": "Rayon",
+          "description": "Le rayon du magasin où ranger l'article."
+        },
+        "price": {
+          "name": "Prix",
+          "description": "Le prix unitaire, en euros."
+        },
+        "urgent": {
+          "name": "Urgent",
+          "description": "Marquer l'article comme urgent."
+        }
+      }
+    }
+  },
+  "exceptions": {
+    "auth_failed": {
+      "message": "Le jeton d'API Trakka est inconnu ou a été révoqué."
+    },
+    "update_failed": {
+      "message": "Erreur lors de la récupération des listes Trakka : {error}"
+    },
+    "cannot_connect": {
+      "message": "Impossible de joindre le serveur Trakka : {error}"
+    },
+    "request_refused": {
+      "message": "Trakka a refusé la modification de {list} : {error}"
+    },
+    "read_only_list": {
+      "message": "La liste {list} est partagée avec vous en lecture seule."
+    },
+    "item_not_found": {
+      "message": "Aucun article {item} dans la liste {list}."
+    }
+  }
+}

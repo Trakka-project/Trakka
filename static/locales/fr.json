@@ -683,7 +683,7 @@
         "general": "Général",
         "notifications": "Notifications",
         "prices": "Prix",
-        "calendar": "Calendrier"
+        "integrations": "Intégrations"
       },
       "appearanceLabel": "Apparence",
       "appearanceHint": "Choisissez l'apparence de l'application.",
@@ -782,6 +782,35 @@
         "apple": "Sur iPhone ou iPad, appuyez sur « S'abonner sur cet appareil », ou allez dans Réglages → Apps → Calendrier → Comptes de calendrier → Ajouter un compte → Autre → « Ajouter un calendrier avec abonnement ». Sur Mac : Calendrier → Fichier → « Nouvel abonnement à un calendrier… ». Décochez « Supprimer les alertes » pour garder les rappels.",
         "thunderbird": "Dans l'onglet Agenda, « + Nouvel agenda » → « Sur le réseau », puis collez le lien HTTPS.",
         "readOnlyNote": "L'abonnement est en lecture seule : cochez et modifiez vos tâches dans Trakka, votre agenda suivra."
+      },
+      "apiTokens": {
+        "title": "Jetons d'API (Home Assistant)",
+        "hint": "Reliez Home Assistant ou un script à vos listes. Un jeton lit et modifie vos listes et leurs articles, jamais votre compte ni vos partages.",
+        "loading": "Chargement…",
+        "none": "Aucun jeton pour l'instant.",
+        "createdUnused": "Créé le {created} · jamais utilisé",
+        "createdUsed": "Créé le {created} · utilisé le {used}",
+        "nameLabel": "Nom du jeton",
+        "namePlaceholder": "Nom (ex. Home Assistant)",
+        "defaultName": "Home Assistant",
+        "create": "Créer un jeton",
+        "revoke": "Révoquer",
+        "confirmRevoke": "Confirmer",
+        "revokeAriaLabel": "Révoquer le jeton {name}",
+        "revoked": "Jeton « {name} » révoqué",
+        "copyNowWarning": "Copiez ce jeton maintenant : pour votre sécurité, il ne sera plus affiché. Toute personne qui le possède peut lire et modifier vos listes.",
+        "tokenLabel": "Jeton d'API",
+        "serverUrlLabel": "Adresse du serveur, à saisir avec le jeton",
+        "copy": "Copier",
+        "copied": "Copié",
+        "copyFailed": "Copie impossible : sélectionnez le texte et copiez-le à la main.",
+        "networkRequired": "Cette action nécessite une connexion réseau.",
+        "tooMany": "Vous avez atteint le nombre maximal de jetons : révoquez-en un que vous n'utilisez plus.",
+        "howTo": "Configurer Home Assistant",
+        "step1": "Installez l'intégration Trakka avec HACS (dépôt personnalisé), puis redémarrez Home Assistant.",
+        "step2": "Créez ici un jeton nommé « Home Assistant », et copiez-le avec l'adresse du serveur.",
+        "step3": "Dans Home Assistant : Paramètres → Appareils et services → Ajouter une intégration → Trakka, puis collez l'adresse et le jeton.",
+        "revokeNote": "Chacune de vos listes devient une liste de tâches dans Home Assistant. Révoquer un jeton ici coupe son accès aussitôt."
       }
     },
     "installHelp": {

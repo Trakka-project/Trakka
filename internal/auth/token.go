@@ -10,6 +10,20 @@ import (
 // SessionCookieName is the HTTP-only cookie holding the raw session token.
 const SessionCookieName = "trakka_session"
 
+// APITokenPrefix starts every API token (see NewAPIToken). It lets a person
+// or a secret scanner recognize a leaked token, and lets RequireSession
+// tell a Trakka token from another "Authorization: Bearer" value — such as
+// the id_token an authenticating reverse proxy (oauth2-proxy) forwards on
+// every browser request — which must fall through to the session cookie.
+const APITokenPrefix = "trk_"
+
+// apiTokenBytes is an API token's entropy, the same as a session's.
+const apiTokenBytes = 32
+
+// MaxAPITokenLength rejects absurd Authorization headers before hashing:
+// a real token is len(APITokenPrefix) + 43 characters.
+const MaxAPITokenLength = 128
+
 // RandomToken returns a base64url (no padding) encoding of n
 // cryptographically random bytes. crypto/rand is used directly (rather
 // than promoting the already-indirect github.com/google/uuid dependency)
@@ -21,6 +35,17 @@ func RandomToken(n int) (string, error) {
 		return "", err
 	}
 	return base64.RawURLEncoding.EncodeToString(b), nil
+}
+
+// NewAPIToken returns a new raw API token: APITokenPrefix followed by
+// apiTokenBytes of crypto/rand, base64url-encoded. Like a session token it
+// is stored only as HashToken's hash.
+func NewAPIToken() (string, error) {
+	random, err := RandomToken(apiTokenBytes)
+	if err != nil {
+		return "", err
+	}
+	return APITokenPrefix + random, nil
 }
 
 // HashToken returns the hex-encoded SHA-256 hash of a raw token, for

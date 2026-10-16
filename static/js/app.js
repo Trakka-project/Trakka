@@ -402,6 +402,9 @@ async function apiRequest(path, options = {}) {
   if (!response.ok) {
     const message = body && typeof body.error === 'string' ? body.error : `Erreur ${response.status}`;
     const err = new Error(message);
+    // The HTTP status, for callers that tell one refusal from another
+    // (api-tokens.js: 409 too many tokens, 404 already revoked).
+    err.status = response.status;
     // A few endpoints (the admin console's backup routes) also return a
     // machine-readable `code` next to `error`, which the caller translates
     // into an actionable, localized message instead of the raw text.
