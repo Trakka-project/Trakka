@@ -336,7 +336,14 @@ func (app *Application) deliverListChange(ctx context.Context, list *models.List
 	case itemUnchecked:
 		kind, verb = db.NotifyCollaboratorActions, "a décoché un article"
 	}
-	recipients, err := app.DB.ListNotificationRecipientsFor(ctx, list.ID, actor.ID, kind)
+	// actor is nil for a visitor of the list's public link (see
+	// public_links.go): nobody to leave out, and no name to give.
+	var actorID int64
+	who := "Un visiteur (lien public)"
+	if actor != nil {
+		actorID, who = actor.ID, displayName(actor)
+	}
+	recipients, err := app.DB.ListNotificationRecipientsFor(ctx, list.ID, actorID, kind)
 	if err != nil {
 		app.Logger.Error("listing notification recipients", "list_id", list.ID, "error", err)
 		return
@@ -346,7 +353,7 @@ func (app *Application) deliverListChange(ctx context.Context, list *models.List
 	}
 	app.sendToUsers(ctx, recipients, pushPayload{
 		Title: list.Name,
-		Body:  fmt.Sprintf("%s %s (« %s ») dans %s", displayName(actor), verb, itemTitle, list.Name),
+		Body:  fmt.Sprintf("%s %s (« %s ») dans %s", who, verb, itemTitle, list.Name),
 		URL:   fmt.Sprintf("/?list=%d", list.ID),
 	})
 }

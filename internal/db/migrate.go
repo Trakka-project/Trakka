@@ -44,12 +44,16 @@ type goMigration struct {
 // widening a CHECK constraint can't be expressed as a single script under
 // the generic sqlMigration wrapper below) and migration 31 (see
 // migrate_quick_shopping.go: seeding the product catalog needs
-// internal/catalog's Go name normalization, which SQL can't reproduce).
+// internal/catalog's Go name normalization, which SQL can't reproduce) and
+// migration 37 (see migrate_public_link_modes.go: repairing a
+// list_public_links table depends on which draft of migration 36 built it,
+// which a SQL script can't branch on).
 // Adding a *new* migration normally needs nothing here: just drop a new
 // NNNN_description.sql file in internal/db/migrations/.
 var goMigrations = map[int]goMigration{
 	6:  {name: "list_types_widen", apply: applyListTypesWidenMigration},
 	31: {name: "seed_house_products", apply: applySeedHouseProductsMigration},
+	37: {name: "public_link_modes", apply: applyPublicLinkModesMigration},
 }
 
 // loadMigrations returns every migration in ascending version order,

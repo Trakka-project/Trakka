@@ -61,12 +61,15 @@ function openShareModal({ kind, id, name }) {
   sharesEls.shareEmail.focus();
 
   loadShareRoster();
+  // public-link.js: the "Lien de partage public" section, lists only.
+  refreshPublicLinkSection({ kind, id });
 }
 
 function closeShareModal() {
   sharesEls.shareModal.hidden = true;
   TrakkaScrollLock.unlock();
   sharingTarget = null;
+  resetPublicLinkSection();
   // forgetAssignableUsers is defined in assignees.js: self-hosted, a share
   // recipient can be assigned the list's tasks, so the open list's assignee
   // pickers follow a share added or revoked here.

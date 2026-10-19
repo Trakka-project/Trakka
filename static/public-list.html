@@ -1,0 +1,113 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <!-- The page a public share link opens (/public/lists/<token>, served by
+       internal/handlers.handlePublicListPage), for visitors with no Trakka
+       account: no navigation, no settings, no service worker — only the
+       list. public-list.js reads the token from the URL and talks to
+       /api/v1/public/lists/<token>. Same CSP as the app: external scripts
+       only, never an inline one. -->
+  <script src="/js/theme-init.js"></script>
+  <meta name="color-scheme" content="light dark">
+  <meta name="robots" content="noindex, nofollow, noarchive">
+  <meta name="referrer" content="no-referrer">
+  <title>Liste partagée · Trakka</title>
+
+  <link rel="icon" href="/icons/favicon.ico" sizes="32x32">
+  <link rel="icon" href="/icons/trakka-favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/css/tokens.css">
+  <link rel="stylesheet" href="/css/base.css">
+  <meta name="theme-color" content="#0f172a">
+
+  <script src="/js/tailwind.js" defer></script>
+  <script src="/js/tailwind-config.js" defer></script>
+  <script src="/js/i18n.js" defer></script>
+  <script src="/js/public-list.js" defer></script>
+</head>
+<body class="min-h-screen bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 antialiased">
+
+  <header class="sticky top-0 z-30 border-b border-slate-200 dark:border-slate-800 bg-white/95 dark:bg-slate-900/95 backdrop-blur">
+    <div class="mx-auto flex max-w-2xl items-center justify-between gap-3 px-4 py-3">
+      <span class="flex items-center">
+        <img src="/icons/trakka-lockup-light-bg.svg" alt="Trakka" class="h-7 w-auto dark:hidden">
+        <img src="/icons/trakka-lockup-dark-bg.svg" alt="Trakka" class="hidden h-7 w-auto dark:block">
+      </span>
+      <span id="public-access-badge" hidden
+            class="inline-flex items-center gap-1 rounded-full px-3 py-1 text-xs font-semibold"></span>
+    </div>
+  </header>
+
+  <main class="mx-auto max-w-2xl px-4 pb-16 pt-5">
+    <p id="public-loading" data-i18n="publicList.loading" class="py-12 text-center text-sm text-slate-500 dark:text-slate-400">Chargement de la liste…</p>
+
+    <section id="public-not-found" hidden class="py-12 text-center">
+      <p class="text-4xl" aria-hidden="true">🔒</p>
+      <h1 data-i18n="publicList.notFoundTitle" class="mt-3 text-lg font-semibold">Lien indisponible</h1>
+      <p data-i18n="publicList.notFoundBody" class="mx-auto mt-2 max-w-sm text-sm text-slate-500 dark:text-slate-400">Ce lien de partage n'existe pas, a été révoqué ou a expiré. Demandez un nouveau lien à la personne qui vous l'a envoyé.</p>
+    </section>
+
+    <div id="public-content" hidden>
+      <div class="flex items-start gap-3">
+        <span id="public-list-icon" class="shrink-0 text-3xl leading-none" aria-hidden="true"></span>
+        <div class="min-w-0 flex-1">
+          <h1 id="public-list-name" class="break-words text-2xl font-semibold leading-tight"></h1>
+          <p id="public-list-progress" class="mt-1 text-sm text-slate-500 dark:text-slate-400"></p>
+        </div>
+      </div>
+      <p id="public-list-hint" hidden class="mt-3 rounded-xl bg-slate-100 dark:bg-slate-800 px-3 py-2 text-xs text-slate-600 dark:text-slate-300"></p>
+
+      <p id="public-error" hidden role="alert"
+         class="mt-4 rounded-xl border border-rose-300 dark:border-rose-800 bg-rose-50 dark:bg-rose-950/40 px-3 py-2 text-sm text-rose-700 dark:text-rose-300"></p>
+
+      <!-- deposit_only ("Dépôt à l'aveugle"): the list's content stays
+           hidden, the visitor only drops items into it. -->
+      <section id="public-deposit" hidden aria-labelledby="public-deposit-title"
+               class="mt-5 rounded-2xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/60 p-4">
+        <h2 id="public-deposit-title" data-i18n="publicList.depositTitle" class="text-base font-semibold">Déposer un élément</h2>
+        <p data-i18n="publicList.depositHint" class="mt-1 text-sm text-slate-500 dark:text-slate-400">Le contenu de cette liste reste privé : vous pouvez y déposer des idées, sans voir ce qu'elle contient déjà.</p>
+        <form id="public-deposit-form" class="mt-3 flex gap-2">
+          <label for="public-deposit-title-input" class="sr-only" data-i18n="publicList.depositPlaceholder">Votre idée…</label>
+          <input type="text" id="public-deposit-title-input" required maxlength="500" autocomplete="off" enterkeyhint="send"
+                 data-i18n-placeholder="publicList.depositPlaceholder" placeholder="Votre idée…"
+                 class="min-h-[44px] min-w-0 flex-1 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-4 py-2 text-base text-slate-900 dark:text-slate-100 placeholder:text-slate-500 focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500/30">
+          <input type="number" id="public-deposit-quantity" min="1" max="100000" value="1" inputmode="numeric"
+                 data-i18n-aria-label="publicList.addQuantityLabel" aria-label="Quantité"
+                 class="min-h-[44px] w-16 shrink-0 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-2 py-2 text-center text-base text-slate-900 dark:text-slate-100 focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500/30">
+          <button type="submit" data-i18n="publicList.depositSubmit"
+                  class="min-h-[44px] shrink-0 rounded-xl bg-sky-500 px-4 py-2 text-sm font-semibold text-white transition hover:bg-sky-400 active:scale-95 disabled:opacity-60">Déposer</button>
+        </form>
+        <p id="public-deposit-confirm" hidden role="status"
+           class="mt-3 rounded-xl bg-emerald-500/15 px-3 py-2 text-sm font-medium text-emerald-700 dark:text-emerald-300"></p>
+        <div id="public-deposit-sent" hidden class="mt-4">
+          <h3 data-i18n="publicList.depositSentHeading" class="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Déposés pendant cette visite</h3>
+          <ul id="public-deposit-sent-list" class="mt-2 flex flex-wrap gap-1.5"></ul>
+        </div>
+      </section>
+
+      <form id="public-add-form" hidden class="mt-4 flex gap-2">
+        <label for="public-add-title" class="sr-only" data-i18n="publicList.addPlaceholder">Ajouter un élément…</label>
+        <input type="text" id="public-add-title" required maxlength="500" autocomplete="off" enterkeyhint="done"
+               data-i18n-placeholder="publicList.addPlaceholder" placeholder="Ajouter un élément…"
+               class="min-h-[44px] min-w-0 flex-1 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-4 py-2 text-base text-slate-900 dark:text-slate-100 placeholder:text-slate-500 focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500/30">
+        <input type="number" id="public-add-quantity" min="1" max="100000" value="1" inputmode="numeric"
+               data-i18n-aria-label="publicList.addQuantityLabel" aria-label="Quantité"
+               class="min-h-[44px] w-16 shrink-0 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-2 py-2 text-center text-base text-slate-900 dark:text-slate-100 focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500/30">
+        <button type="submit" data-i18n="publicList.addSubmit"
+                class="min-h-[44px] shrink-0 rounded-xl bg-sky-500 px-4 py-2 text-sm font-semibold text-white transition hover:bg-sky-400 active:scale-95 disabled:opacity-60">Ajouter</button>
+      </form>
+
+      <p id="public-empty" hidden data-i18n="publicList.empty" class="mt-8 text-center text-sm text-slate-500 dark:text-slate-400">Cette liste est vide pour le moment.</p>
+      <ul id="public-items" class="mt-4 space-y-2"></ul>
+
+      <h2 id="public-done-heading" hidden data-i18n="publicList.doneHeading" class="mt-6 text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Terminés</h2>
+      <ul id="public-done-items" class="mt-2 space-y-2"></ul>
+
+      <p id="public-expires" hidden class="mt-8 text-center text-xs text-slate-500 dark:text-slate-400"></p>
+    </div>
+
+    <p class="mt-10 text-center text-xs text-slate-400 dark:text-slate-500" data-i18n="publicList.poweredBy">Partagé avec Trakka</p>
+  </main>
+</body>
+</html>
