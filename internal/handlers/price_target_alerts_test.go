@@ -202,3 +202,23 @@ func TestHandleItemsPatchPriceAlertTrigger(t *testing.T) {
 }
 
 func floatPtr(f float64) *float64 { return &f }
+
+// TestCheckPriceDropAlertPushOpensTheItem: the "Bonne affaire" push sent
+// when an item's price newly reaches its threshold opens that item in its
+// list.
+func TestCheckPriceDropAlertPushOpensTheItem(t *testing.T) {
+	app := newTestApplication(t)
+	pushes := recordPushes(app)
+	_, list := itemTestFixture(t, app)
+	item, err := app.DB.CreateItem(context.Background(), list.ID, "Casque audio", nil, 1, floatPtr(15), false, 0, nil, nil, nil, nil, false, nil, floatPtr(20), true)
+	if err != nil {
+		t.Fatalf("creating item: %v", err)
+	}
+	if !app.checkPriceDropAlert(item, false) {
+		t.Fatal("expected the alert to trigger")
+	}
+	want := "/?list=" + strconv.FormatInt(list.ID, 10) + "&item=" + strconv.FormatInt(item.ID, 10)
+	if got := pushes.next(t).payload.URL; got != want {
+		t.Errorf("URL = %q, want %q", got, want)
+	}
+}

@@ -112,7 +112,7 @@ func (d *DB) CreatePriceNotifications(ctx context.Context, userIDs []int64, item
 // hides what was queued about it.
 func (d *DB) ListPriceNotifications(ctx context.Context, userID int64, limit int) ([]*models.PriceNotification, error) {
 	rows, err := d.conn.QueryContext(ctx, `
-		SELECT pn.id, pn.item_id, items.title, items.list_id, pn.kind, pn.old_price, pn.new_price,
+		SELECT pn.id, pn.item_id, items.title, items.list_id, items.url, pn.kind, pn.old_price, pn.new_price,
 		       pn.source_url, pn.created_at, pn.read_at
 		FROM price_notifications pn
 		JOIN users u ON u.id = pn.user_id
@@ -141,7 +141,7 @@ func (d *DB) ListPriceNotifications(ctx context.Context, userID int64, limit int
 	notifications := []*models.PriceNotification{}
 	for rows.Next() {
 		n := &models.PriceNotification{}
-		if err := rows.Scan(&n.ID, &n.ItemID, &n.ItemTitle, &n.ListID, &n.Kind, &n.OldPrice, &n.NewPrice,
+		if err := rows.Scan(&n.ID, &n.ItemID, &n.ItemTitle, &n.ListID, &n.ItemURL, &n.Kind, &n.OldPrice, &n.NewPrice,
 			&n.SourceURL, &n.CreatedAt, &n.ReadAt); err != nil {
 			return nil, fmt.Errorf("scanning price notification row: %w", err)
 		}

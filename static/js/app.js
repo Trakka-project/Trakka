@@ -172,6 +172,9 @@ async function restoreLastView() {
 // stripped via history.replaceState once consumed so a later reload of the
 // same tab doesn't keep re-triggering the same deep link, and so it can
 // never fight with saveLastView's own bookkeeping of what's currently open.
+// An optional &item={id} (a 🔔 entry's "Voir dans la liste" link, opened in
+// a new tab) then scrolls to that item and highlights it (revealListItem,
+// list_view.js).
 async function handleDeepLinkOrRestore() {
   const params = new URLSearchParams(window.location.search);
   const listIdRaw = params.get('list');
@@ -183,6 +186,7 @@ async function handleDeepLinkOrRestore() {
     // the dashboard rather than greeting a notification tap with an error
     // banner — same reasoning restoreLastView's own selectList call uses.
     await selectList(listId, { silent: true });
+    revealDeepLinkedItem(listId, params.get('item'));
     return;
   }
 
@@ -196,15 +200,23 @@ async function handleDeepLinkOrRestore() {
 // registers the 'trakka-notification-click' listener this responds to).
 function handleNotificationClickMessage(url) {
   let listId = null;
+  let parsed;
   try {
-    const parsed = new URL(url, window.location.origin);
+    parsed = new URL(url, window.location.origin);
     listId = Number(parsed.searchParams.get('list'));
   } catch {
     return;
   }
   if (Number.isInteger(listId) && listId > 0) {
-    selectList(listId, { silent: true });
+    selectList(listId, { silent: true }).then(() => revealDeepLinkedItem(listId, parsed.searchParams.get('item')));
   }
+}
+
+// The &item= half of a deep link, once its list is open.
+function revealDeepLinkedItem(listId, itemIdRaw) {
+  const itemId = Number(itemIdRaw);
+  if (itemIdRaw === null || !Number.isInteger(itemId) || itemId <= 0 || state.currentListId !== listId) return;
+  revealListItem(itemId);
 }
 
 // Ids of lists currently sitting in their undo grace period (see

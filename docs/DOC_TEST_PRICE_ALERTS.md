@@ -138,7 +138,7 @@ curl -b cookies.txt -s -X PATCH "http://localhost:8080/api/v1/items/${ITEM_ID}" 
 | **Visual badge** | An amber 🔥 badge appears on the item's row, with the exact text: `🔥 Bonne affaire : 75,00 € (sous le seuil de 80,00 €)` |
 | **In-app toast** | A success toast appears immediately after saving: `🔥 « Casque audio » est passé à 75,00 € (sous votre seuil de 80,00 €) !` |
 | **JSON response** | Contains `"price": 75, "price_alert_triggered": true` |
-| **Push notification** | If the push toggle is enabled on at least one account with access to the list: a real system notification arrives, titled `🔥 Bonne affaire !`, body `« Casque audio » est passé à 75.00 € (sous votre seuil de 80.00 €)`, and clicking it opens/focuses Trakka on the relevant list (`/?list=<id>`) |
+| **Push notification** | If the push toggle is enabled on at least one account with access to the list: a real system notification arrives, titled `🔥 Bonne affaire !`, body `« Casque audio » est passé à 75.00 € (sous votre seuil de 80.00 €)`, and clicking it opens/focuses Trakka on the relevant list, scrolled to the item and highlighting it (`/?list=<id>&item=<id>`) |
 
 > The exact price shown in the badge/toast comes from the frontend's EUR formatter (`75,00 €`), while the push notification's body is composed server-side with `%.2f` (`75.00 €`, a dot instead of a comma) — that's an expected difference between the two texts, not a bug.
 

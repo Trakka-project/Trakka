@@ -432,6 +432,53 @@ func TestHandlePriceNotifications(t *testing.T) {
 	}
 }
 
+// TestHandlePriceNotificationsCarryItemLink: each inbox entry carries what
+// the 🔔 drawer needs to open it — list_id/item_id for the list view, both
+// prices, and item_url, the item's own link, when it has one (omitted
+// otherwise, so the drawer falls back to the list).
+func TestHandlePriceNotificationsCarryItemLink(t *testing.T) {
+	app := newTestApplication(t)
+	ctx := context.Background()
+	owner, _, linked := trackedItemFixture(t, app, true)
+	price := 30.0
+	unlinked, err := app.DB.CreateItem(ctx, linked.ListID, "Piles AA", nil, 1, &price, false, 0, nil, nil, nil, nil, false, nil, nil, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, item := range []*models.Item{linked, unlinked} {
+		if err := app.DB.CreatePriceNotifications(ctx, []int64{owner.ID}, item.ID, db.PriceNotificationDrop, 100, 90, nil); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	rec := httptest.NewRecorder()
+	app.handlePriceNotificationsIndex(rec, withUser(httptest.NewRequest(http.MethodGet, "/api/v1/price-notifications", nil), owner))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("index: %d %s", rec.Code, rec.Body.String())
+	}
+	var got []map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatal(err)
+	}
+	byItem := map[float64]map[string]any{}
+	for _, n := range got {
+		byItem[n["item_id"].(float64)] = n
+	}
+	l, u := byItem[float64(linked.ID)], byItem[float64(unlinked.ID)]
+	if l == nil || u == nil {
+		t.Fatalf("missing entries: %v", got)
+	}
+	if l["item_url"] != *linked.URL || l["list_id"] != float64(linked.ListID) || l["old_price"] != 100.0 || l["new_price"] != 90.0 {
+		t.Errorf("linked item's entry = %v", l)
+	}
+	if _, ok := u["item_url"]; ok {
+		t.Errorf("an item without a url has item_url: %v", u)
+	}
+	if u["list_id"] != float64(unlinked.ListID) {
+		t.Errorf("unlinked item's entry = %v", u)
+	}
+}
+
 // TestHandlePriceNotificationsDelete: a user removes their own inbox
 // entries, one or all, never someone else's; a removed entry no longer
 // lists, and an expired deal it announced is still not announced again.
@@ -660,5 +707,15 @@ func TestBackgroundScanFollowsSuccessivePriceChanges(t *testing.T) {
 	app.RunPriceAlertScan(ctx)
 	if got, _ := app.DB.GetItem(ctx, item.ID); *got.Price != 65 {
 		t.Fatalf("a background scan overwrote a typed-in price: %+v", got)
+	}
+}
+
+// TestPriceChangePayloadOpensTheItem: whatever the kind, a tap on a price
+// change push opens the item in its list (itemDeepLink), not just the list.
+func TestPriceChangePayloadOpensTheItem(t *testing.T) {
+	for _, kind := range []string{db.PriceNotificationDrop, db.PriceNotificationIncrease, db.PriceNotificationDeal, db.PriceNotificationExpired} {
+		if got := priceChangePayload(kind, "Casque", 100, 90, 7, 42).URL; got != "/?list=7&item=42" {
+			t.Errorf("%s: URL = %q, want /?list=7&item=42", kind, got)
+		}
 	}
 }

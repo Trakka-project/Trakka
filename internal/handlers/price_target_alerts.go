@@ -69,7 +69,7 @@ func (app *Application) checkPriceDropAlert(item *models.Item, wasActive bool) b
 		payload := pushPayload{
 			Title: "🔥 Bonne affaire !",
 			Body:  fmt.Sprintf("« %s » est passé à %.2f € (sous votre seuil de %.2f €)", title, price, target),
-			URL:   fmt.Sprintf("/?list=%d", listID),
+			URL:   itemDeepLink(listID, itemID),
 		}
 		app.sendToUsers(ctx, recipients, payload)
 	}()
