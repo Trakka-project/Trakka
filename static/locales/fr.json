@@ -238,6 +238,7 @@
     "financeVarianceOnBudget": "Dans le budget",
     "financeVarianceAriaLabel": "Écart : {status}",
     "financeProjected": "Total projeté : {amount}",
+    "financeCollapsedMetricLabel": "Résumé replié :",
     "addAsPlanned": "Ajouter comme prévu (à valider)",
     "paidPriceAriaLabel": "Payé {paid} (prévu {estimated})",
     "paidPriceNoEstimateAriaLabel": "Payé {paid} (non prévu)"

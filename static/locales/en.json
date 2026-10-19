@@ -238,6 +238,7 @@
     "financeVarianceOnBudget": "On budget",
     "financeVarianceAriaLabel": "Variance: {status}",
     "financeProjected": "Projected total: {amount}",
+    "financeCollapsedMetricLabel": "Collapsed summary:",
     "addAsPlanned": "Add as planned (to confirm)",
     "paidPriceAriaLabel": "Paid {paid} (estimated {estimated})",
     "paidPriceNoEstimateAriaLabel": "Paid {paid} (not budgeted)"

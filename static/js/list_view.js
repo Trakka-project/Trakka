@@ -49,6 +49,10 @@ const listEls = {
   financeRemaining: document.getElementById('finance-remaining'),
   financeTotalCollapsed: document.getElementById('finance-total-collapsed'),
   financeSpentCollapsed: document.getElementById('finance-spent-collapsed'),
+  financeRemainingCollapsed: document.getElementById('finance-remaining-collapsed'),
+  financeRemainingCollapsedGroup: document.getElementById('finance-remaining-collapsed-group'),
+  financeVarianceCollapsedGroup: document.getElementById('finance-variance-collapsed-group'),
+  financeCollapsedMetric: document.getElementById('finance-collapsed-metric'),
   financeVariance: document.getElementById('finance-variance'),
   financeVarianceStatus: document.getElementById('finance-variance-status'),
   financeVarianceCollapsed: document.getElementById('finance-variance-collapsed'),
@@ -1444,13 +1448,16 @@ function updateFinanceSummary(items, { filtered = false, totalCount = items.leng
   listEls.financeRemaining.textContent = formatEuro(budget.remainingTotal);
   listEls.financeProjected.textContent = t('items.financeProjected', { amount: formatEuro(budget.projectedTotal) });
   // Collapsed-header compact figures (see the #finance-summary markup in
-  // index.html): budget · spent · variance, so the comparison stays visible
-  // without expanding the accordion. Budget/spent/remaining keep their
+  // index.html): budget · spent · remaining (or the variance, per the
+  // user's applyFinanceCollapsedMetric choice), so the essentials stay
+  // visible without expanding the accordion. Both third figures are always
+  // filled; only the chosen one is shown. Budget/spent/remaining keep their
   // static --tk-money-* tokens (tokens.css); only the variance takes its
   // color from its sign, and always shows the sign and (for screen
   // readers, and spelled out when expanded) the word with it.
   listEls.financeTotalCollapsed.textContent = formatEuro(budget.estimatedTotal);
   listEls.financeSpentCollapsed.textContent = formatEuro(budget.spentTotal);
+  listEls.financeRemainingCollapsed.textContent = formatEuro(budget.remainingTotal);
   const varianceText = formatSignedEuro(budget.variance);
   const statusText = t(VARIANCE_STATUS_KEYS[budget.varianceStatus]);
   const colorClass = budget.varianceStatus === 'over' ? 'text-[color:var(--tk-budget-over)]' : 'text-[color:var(--tk-budget-under)]';
@@ -1488,6 +1495,24 @@ const FINANCE_SUMMARY_COLLAPSED_KEY = 'trakka:financeSummaryCollapsed';
 listEls.financeSummary.open = localStorage.getItem(FINANCE_SUMMARY_COLLAPSED_KEY) !== 'true';
 listEls.financeSummary.addEventListener('toggle', () => {
   localStorage.setItem(FINANCE_SUMMARY_COLLAPSED_KEY, String(!listEls.financeSummary.open));
+});
+
+// The collapsed header's third figure — 'remaining' (default) or
+// 'variance' — picked with the #finance-collapsed-metric radios in the
+// expanded body. A per-device view preference like the open/closed state
+// above, so it lives in localStorage rather than on the server; anything
+// else stored there falls back to the default.
+const FINANCE_COLLAPSED_METRIC_KEY = 'trakka:financeCollapsedMetric';
+function applyFinanceCollapsedMetric(metric) {
+  const showVariance = metric === 'variance';
+  listEls.financeRemainingCollapsedGroup.hidden = showVariance;
+  listEls.financeVarianceCollapsedGroup.hidden = !showVariance;
+  listEls.financeCollapsedMetric.querySelector(`input[value="${showVariance ? 'variance' : 'remaining'}"]`).checked = true;
+}
+applyFinanceCollapsedMetric(localStorage.getItem(FINANCE_COLLAPSED_METRIC_KEY));
+listEls.financeCollapsedMetric.addEventListener('change', (event) => {
+  localStorage.setItem(FINANCE_COLLAPSED_METRIC_KEY, event.target.value);
+  applyFinanceCollapsedMetric(event.target.value);
 });
 
 // Prix Total Article = Prix Unitaire * Quantité. `item.quantity` is always
