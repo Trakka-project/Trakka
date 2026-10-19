@@ -406,10 +406,12 @@
                  what the row is. -->
             <span class="group-open:hidden max-[359px]:sr-only" data-i18n="items.financeSummaryLabelShort">Résumé</span>
           </span>
-          <!-- Collapsed: planned budget · actual spending · variance — the
-               comparison the summary exists for. The variance's color comes
-               from its sign (--tk-budget-under/-over, set by
-               updateFinanceSummary) and is never the only cue: it always
+          <!-- Collapsed: planned budget · actual spending · a third figure
+               the user picks (#finance-collapsed-metric below, saved per
+               device by list_view.js): the remaining-to-spend by default, in
+               its fixed --tk-money-remaining amber, or the signed variance,
+               whose color comes from its sign (--tk-budget-under/-over, set
+               by updateFinanceSummary) and is never the only cue: it always
                carries its sign, and its word for screen readers. -->
           <span class="flex min-w-0 items-center gap-2">
             <span id="finance-total-compact" class="hidden whitespace-nowrap text-base font-semibold text-[color:var(--tk-money-total)] group-open:inline">0,00&nbsp;€</span>
@@ -420,8 +422,14 @@
               <span class="sr-only" data-i18n="items.financeSpent">Dépensé (réel)</span>
               <span id="finance-spent-collapsed" class="font-semibold text-[color:var(--tk-money-spent)]">0,00&nbsp;€</span>
               <span class="text-slate-300 dark:text-slate-600" aria-hidden="true">·</span>
-              <span id="finance-variance-collapsed-label" class="sr-only"></span>
-              <span id="finance-variance-collapsed" class="font-semibold text-[color:var(--tk-budget-under)]">0,00&nbsp;€</span>
+              <span id="finance-remaining-collapsed-group" class="contents">
+                <span class="sr-only" data-i18n="items.financeRemaining">Reste à dépenser</span>
+                <span id="finance-remaining-collapsed" class="font-semibold text-[color:var(--tk-money-remaining)]">0,00&nbsp;€</span>
+              </span>
+              <span id="finance-variance-collapsed-group" hidden class="contents">
+                <span id="finance-variance-collapsed-label" class="sr-only"></span>
+                <span id="finance-variance-collapsed" class="font-semibold text-[color:var(--tk-budget-under)]">0,00&nbsp;€</span>
+              </span>
             </span>
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="h-4 w-4 shrink-0 text-slate-400 transition-transform group-open:rotate-180" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>
           </span>
@@ -456,6 +464,22 @@
             <span id="finance-projected" class="text-xs text-slate-500 dark:text-slate-400"></span>
           </div>
         </div>
+        <!-- Which third figure the collapsed header shows (see above):
+             a per-device view preference, kept in localStorage by
+             list_view.js (FINANCE_COLLAPSED_METRIC_KEY), not a server one. -->
+        <fieldset id="finance-collapsed-metric" class="mt-3 flex flex-wrap items-center gap-x-2 gap-y-1.5 border-t border-slate-200 dark:border-slate-700 pt-3">
+          <legend class="float-left mr-1 text-xs text-slate-500 dark:text-slate-400" data-i18n="items.financeCollapsedMetricLabel">Résumé replié :</legend>
+          <span class="inline-flex rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 p-0.5 text-xs font-medium">
+            <label class="cursor-pointer">
+              <input type="radio" name="finance-collapsed-metric" value="remaining" checked class="peer sr-only">
+              <span class="block rounded-md px-2.5 py-1 text-slate-600 dark:text-slate-300 peer-checked:bg-sky-500/10 peer-checked:text-sky-600 dark:peer-checked:text-sky-300 peer-focus-visible:ring-2 peer-focus-visible:ring-sky-500/50" data-i18n="items.financeRemaining">Reste à dépenser</span>
+            </label>
+            <label class="cursor-pointer">
+              <input type="radio" name="finance-collapsed-metric" value="variance" class="peer sr-only">
+              <span class="block rounded-md px-2.5 py-1 text-slate-600 dark:text-slate-300 peer-checked:bg-sky-500/10 peer-checked:text-sky-600 dark:peer-checked:text-sky-300 peer-focus-visible:ring-2 peer-focus-visible:ring-sky-500/50" data-i18n="items.financeVariance">Écart</span>
+            </label>
+          </span>
+        </fieldset>
       </details>
 
       <!-- Quick-add bar: pinned to the bottom of the viewport below Tailwind's
