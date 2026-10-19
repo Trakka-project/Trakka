@@ -28,7 +28,7 @@ Changes made in Home Assistant reach Trakka at once; changes made in Trakka reac
 ## Requirements
 
 - A Trakka server with API tokens (this release or later), reachable from Home Assistant over HTTP(S).
-- Home Assistant **2025.8** or later. HACS is optional but recommended.
+- Home Assistant **2025.8** or later. HACS is optional but recommended. The Trakka icon and logo show from Home Assistant **2026.3**; older versions show "icon not available" instead, and everything else works.
 
 ## 1. Create an API token in Trakka
 
@@ -218,6 +218,7 @@ While the server can't be reached, the entities are unavailable; they come back 
 | Times are off by some hours | Trakka interprets due times in `APP_TIMEZONE` (see [DEPLOYMENT.md](DEPLOYMENT.md)); check it's your zone. |
 | A list is missing | Its share was revoked, or it was deleted. A new list appears within one polling interval. |
 | "shared with you read-only" | Ask the list's owner for write access in Trakka. |
+| "icon not available" instead of the Trakka logo | Home Assistant reads the integration's own images (`custom_components/trakka/brand/`) from 2026.3 on; update Home Assistant, restart it after updating the integration, then reload the page with the cache bypassed (Ctrl+Shift+R), since the browser caches brand images. |
 
 For details, turn on the integration's debug log in `configuration.yaml`:
 
@@ -250,7 +251,7 @@ Reference: [docs/API.md](API.md#api-tokens).
 
 ## Development
 
-The integration lives in `custom_components/trakka/`: `api.py` (the HTTP client), `coordinator.py` (polling and events), `todo.py` (the entities and `trakka.add_item`), `config_flow.py` (setup, re-authentication, reconfiguration, options), plus `strings.json`/`translations/` (English, French), `services.yaml` and `icons.json`. `hacs.json` at the repository root declares it to HACS. It has no Python dependency beyond Home Assistant itself.
+The integration lives in `custom_components/trakka/`: `api.py` (the HTTP client), `coordinator.py` (polling and events), `todo.py` (the entities and `trakka.add_item`), `config_flow.py` (setup, re-authentication, reconfiguration, options), plus `strings.json`/`translations/` (English, French), `services.yaml`, `icons.json` and `brand/` (the icon and logo Home Assistant 2026.3+ shows for the integration: `icon.png` 256×256 and `icon@2x.png` 512×512 from `trakka-brand/svg/trakka-symbol.svg`, `logo.png`/`logo@2x.png` 256/512 px high from `trakka-lockup-light-bg.svg`, and `dark_logo.png`/`dark_logo@2x.png` from `trakka-lockup-dark-bg.svg`, all transparent and trimmed; regenerate them from those SVGs if the brand changes). `hacs.json` at the repository root declares it to HACS. It has no Python dependency beyond Home Assistant itself.
 
 Its tests, in `tests/home_assistant/`, run it inside a real Home Assistant core with [pytest-homeassistant-custom-component](https://github.com/MatthewFlamm/pytest-homeassistant-custom-component), against `fake_trakka.py`, an in-memory Trakka API served through Home Assistant's HTTP mocker. They need Python 3.14.2+ (Home Assistant 2026.10):
 

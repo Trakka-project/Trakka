@@ -1,5 +1,9 @@
 ## [unreleased]
 
+## [1.3.3] - 2026-10-19
+
+- *(hacs)* fix logo not showing on home assistant extension
+
 ## [1.3.2] - 2026-10-16
 
 ### 🐛 Bug Fixes
