@@ -164,6 +164,10 @@ The container runs as UID `10001`, so both files must be readable by it — brow
 
 The image's `HEALTHCHECK` runs `trakka -healthcheck`, which performs an in-process HTTP GET against its own `/healthz` and exits `0`/`1` accordingly — no `curl` or `wget` is installed in the runtime image. `compose.yml` declares the same check under `services.trakka.healthcheck` so `docker compose ps` / `podman-compose ps` reflect container health.
 
+## Restarting from the admin console
+
+An admin can restart Trakka from Paramètres → Console d'Administration → Paramètres → "Redémarrer le serveur". The process shuts down gracefully and exits with status **75**; it is the container runtime or service manager that starts it again. `compose.yml`'s `restart: unless-stopped` covers Docker and Podman (rootless included; Podman applies the policy itself). Under systemd, use `Restart=on-failure` or `Restart=always`. A process started by hand (`go run`, a bare binary) simply stops. The console waits up to 90 seconds for `/healthz` to answer again, then reloads. Endpoint details: [API.md](API.md#server-restart).
+
 ## Calendar export
 
 Each user can subscribe their calendar app (Nextcloud, Google Calendar, Apple Calendar, Thunderbird) to their own tasks through a personal feed link they generate in **Paramètres → Intégrations → Export de calendrier**. It's built into Trakka: no extra service, nothing to configure per user. For it to work well:

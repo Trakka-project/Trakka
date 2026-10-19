@@ -1099,83 +1099,172 @@ function listIcon(list) {
   return list.icon || LIST_TYPE_BADGE_META[list.type]?.icon || '📋';
 }
 
-// Shopping cards show which sites their items link to (up to 3 domains,
-// deduplicated, with a "+N" overflow badge) plus the list's "reste à
-// dépenser" — the sum of price * quantity across every still-unchecked item
-// that has a price ("combien reste-t-il à dépenser", not the list's full
-// lifetime cost — a done/purchased item never contributes). This is the same
-// figure the list detail view's own finance summary shows via
-// lineTotal/updateFinanceSummary in list_view.js, computed server-side
-// (list.total_amount, from internal/db's listSelect's `done = 0` filter)
-// rather than re-summed here, so this card and the finance summary can never
-// drift apart from slightly different client-side logic.
+// A purchase card's footer (the "Achats & Sourcing" grid, and purchase lists
+// in the Espaces/"Partagé avec moi" tabs), one line: on the left, where the
+// items still to buy come from — their store aisles (Courses lists) and the
+// sites they link to — and in the bottom-right corner, what is left to
+// spend.
 //
-// Because `total_amount` only ever sums *unchecked* priced items, it comes
-// back `null` both when the list genuinely has nothing left to buy (every
-// item checked off) and when it simply has no priced items at all yet —
-// those two cases used to render identically (an empty badge row, or
-// whatever domain badges happened to exist), leaving a fully-completed list
-// looking indistinguishable from a half-empty one. This function now tells
-// them apart explicitly: an empty list (no items at all) gets a discreet
-// "0 article" pill, and a non-empty list whose items are *all* done — not
-// just whose unchecked items have no price — gets a distinct green success
-// badge instead of the price total, checked before total_amount so it can
-// never be shadowed by a still-null total.
-function urlBadges(list) {
-  const items = list.items || [];
-  const domains = [];
-  for (const item of items) {
-    if (item.url) {
-      try {
-        domains.push(new URL(item.url).hostname.replace(/^www\./, ''));
-      } catch {
-        // malformed URL slipped through some other path; skip it silently
-      }
+// Chips only ever describe the items still to buy: a checked-off item no
+// longer sends anyone to a shop or an aisle. Aisles come first, in shop
+// order, then domains. They sit on a single line: as many whole chips as fit
+// (each capped at 10rem, truncated beyond, full text in its title), the rest
+// counted in a "+N" — see fitCardChips. A card therefore never grows taller
+// because of them, and every card of a grid row keeps the same footer.
+//
+// The right-hand figure is list.total_amount, the server's sum of price *
+// quantity over every unchecked priced item (internal/db's listSelect, the
+// same figure as the list view's finance summary), rather than a client-side
+// re-sum that could drift from it. It is null both when nothing is left and
+// when nothing left has a price: items left but none priced → a light-gray
+// "Prix non renseigné" in that same corner; nothing left → no amount, and the
+// left side says why instead of chips (no items at all → "0 article"; every
+// item done → a green "Terminé"). The footer is therefore never empty, and
+// keeps the same height on every purchase card. The amount (plain text, no
+// pill since the footer has its own separator) and the "Terminé" badge are
+// emerald and semibold, the app's money-positive/success
+// accent (a deliberate exception to --tk-money-total, tokens.css: this card
+// only ever shows one figure, so there is no "estimé vs. dépensé" contrast to
+// keep).
+//
+// Bounds the chips built per card; any beyond still count in "+N".
+const MAX_CARD_CHIPS = 8;
+
+function cardItems(list) {
+  return Array.isArray(list.items) ? list.items.filter(Boolean) : [];
+}
+
+// The chips' text, in display order. QUICK_SHOP_AISLES/AISLE_EMOJI/aisleLabel
+// (quick-shop.js) and itemStoreDomain (list_view.js) are loaded after this
+// file but only called at render time, like formatEuro below. "other" is
+// left out: "🛒 Autre" says nothing about where to go.
+function cardSourceLabels(remaining) {
+  const aisles = new Set();
+  const domains = new Set();
+  for (const item of remaining) {
+    if (item.aisle && item.aisle !== 'other' && QUICK_SHOP_AISLES.includes(item.aisle)) aisles.add(item.aisle);
+    const domain = itemStoreDomain(item);
+    if (domain) domains.add(domain);
+  }
+  const orderedAisles = QUICK_SHOP_AISLES.filter((aisle) => aisles.has(aisle));
+  return [
+    ...orderedAisles.map((aisle) => ({ text: `${AISLE_EMOJI[aisle]} ${aisleLabel(aisle)}`, palette: 'orange' })),
+    ...[...domains].map((domain) => ({ text: domain, palette: 'sky' })),
+  ];
+}
+
+// A chip that truncates with an ellipsis past 10rem: badge()'s inline-flex
+// can't show text-overflow, so it becomes a block here.
+function cardChip(text, palette) {
+  const chip = badge(text, palette);
+  chip.classList.replace('inline-flex', 'block');
+  chip.classList.add('max-w-[10rem]', 'shrink-0', 'truncate', 'whitespace-nowrap');
+  chip.title = text;
+  chip.dataset.cardChip = '';
+  return chip;
+}
+
+// Shows as many whole chips as the footer has room for and counts the rest
+// in "+N". Run by cardChipsObserver whenever a chips row gets laid out or
+// changes width (first paint, a window resize, a hidden tab shown), so it
+// also covers the cards spaces.js and shares.js append to their own grids.
+// When even the first chip alone doesn't fit, it shrinks instead of hiding.
+function fitCardChips(row) {
+  if (row.clientWidth === 0) return; // not laid out (a hidden tab)
+  const chips = [...row.querySelectorAll('[data-card-chip]')];
+  const more = row.querySelector('[data-card-chips-more]');
+  const labels = JSON.parse(row.dataset.labels);
+  const showMore = (visible) => {
+    more.hidden = visible === labels.length;
+    more.textContent = `+${labels.length - visible}`;
+    more.title = labels.slice(visible).join(', ');
+  };
+  chips.forEach((chip) => {
+    chip.hidden = false;
+    chip.classList.replace('shrink', 'shrink-0');
+  });
+  let visible = chips.length;
+  showMore(visible);
+  while (visible > 1 && row.scrollWidth > row.clientWidth) {
+    visible -= 1;
+    chips[visible].hidden = true;
+    showMore(visible);
+  }
+  if (row.scrollWidth > row.clientWidth) chips[0].classList.replace('shrink-0', 'shrink');
+}
+
+// One observer for every chips row; a row removed from the page (a grid
+// re-render) reports a zero size, and is let go then.
+const cardChipsObserver = typeof ResizeObserver === 'function'
+  ? new ResizeObserver((entries) => {
+    for (const entry of entries) {
+      if (!entry.target.isConnected) cardChipsObserver.unobserve(entry.target);
+      else fitCardChips(entry.target);
     }
-  }
-  const unique = [...new Set(domains)];
+  })
+  : null;
+
+function urlBadges(list) {
+  const items = cardItems(list);
+  const remaining = items.filter((item) => !item.done);
   const frag = document.createDocumentFragment();
-  for (const domain of unique.slice(0, 3)) {
-    frag.appendChild(badge(domain, 'sky'));
-  }
-  if (unique.length > 3) {
-    frag.appendChild(badge(`+${unique.length - 3}`, 'slate'));
-  }
-  // formatEuro is defined in list_view.js, loaded after this file — safe to
-  // call here since this only ever runs at render time, well after every
-  // script has finished loading (same deferred-call pattern buildItemRow
-  // already uses for monthLabel/buildRecurrenceBadge from planning.js).
-  // Deliberately the same 'emerald' palette as every other money-positive/
-  // success accent in the app (the auto-detected-price sparkle icon, the
-  // all-items-done todo badge, ...) rather than a neutral/gray pill, so a
-  // list card's price total (or completion badge) reads as "positive" at a
-  // glance instead of blending in with the plain domain/type badges around
-  // it — this is a deliberate exception to --tk-money-total (tokens.css),
-  // which still backs every *other* money figure (the finance summary, item
-  // rows, the budget-planning totals), where "Total estimé"/"Déjà dépensé"
-  // need to stay visually distinct from "Reste à dépenser" within the same
-  // view — this card only ever shows one of the three, so there's no such
-  // distinction to preserve here. font-semibold (Tailwind's 600) is bumped
-  // explicitly since badge()'s shared font-medium (500) reads too light for
-  // a figure/status meant to be spotted quickly.
-  if (items.length === 0) {
+
+  const labels = cardSourceLabels(remaining);
+  if (labels.length > 0) {
+    const row = document.createElement('div');
+    row.className = 'flex min-w-0 flex-1 items-center gap-1.5 overflow-hidden';
+    const shown = labels.slice(0, MAX_CARD_CHIPS);
+    for (const { text, palette } of shown) {
+      row.appendChild(cardChip(text, palette));
+    }
+    const more = badge('', 'slate');
+    more.classList.add('shrink-0');
+    more.dataset.cardChipsMore = '';
+    row.appendChild(more);
+    row.dataset.labels = JSON.stringify(labels.map((label) => label.text));
+    // Until the first fit (or without ResizeObserver): every chip built,
+    // the footer clipping whatever doesn't fit.
+    more.hidden = labels.length === shown.length;
+    more.textContent = `+${labels.length - shown.length}`;
+    more.title = labels.slice(shown.length).map((label) => label.text).join(', ');
+    if (cardChipsObserver) cardChipsObserver.observe(row);
+    frag.appendChild(row);
+  } else if (items.length === 0) {
     frag.appendChild(badge(t('dashboard.listEmptyBadge'), 'slate'));
-  } else if (items.every((item) => item.done)) {
+  } else if (remaining.length === 0) {
     const doneBadge = badge(t('dashboard.listAllDoneBadge'), 'emerald');
     doneBadge.classList.add('font-semibold');
     frag.appendChild(doneBadge);
-  } else if (typeof list.total_amount === 'number') {
-    const totalBadge = badge(formatEuro(list.total_amount), 'emerald');
-    totalBadge.classList.add('font-semibold');
-    frag.appendChild(totalBadge);
+  }
+
+  // The bottom-right corner: what is left to spend, or that nothing left
+  // has a price. Nothing there once nothing is left to buy.
+  if (remaining.length > 0) {
+    let amount;
+    if (typeof list.total_amount === 'number') {
+      // formatEuro is defined in list_view.js (render-time call, see above).
+      amount = document.createElement('span');
+      amount.className = 'text-sm font-semibold leading-5 text-emerald-600 dark:text-emerald-400';
+      amount.textContent = formatEuro(list.total_amount);
+    } else {
+      amount = document.createElement('span');
+      // leading-5: a chip's height, so both sit on the same line.
+      amount.className = 'text-xs font-normal leading-5 text-slate-400 dark:text-slate-500';
+      amount.textContent = t('dashboard.noPriceYet');
+    }
+    amount.classList.add('ml-auto', 'shrink-0', 'whitespace-nowrap');
+    frag.appendChild(amount);
   }
   return frag;
 }
 
 function progressBadge(list) {
-  const items = list.items || [];
+  const items = cardItems(list);
   const frag = document.createDocumentFragment();
-  if (items.length === 0) return frag;
+  if (items.length === 0) {
+    frag.appendChild(badge(t('dashboard.listEmptyBadge'), 'slate'));
+    return frag;
+  }
   const done = items.filter((item) => item.done).length;
   frag.appendChild(badge(t('dashboard.todoProgress', { done, total: items.length }), done === items.length ? 'emerald' : 'slate'));
   return frag;
@@ -1197,25 +1286,53 @@ function emptyState(message) {
   return li;
 }
 
+// A card's action button: just its icon (no hover background; the icons
+// are drawn with stroke-width 2), padded p-1.5 into a 32px box — the
+// header's height — with a 44px touch area from an invisible ::before
+// spilling 6px around it (see buildListCard). No display class:
+// each button sets its own (the pin and kebab ones swap at md). No color
+// either: CARD_ACTION_COLORS, except a pinned pin button's amber.
+const CARD_ACTION_BUTTON = "relative shrink-0 items-center justify-center rounded-md p-1.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500/50 before:absolute before:-inset-1.5 before:content-['']";
+const CARD_ACTION_COLORS = 'text-slate-400 hover:text-slate-600 dark:text-slate-500 dark:hover:text-slate-300';
+
+// Makes the id of each card's badge row unique, even when the same list has a
+// card in several tabs at once.
+let listCardSeq = 0;
+
 function buildListCard(list, badgesFragment) {
+  // Layout: a header row — the type/status badges on the left, the action
+  // buttons on the right, centered on one axis (flex items-center
+  // justify-between) — then the open button with the name, the count and
+  // the badge footer, pinned to the bottom (mt-auto) so every card of a grid
+  // row ends on the same line. Everything sits inside the card's padding, in
+  // the flow: px-4 pb-4, and pt-2.5 because the badge is centered in the
+  // 32px header row (6px above it) — 10 + 6 puts it 16px from the top, the
+  // footer's distance from the bottom. The action buttons are bare icons in 32px boxes, 12px apart
+  // (gap-3), whose 44px touch areas (an invisible ::before, see
+  // CARD_ACTION_BUTTON) spill into the padding and meet in the gaps without
+  // overlapping; the header keeps their height (min-h-8) on a card without
+  // actions, so every card is as tall. The open button
+  // covers the whole card through a stretched ::after, the badges included;
+  // the actions sit above it (relative z-10) and are never nested in it.
   const li = document.createElement('li');
-  li.className = 'rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-100/70 dark:bg-slate-800/40 shadow-sm transition hover:border-slate-300 dark:hover:border-slate-700 hover:bg-slate-200 dark:hover:bg-slate-800/70';
+  li.className = 'relative flex flex-col rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-100/70 dark:bg-slate-800/40 px-4 pb-4 pt-2.5 shadow-sm transition hover:border-slate-300 dark:hover:border-slate-700 hover:bg-slate-200 dark:hover:bg-slate-800/70';
 
-  const row = document.createElement('div');
-  row.className = 'flex items-start justify-between gap-2 p-4';
-
+  // items-stretch overrides the browsers' own `align-items: flex-start` on
+  // <button>, without which the footer row sizes to its content and runs
+  // past the card instead of truncating its chips.
   const openBtn = document.createElement('button');
   openBtn.type = 'button';
-  openBtn.className = 'min-h-[44px] flex-1 text-left';
+  openBtn.className = "mt-3 flex w-full min-w-0 flex-1 flex-col items-stretch text-left after:absolute after:inset-0 after:rounded-2xl after:content-['']";
   openBtn.addEventListener('click', () => selectList(list.id));
 
-  // Shown above the name on every card, in every dashboard section, since
-  // even the "Achats & Sourcing" grid mixes several types together (see
-  // isPurchaseList) and the Espaces tab mixes all of them — see
-  // LIST_TYPE_BADGE_META's comment above for why this can't just live
-  // inside badgesRow below.
+  const header = document.createElement('div');
+  header.className = 'flex min-h-8 items-center justify-between gap-2';
+
   const typeRow = document.createElement('div');
-  typeRow.className = 'mb-2 flex flex-wrap items-center gap-1.5 empty:hidden';
+  typeRow.className = 'flex min-w-0 flex-wrap items-center gap-1.5';
+  // Outside the open button now: still read with it.
+  typeRow.id = `list-card-badges-${++listCardSeq}`;
+  openBtn.setAttribute('aria-describedby', typeRow.id);
   const typeBadgeEl = typeBadge(list.type);
   if (typeBadgeEl) typeRow.appendChild(typeBadgeEl);
   // list.access_source is set by db.ListSharedListsForUser (see shares.js's
@@ -1262,6 +1379,7 @@ function buildListCard(list, badgesFragment) {
   const title = document.createElement('h3');
   title.className = 'truncate text-base font-semibold text-slate-900 dark:text-slate-100';
   title.textContent = list.name;
+  title.title = list.name; // when truncated
 
   titleRow.append(iconSpan, title);
 
@@ -1269,14 +1387,20 @@ function buildListCard(list, badgesFragment) {
   count.className = 'mt-1 text-sm text-slate-500 dark:text-slate-400';
   count.textContent = remainingItemsLabel(list.items || []);
 
+  // One line, never wrapping (see urlBadges): only a card with nothing to
+  // show here (a notes list) drops it.
   const badgesRow = document.createElement('div');
-  badgesRow.className = 'mt-3 flex flex-wrap gap-1.5 empty:hidden';
+  // Set apart by a hairline, pinned to the card's bottom (mt-auto). Its
+  // minimum 12px gap above comes from the count's mb-3, since a footer
+  // can't carry both mt-auto and mt-3; a notes card has no footer, nor gap.
+  badgesRow.className = 'mt-auto flex min-h-[32px] min-w-0 items-end justify-between gap-2 border-t border-slate-200/60 pt-3 dark:border-slate-700/60 empty:hidden';
   badgesRow.appendChild(badgesFragment);
+  if (badgesRow.childElementCount > 0) count.classList.add('mb-3');
 
-  openBtn.append(typeRow, titleRow, count, badgesRow);
+  openBtn.append(titleRow, count, badgesRow);
 
   const actions = document.createElement('div');
-  actions.className = 'flex shrink-0 items-center gap-1';
+  actions.className = 'relative z-10 flex shrink-0 items-center gap-3';
 
   // A card reached via db.ListSharedListsForUser (list.access_source set —
   // see shares.js's "Partagé avec moi" tab) shows no edit/share/delete
@@ -1290,7 +1414,7 @@ function buildListCard(list, badgesFragment) {
     const editBtn = document.createElement('button');
     editBtn.type = 'button';
     editBtn.setAttribute('aria-label', t('common.editList', { name: list.name }));
-    editBtn.className = 'flex h-11 w-11 shrink-0 items-center justify-center rounded-lg text-slate-500 hover:bg-slate-200 dark:hover:bg-slate-700 hover:text-slate-900 dark:hover:text-slate-200';
+    editBtn.className = `flex ${CARD_ACTION_BUTTON} ${CARD_ACTION_COLORS}`;
     editBtn.innerHTML = PENCIL_ICON_SVG;
     editBtn.addEventListener('click', () => openListModal(list));
     actions.appendChild(editBtn);
@@ -1298,7 +1422,7 @@ function buildListCard(list, badgesFragment) {
     const shareBtn = document.createElement('button');
     shareBtn.type = 'button';
     shareBtn.setAttribute('aria-label', t('common.shareList', { name: list.name }));
-    shareBtn.className = 'flex h-11 w-11 shrink-0 items-center justify-center rounded-lg text-slate-500 hover:bg-violet-500/10 hover:text-violet-600 dark:hover:text-violet-400';
+    shareBtn.className = `flex ${CARD_ACTION_BUTTON} ${CARD_ACTION_COLORS}`;
     shareBtn.innerHTML = SHARE_ICON_SVG;
     shareBtn.addEventListener('click', () => openShareModal({ kind: 'list', id: list.id, name: list.name }));
     actions.appendChild(shareBtn);
@@ -1306,11 +1430,11 @@ function buildListCard(list, badgesFragment) {
     const deleteBtn = document.createElement('button');
     deleteBtn.type = 'button';
     deleteBtn.setAttribute('aria-label', t('common.deleteList', { name: list.name }));
-    deleteBtn.className = 'flex h-11 w-11 shrink-0 items-center justify-center rounded-lg text-slate-500 hover:bg-rose-500/10 hover:text-rose-600 dark:hover:text-rose-400';
+    deleteBtn.className = `flex ${CARD_ACTION_BUTTON} ${CARD_ACTION_COLORS}`;
     deleteBtn.innerHTML = TRASH_ICON_SVG;
     deleteBtn.addEventListener('click', () => removeList(list));
     actions.appendChild(deleteBtn);
-  } else if (list.access_source === 'list_share' || list.access_source === 'space_share' || list.access_source === 'house_member') {
+  } else if (['list_share', 'space_share', 'house_member'].includes(list.access_source)) {
     // Pinning is offered for a list shared *directly* (a list_shares row
     // the recipient themselves holds), one reached only via a shared Space
     // (space_shares — PATCH /api/v1/lists/{id}/share/pin's backend,
@@ -1344,8 +1468,8 @@ function buildListCard(list, badgesFragment) {
     pinBtn.type = 'button';
     pinBtn.setAttribute('aria-label', t(pinned ? 'common.unpinList' : 'common.pinList', { name: list.name }));
     pinBtn.className =
-      'hidden md:flex h-11 w-11 shrink-0 items-center justify-center rounded-lg hover:bg-amber-500/10 hover:text-amber-600 dark:hover:text-amber-400 ' +
-      (pinned ? 'text-amber-500 dark:text-amber-400' : 'text-slate-500');
+      `hidden md:flex ${CARD_ACTION_BUTTON} ` +
+      (pinned ? 'text-amber-500 hover:text-amber-600 dark:text-amber-400 dark:hover:text-amber-300' : CARD_ACTION_COLORS);
     pinBtn.innerHTML = PIN_ICON_SVG;
     pinBtn.addEventListener('click', () => toggleListPin(list));
     actions.appendChild(pinBtn);
@@ -1354,7 +1478,7 @@ function buildListCard(list, badgesFragment) {
     kebabBtn.type = 'button';
     kebabBtn.setAttribute('aria-label', t('common.listActionsAriaLabel', { name: list.name }));
     kebabBtn.className =
-      'flex md:hidden h-11 w-11 shrink-0 items-center justify-center rounded-lg text-slate-500 hover:bg-slate-200 dark:hover:bg-slate-700';
+      `flex md:hidden ${CARD_ACTION_BUTTON} ${CARD_ACTION_COLORS}`;
     // KEBAB_ICON_SVG is defined in list_view.js, loaded after this file —
     // safe because it's only read here at click-time/render-time, well
     // after every script tag has finished loading (see PENCIL_ICON_SVG's
@@ -1364,8 +1488,9 @@ function buildListCard(list, badgesFragment) {
     actions.appendChild(kebabBtn);
   }
 
-  row.append(openBtn, actions);
-  li.appendChild(row);
+  header.append(typeRow);
+  if (actions.childElementCount > 0) header.append(actions);
+  li.append(header, openBtn);
 
   // A long press (~500ms touch hold) anywhere on the card opens
   // #list-card-actions-sheet — the touch equivalent of a context menu,

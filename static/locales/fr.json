@@ -50,6 +50,7 @@
     "todoProgress": "{done}/{total} terminées",
     "listAllDoneBadge": "🎉 Terminé",
     "listEmptyBadge": "0 article",
+    "noPriceYet": "Prix non renseigné",
     "emptyShopping": "Aucune liste de courses pour le moment.",
     "emptyTodo": "Aucun espace tâches pour le moment.",
     "emptyCustom": "Aucune liste libre pour le moment."
@@ -674,6 +675,22 @@
           "too_new": "sauvegarde créée par une version plus récente de Trakka : mettez d'abord Trakka à jour",
           "invalid_name": "nom de sauvegarde invalide"
         }
+      },
+      "restart": {
+        "sectionTitle": "Serveur",
+        "hint": "Redémarre le processus Trakka. Il doit être lancé par un gestionnaire (Docker, Podman, systemd) qui le relance automatiquement — sinon, il restera arrêté.",
+        "button": "Redémarrer le serveur",
+        "modalTitle": "Redémarrer le serveur",
+        "confirmText": "Êtes-vous sûr de vouloir redémarrer le serveur ? Cette action interrompra brièvement les connexions.",
+        "cancel": "Annuler",
+        "confirm": "Redémarrer",
+        "requesting": "Envoi de la demande de redémarrage…",
+        "waiting": "Redémarrage du serveur… Reconnexion en cours.",
+        "back": "Serveur redémarré. Rechargement de l'application…",
+        "timeout": "Le serveur ne répond toujours pas. Vérifiez qu'un gestionnaire (Docker, Podman, systemd) le relance, puis rechargez la page.",
+        "alreadyRunning": "Un redémarrage est déjà en cours.",
+        "failed": "Le redémarrage a échoué : {error}",
+        "close": "Fermer"
       }
     },
     "userSettings": {
