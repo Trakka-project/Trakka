@@ -205,6 +205,6 @@ func (app *Application) handleListAssignableUsers(w http.ResponseWriter, r *http
 // (db.PruneAssignees).
 func (app *Application) pruneAssignees(r *http.Request, prune func(db.AssigneeScope) (int, error)) {
 	if _, err := prune(app.assigneeScope()); err != nil {
-		app.Logger.Error("unassigning users who lost access to a list", "error", err, "path", r.URL.Path)
+		app.Logger.Error("unassigning users who lost access to a list", "error", err, "path", logPath(r))
 	}
 }

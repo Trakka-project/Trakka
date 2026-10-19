@@ -1000,7 +1000,7 @@
   </div>
 
   <div id="share-modal" hidden class="fixed inset-0 z-40 flex items-end justify-center bg-slate-950/30 dark:bg-slate-950/70 p-0 sm:items-center sm:p-4">
-    <div role="dialog" aria-modal="true" aria-labelledby="share-modal-title" class="w-full max-w-md rounded-t-2xl bg-slate-100 dark:bg-slate-800 p-5 shadow-xl sm:rounded-2xl">
+    <div role="dialog" aria-modal="true" aria-labelledby="share-modal-title" class="max-h-[90vh] w-full max-w-md overflow-y-auto overscroll-contain rounded-t-2xl bg-slate-100 dark:bg-slate-800 p-5 shadow-xl sm:rounded-2xl">
       <div class="mb-1 flex items-center justify-between">
         <h2 id="share-modal-title" class="text-lg font-semibold">Partager</h2>
         <button type="button" id="close-share-modal-button" data-i18n-aria-label="modals.close" aria-label="Fermer"
@@ -1031,6 +1031,83 @@
           <button type="submit" data-i18n="modals.share.submit" class="shrink-0 rounded-xl bg-sky-500 px-4 py-3 text-sm font-semibold text-white transition hover:bg-sky-400 active:scale-95">Partager</button>
         </div>
       </form>
+
+      <!-- Public share links (public-link.js): lists only, hidden for a
+           Space. A list can have several, one per audience, each copyable
+           until it is revoked. -->
+      <section id="public-link-section" hidden aria-labelledby="public-link-title"
+               class="mt-5 border-t border-slate-200 dark:border-slate-700 pt-4">
+        <h3 id="public-link-title" data-i18n="modals.share.publicLink.title" class="text-sm font-semibold text-slate-900 dark:text-slate-100">Liens de partage publics</h3>
+        <p data-i18n="modals.share.publicLink.description" class="mt-1 text-xs text-slate-500 dark:text-slate-400">Toute personne qui possède un de ces liens peut ouvrir la liste, sans compte Trakka. Créez-en un par groupe de personnes.</p>
+        <p id="public-link-status" role="status" class="mt-2 text-xs text-slate-600 dark:text-slate-300"></p>
+
+        <ul id="public-links-list" class="mt-3 space-y-2"></ul>
+
+        <p id="public-link-error" hidden role="alert" class="mt-2 text-xs text-rose-600 dark:text-rose-400"></p>
+
+        <button type="button" id="public-link-new-button" hidden aria-expanded="false" aria-controls="public-link-form"
+                class="mt-3 flex min-h-[44px] w-full items-center justify-center gap-2 rounded-xl border border-dashed border-sky-400 dark:border-sky-600 px-4 py-2.5 text-sm font-semibold text-sky-600 dark:text-sky-400 transition hover:bg-sky-500/10 active:scale-95">
+          <span aria-hidden="true">+</span>
+          <span data-i18n="modals.share.publicLink.newLink">Générer un nouveau lien public</span>
+        </button>
+
+        <form id="public-link-form" hidden
+              class="mt-3 space-y-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-white/60 dark:bg-slate-900/60 p-3">
+          <div>
+            <label for="public-link-label" data-i18n="modals.share.publicLink.labelLabel" class="block text-xs font-medium text-slate-600 dark:text-slate-300">Nom du lien (facultatif)</label>
+            <input type="text" id="public-link-label" maxlength="50" autocomplete="off"
+                   data-i18n-placeholder="modals.share.publicLink.labelPlaceholder" placeholder="Ex. Famille, Artisans, Invités"
+                   class="mt-1 min-h-[44px] w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 text-base text-slate-900 dark:text-slate-100 placeholder:text-slate-500 focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500/30">
+          </div>
+          <fieldset class="space-y-2">
+            <legend data-i18n="modals.share.publicLink.modeLegend" class="sr-only">Niveau d'accès</legend>
+            <label class="flex min-h-[44px] cursor-pointer items-start gap-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-white/60 dark:bg-slate-900/60 px-3 py-2 has-[:checked]:border-sky-500 has-[:checked]:ring-2 has-[:checked]:ring-sky-500/30">
+              <input type="radio" name="public-link-mode" value="read" checked class="mt-1 h-4 w-4 shrink-0 accent-sky-500">
+              <span class="min-w-0">
+                <span class="block text-sm font-medium text-slate-900 dark:text-slate-100"><span aria-hidden="true">👁️ </span><span data-i18n="modals.share.publicLink.modeRead">Lecture seule</span></span>
+                <span data-i18n="modals.share.publicLink.modeReadHint" class="block text-xs text-slate-500 dark:text-slate-400">Consultation seule : aucune coche ni aucun ajout</span>
+              </span>
+            </label>
+            <label class="flex min-h-[44px] cursor-pointer items-start gap-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-white/60 dark:bg-slate-900/60 px-3 py-2 has-[:checked]:border-sky-500 has-[:checked]:ring-2 has-[:checked]:ring-sky-500/30">
+              <input type="radio" name="public-link-mode" value="add_only" class="mt-1 h-4 w-4 shrink-0 accent-sky-500">
+              <span class="min-w-0">
+                <span class="block text-sm font-medium text-slate-900 dark:text-slate-100"><span aria-hidden="true">➕ </span><span data-i18n="modals.share.publicLink.modeAddOnly">Ajout uniquement</span></span>
+                <span data-i18n="modals.share.publicLink.modeAddOnlyHint" class="block text-xs text-slate-500 dark:text-slate-400">Voit la liste et peut ajouter des éléments, sans toucher aux existants</span>
+              </span>
+            </label>
+            <label class="flex min-h-[44px] cursor-pointer items-start gap-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-white/60 dark:bg-slate-900/60 px-3 py-2 has-[:checked]:border-sky-500 has-[:checked]:ring-2 has-[:checked]:ring-sky-500/30">
+              <input type="radio" name="public-link-mode" value="deposit_only" class="mt-1 h-4 w-4 shrink-0 accent-sky-500">
+              <span class="min-w-0">
+                <span class="block text-sm font-medium text-slate-900 dark:text-slate-100"><span aria-hidden="true">📥 </span><span data-i18n="modals.share.publicLink.modeDepositOnly">Dépôt à l'aveugle</span></span>
+                <span data-i18n="modals.share.publicLink.modeDepositOnlyHint" class="block text-xs text-slate-500 dark:text-slate-400">Ne voit pas la liste, peut seulement y déposer des idées (cadeaux, boîte à idées)</span>
+              </span>
+            </label>
+            <label class="flex min-h-[44px] cursor-pointer items-start gap-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-white/60 dark:bg-slate-900/60 px-3 py-2 has-[:checked]:border-sky-500 has-[:checked]:ring-2 has-[:checked]:ring-sky-500/30">
+              <input type="radio" name="public-link-mode" value="full_edit" class="mt-1 h-4 w-4 shrink-0 accent-sky-500">
+              <span class="min-w-0">
+                <span class="block text-sm font-medium text-slate-900 dark:text-slate-100"><span aria-hidden="true">✏️ </span><span data-i18n="modals.share.publicLink.modeFullEdit">Édition complète</span></span>
+                <span data-i18n="modals.share.publicLink.modeFullEditHint" class="block text-xs text-slate-500 dark:text-slate-400">Voit, ajoute, coche, décoche, renomme et change les quantités</span>
+              </span>
+            </label>
+          </fieldset>
+          <div>
+            <label for="public-link-expiry" data-i18n="modals.share.publicLink.expiryLabel" class="block text-xs font-medium text-slate-600 dark:text-slate-300">Expiration</label>
+          <select id="public-link-expiry"
+                  class="mt-1 min-h-[44px] w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 text-sm text-slate-900 dark:text-slate-100 focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500/30">
+            <option value="never" data-i18n="modals.share.publicLink.expiryNever">Jamais</option>
+            <option value="1" data-i18n="modals.share.publicLink.expiry1d">Dans 24 heures</option>
+            <option value="7" data-i18n="modals.share.publicLink.expiry7d">Dans 7 jours</option>
+            <option value="30" data-i18n="modals.share.publicLink.expiry30d">Dans 30 jours</option>
+          </select>
+          </div>
+          <div class="flex flex-wrap gap-2">
+            <button type="submit" id="public-link-create-button" data-i18n="modals.share.publicLink.create"
+                    class="min-h-[44px] flex-1 rounded-xl bg-sky-500 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-sky-400 active:scale-95 disabled:opacity-60">Créer le lien</button>
+            <button type="button" id="public-link-cancel-button" data-i18n="modals.share.publicLink.cancel"
+                    class="min-h-[44px] rounded-xl border border-slate-200 dark:border-slate-700 px-4 py-2.5 text-sm font-medium text-slate-600 dark:text-slate-300 transition hover:bg-slate-200 dark:hover:bg-slate-700">Annuler</button>
+          </div>
+        </form>
+      </section>
     </div>
   </div>
 
@@ -2875,6 +2952,7 @@
   <script src="/js/urgent.js" defer></script>
   <script src="/js/spaces.js" defer></script>
   <script src="/js/shares.js" defer></script>
+  <script src="/js/public-link.js" defer></script>
   <script src="/js/user-search.js" defer></script>
   <script src="/js/notifications.js" defer></script>
   <script src="/js/settings.js" defer></script>

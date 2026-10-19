@@ -8,7 +8,7 @@ importScripts('/js/db.js', '/js/recurrence.js');
 
 // Bump both on any change to APP_SHELL's contents so activate()
 // evicts the old cache instead of serving stale assets forever.
-const SHELL_CACHE = 'trakka-shell-v144';
+const SHELL_CACHE = 'trakka-shell-v146';
 const RUNTIME_CACHE = 'trakka-runtime-v135';
 const KNOWN_CACHES = [SHELL_CACHE, RUNTIME_CACHE];
 
@@ -40,6 +40,7 @@ const APP_SHELL = [
   '/js/urgent.js',
   '/js/spaces.js',
   '/js/shares.js',
+  '/js/public-link.js',
   '/js/user-search.js',
   '/js/notifications.js',
   '/js/admin.js',
@@ -279,6 +280,21 @@ self.addEventListener('fetch', (event) => {
   // the live response. And the feed itself, should someone open the link in
   // this browser, is a token-bearing URL with nothing to mirror offline.
   if (url.pathname.startsWith(API_PREFIX + '/calendar/')) {
+    return;
+  }
+
+  // A list's public share links likewise, both sides of them. Managing them
+  // (public-link.js): creating a link must never be queued and replayed
+  // later (a visitor would get a link that doesn't exist yet), nor revoking
+  // one deferred (the person it was meant to cut off keeps access). Visiting it (/public/lists/<token>, its
+  // /api/v1/public/... calls): a token-bearing page and API with nothing to
+  // mirror offline, served to a Trakka user exactly as to an anonymous
+  // visitor — never from the shell cache, never with the SPA as fallback.
+  if (
+    /^\/api\/v1\/lists\/[^/]+\/public-links(\/[^/]+)?$/.test(url.pathname) ||
+    url.pathname.startsWith(API_PREFIX + '/public/') ||
+    url.pathname.startsWith('/public/')
+  ) {
     return;
   }
 

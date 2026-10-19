@@ -2,7 +2,7 @@
 
 Base URL: `http://<host>:<port>` (default port `8080`). All endpoints are under `/api/v1`.
 
-All responses are `application/json; charset=utf-8`, except the [calendar feed](#calendar-feed) (`text/calendar`). Every `/api/v1/...` endpoint requires an authenticated session (see [Authentication](#authentication) below) — there is no anonymous access to the JSON API. A few list and item endpoints also accept a personal [API token](#api-tokens) (`Authorization: Bearer trk_…`) instead of the session cookie, for integrations such as Home Assistant. The one exception is `GET /api/v1/calendar/feed.ics`, which calendar apps poll without a session and which is authenticated by a secret token in its URL instead (see [Calendar feed](#calendar-feed)). `/auth/...` endpoints and static assets stay unauthenticated, since `/auth/...` is how a session gets established in the first place.
+All responses are `application/json; charset=utf-8`, except the [calendar feed](#calendar-feed) (`text/calendar`). Every `/api/v1/...` endpoint requires an authenticated session (see [Authentication](#authentication) below) — there is no anonymous access to the JSON API. A few list and item endpoints also accept a personal [API token](#api-tokens) (`Authorization: Bearer trk_…`) instead of the session cookie, for integrations such as Home Assistant. The exceptions are `GET /api/v1/calendar/feed.ics`, which calendar apps poll without a session and which is authenticated by a secret token in its URL instead (see [Calendar feed](#calendar-feed)), and the three `/api/v1/public/lists/{token}...` routes of a list's [public share link](#public-share-links), opened by visitors with no account and authenticated by the secret token in their path. `/auth/...` endpoints and static assets stay unauthenticated, since `/auth/...` is how a session gets established in the first place.
 
 ## Conventions
 
@@ -651,6 +651,77 @@ curl -X PATCH http://localhost:8080/api/v1/custom-categories/1/share/pin -d '{"p
 ### `DELETE /api/v1/custom-categories/{id}/share/{userId}` · `DELETE /api/v1/lists/{id}/share/{userId}`
 
 Revokes a share. `204` on success, `404` if no such share exists (also on a repeat call — revoking is not idempotent-silent), otherwise the same `404`/`403` access rules as `GET` above. The recipient is then unassigned from the items of the list (or of the Space's lists) they can no longer open (see [Task assignments](#task-assignments)).
+
+## Public share links
+
+A House member can open a list to anyone holding a secret link, `/public/lists/{token}`, with no Trakka account, in one of four access modes. A list can have several links — one per audience ("Famille" in `full_edit`, "Invités" in `deposit_only`...), each with its own mode, optional label and expiry, revoked on its own (at most 20 per list). Code: `internal/handlers/public_links.go` (`publicModeAllows`); table: [`list_public_links`](DATABASE.md#list_public_links); front end: the share modal's "Liens de partage publics" section (`static/js/public-link.js`) and the visitor's page (`static/public-list.html`, `static/js/public-list.js`).
+
+| `access_mode` | Sees the items | Adds | Checks, unchecks, renames, changes quantities |
+|---|---|---|---|
+| `read` (👁️ Lecture seule) | yes | — | — |
+| `add_only` (➕ Ajout uniquement) | yes | yes | — |
+| `deposit_only` (📥 Dépôt à l'aveugle) | **no** — name and icon only | yes | — |
+| `full_edit` (✏️ Édition complète) | yes | yes | yes |
+
+No mode deletes. The mode is checked before anything about the list's items is read, so a refused request (`403`) reveals nothing — a `deposit_only` `PATCH` gets the same `403` for a real item id as for a made-up one.
+
+- **The token** is 32 `crypto/rand` bytes (43 base64url characters), one per link. Unlike sessions, the [calendar feed](#calendar-feed) and [API tokens](#api-tokens), it is **stored in clear**, so House members can show and copy every link from the share modal at any time until it is revoked (the owner's choice; a database leak or backup therefore hands out working public links). A leaked link is revoked on its own; the list's other links keep working.
+- **Managing** links takes a session and real House membership of the list (like sharing it with a person) — not a share of it, and never an [API token](#api-tokens) (`403`). Not under `/lists/{id}/share`, whose `POST` already shares the list with a person by email. A link can't be edited: to change its mode, label or expiry, create another and revoke the old one.
+- **Visitors' routes** sit outside the session gate. A token that is unknown, replaced, disabled or past its `expires_at` is a `404` on all of them — the four can't be told apart from outside — and a request the link's mode doesn't allow is a `403`. Writes are capped at 60 a minute per link (`429`) and adding stops at 500 items on the list (`409`); cross-site writes are refused like every other write (`Origin`/`Sec-Fetch-Site`). A visitor can't delete, set a URL (so they can never make the server fetch a page), a price, a reminder, labels or assignees. Responses carry `Cache-Control: no-store` and `X-Robots-Tag: noindex, nofollow, noarchive`; the server logs every path with the token replaced by `{token}`.
+
+### `GET /api/v1/lists/{id}/public-links`
+
+Every public link of the list, oldest first — expired and suspended ones included (flagged), so they can be seen and revoked. Each with its link, since this is how the share modal copies it: reserved to House members (`403` for anyone else, a share holder included; an API token is refused too), `404` for an unknown list.
+
+```json
+[{"id": 7, "label": "Famille", "access_mode": "full_edit", "is_enabled": true, "expired": false,
+  "created_at": "2026-10-19T09:22:41.101Z", "expires_at": null, "last_used_at": "2026-10-19T09:23:02.420Z",
+  "token": "Xk3…43 characters…", "path": "/public/lists/Xk3…"},
+ {"id": 8, "label": null, "access_mode": "deposit_only", "is_enabled": true, "expired": false,
+  "created_at": "2026-10-19T09:25:10.002Z", "expires_at": "2026-10-26T09:25:09Z",
+  "token": "pQ9…", "path": "/public/lists/pQ9…"}]
+```
+
+`label` is `null` for an unnamed link (the modal then names it by its mode); `last_used_at` (to the minute) is omitted until a visitor first opens the link. `is_enabled` is `false` only for a link suspended directly in the database (no route sets it).
+
+### `POST /api/v1/lists/{id}/public-links`
+
+Creates a new link, next to the list's others.
+
+| Field | Type | Required | Notes |
+|---|---|---|---|
+| `access_mode` | string | yes | `"read"`, `"add_only"`, `"deposit_only"` or `"full_edit"` (see the table above); anything else, `"write"` included, is a `400` |
+| `label` | string \| null | no | names the link ("Famille", "Artisans", "Invités"); trimmed, at most 50 characters (`400` beyond); absent, `null` or blank for none |
+| `expires_at` | string \| null | no | RFC 3339 date-time in the future; absent, `null` or `""` for never |
+
+`201` with the new link in the shape of `GET` above. `400` for an invalid field, `409` once the list has 20 links.
+
+### `DELETE /api/v1/lists/{id}/public-links/{linkId}`
+
+Revokes that link for good — its token stops working at once; the list's other links are untouched. `204`; `404` for a link the list doesn't have (already revoked, or another list's), `400` for a malformed id.
+
+### `GET /api/v1/public/lists/{token}`
+
+No session. The list as a visitor sees it — its name, icon, type and the link's mode and expiry, and per item only what using the list takes (never the House, its members, assignees, URLs or prices):
+
+```json
+{"name": "Courses du samedi", "icon": "🥖", "type": "groceries", "access_mode": "full_edit", "expires_at": null,
+ "items": [{"id": 12, "title": "Lait", "quantity": 2, "done": false, "is_urgent": false, "labels": [], "aisle": "Crèmerie"}]}
+```
+
+Items come in the list's own order; `aisle`, `due_date` and `due_time` are omitted when unset. For a `deposit_only` link, `items` is always `[]` (the items aren't even read).
+
+### `POST /api/v1/public/lists/{token}/items`
+
+No session; `add_only`, `deposit_only` and `full_edit` links (`403` for `read`). Body: `title` (required, ≤ 500 characters) and `quantity` (optional, default 1, ≤ 100000). `201` with the new item in the shape above — except through a `deposit_only` link, which always answers `201 {"added": true}`, merged or not, so the reply can't tell what the list holds. On a [Courses list](#quick-shopping-lists-courses), a product already on the list is updated instead (`200`), like an authenticated add. The list's users are notified as for an addition by a member, the actor named "Un visiteur (lien public)".
+
+### `PATCH /api/v1/public/lists/{token}/items/{itemId}`
+
+No session; `full_edit` links only (`403` for the three others, before the item is even looked up). Any of `done` (boolean), `title` and `quantity`; anything else is a `400`, as is an empty body. Checking an item off has the same effects as for a member (a recurring item moves to its next occurrence, a Courses purchase is recorded, the list's users are notified). An item of another list is a `404`. `200` with the item.
+
+### `GET /public/lists/{token}`
+
+The visitor's HTML page (`static/public-list.html`): the same static page for every token, served with `Cache-Control: no-store` and `X-Robots-Tag`; `404` for a token outside the base64url alphabet. The page reads the token from its URL and says "Lien indisponible" itself when the API answers `404`. It polls the list every 10 s while visible, to show other people's changes.
 
 ## Items
 

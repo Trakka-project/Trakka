@@ -88,6 +88,11 @@ type Application struct {
 	barcodeLookupLimiterOnce sync.Once
 	barcodeLookupLimiterVal  *rateLimiter
 
+	// Per-link bucket of public link visitors' writes (see public_links.go),
+	// lazily built for the same reason.
+	publicWriteLimiterOnce sync.Once
+	publicWriteLimiterVal  *rateLimiter
+
 	// quickAddMu serializes "is this product already on the list? then
 	// update it, else create it" on Courses lists (see
 	// addToQuickShoppingList), so two simultaneous adds can't both miss the
@@ -238,6 +243,11 @@ func (app *Application) Routes() http.Handler {
 	apiMux.HandleFunc("PATCH /api/v1/lists/{id}/share/pin", app.handleListSharePin)
 	apiMux.HandleFunc("DELETE /api/v1/lists/{id}/share/{userId}", app.handleListShareRevoke)
 	apiMux.HandleFunc("DELETE /api/v1/lists/{id}/invitations", app.handleListShareInvitationRevoke)
+	// The list's public share links (see public_links.go). Not under
+	// /share, whose POST already shares the list with a person by email.
+	apiMux.HandleFunc("GET /api/v1/lists/{id}/public-links", app.handleListPublicLinksIndex)
+	apiMux.HandleFunc("POST /api/v1/lists/{id}/public-links", app.handleListPublicLinksCreate)
+	apiMux.HandleFunc("DELETE /api/v1/lists/{id}/public-links/{linkId}", app.handleListPublicLinksDelete)
 
 	apiMux.HandleFunc("GET /api/v1/items", app.handleItemsIndex)
 	apiMux.HandleFunc("POST /api/v1/items", app.handleItemsCreate)
@@ -294,12 +304,20 @@ func (app *Application) Routes() http.Handler {
 	apiMux.HandleFunc("DELETE /api/v1/api-tokens/{id}", app.handleAPITokensDelete)
 
 	mux.Handle("/api/v1/", app.RequireSession(apiMux))
-	// The one /api/v1/... route outside RequireSession: calendar apps poll
-	// it in the background with no session, authenticated by the secret
-	// token in its query string instead (see calendar_feed.go). A more
-	// specific pattern than "/api/v1/" above, so the mux always routes it
-	// here.
+	// The only /api/v1/... routes outside RequireSession, each authenticated
+	// by a secret token instead and opening nothing else: the calendar feed,
+	// which calendar apps poll in the background with no session (token in
+	// its query string, see calendar_feed.go), and a list's public share
+	// link, opened by visitors with no account (token in the path, see
+	// public_links.go). More specific patterns than "/api/v1/" above, so the
+	// mux always routes them here. Don't add another.
 	mux.HandleFunc("GET /api/v1/calendar/feed.ics", app.handleCalendarFeed)
+	mux.HandleFunc("GET /api/v1/public/lists/{token}", app.handlePublicListShow)
+	mux.HandleFunc("POST /api/v1/public/lists/{token}/items", app.handlePublicItemCreate)
+	mux.HandleFunc("PATCH /api/v1/public/lists/{token}/items/{itemId}", app.handlePublicItemPatch)
+	// The visitor's page of a public link: a static page, but at a
+	// token-bearing URL that must be neither cached nor indexed.
+	mux.HandleFunc("GET /public/lists/{token}", app.handlePublicListPage)
 	fileServer := http.FileServer(staticFileSystem{http.Dir(app.StaticDir)})
 	// Every static file, sw.js first among them, is served with an explicit
 	// Cache-Control: no-cache (see revalidateStatic). Every browser-side
@@ -415,6 +433,6 @@ func (sfs staticFileSystem) Open(name string) (http.File, error) {
 // serverError logs the underlying error (never exposed to the client) and
 // writes a generic 500 response.
 func (app *Application) serverError(w http.ResponseWriter, r *http.Request, err error) {
-	app.Logger.Error("unhandled error", "method", r.Method, "path", r.URL.Path, "error", err)
+	app.Logger.Error("unhandled error", "method", r.Method, "path", logPath(r), "error", err)
 	writeError(w, http.StatusInternalServerError, "internal server error")
 }

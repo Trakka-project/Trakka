@@ -79,7 +79,8 @@ func SecurityHeaders(hsts bool, next http.Handler) http.Handler {
 	})
 }
 
-// Logging records method, path, status, and duration for every request.
+// Logging records method, path, status, and duration for every request —
+// the path as logPath gives it, with a public link's token redacted.
 func Logging(logger *slog.Logger, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()
@@ -87,7 +88,7 @@ func Logging(logger *slog.Logger, next http.Handler) http.Handler {
 		next.ServeHTTP(sw, r)
 		logger.Info("request",
 			"method", r.Method,
-			"path", r.URL.Path,
+			"path", logPath(r),
 			"status", sw.status,
 			"duration_ms", time.Since(start).Milliseconds(),
 		)
@@ -103,7 +104,7 @@ func Recover(logger *slog.Logger, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		defer func() {
 			if rec := recover(); rec != nil {
-				logger.Error("panic recovered", "path", r.URL.Path, "recovered", rec)
+				logger.Error("panic recovered", "path", logPath(r), "recovered", rec)
 				writeError(w, http.StatusInternalServerError, "internal server error")
 			}
 		}()
