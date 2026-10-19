@@ -963,6 +963,32 @@ html > body.overflow-hidden {
   }
 }
 
+/* The item a 🔔 entry was opened on (revealListItem in
+   static/js/list_view.js): a ring and a tint that fade out. An outline,
+   not a box-shadow, so the price accent bar above stays; drawn inside the
+   card, since on a touch device the card sits in the swipe wrapper's
+   overflow-hidden (gestures.js). Declared after the price glow so it wins
+   on a card that has both (decorateItemSpotlight also drops that one's
+   class). Under prefers-reduced-motion the ring stays still and the script
+   takes the class off after the same time. */
+.item-card.item-card--spotlight {
+  outline: 2px solid transparent;
+  outline-offset: -2px;
+  animation: tk-item-spotlight 2.4s ease-out 1;
+}
+
+@keyframes tk-item-spotlight {
+  0%, 50% { outline-color: rgb(14 165 233); background-color: rgb(14 165 233 / 0.12); }
+  100%    { outline-color: rgb(14 165 233 / 0); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .item-card.item-card--spotlight {
+    animation: none !important;
+    outline-color: rgb(14 165 233);
+  }
+}
+
 /* Drag handle cursor + touch behavior for reorder mode's rows
    (static/js/reorder.js). `touch-action: none` on the handle specifically
    (not the whole row) is what lets the touch-drag JS fully own vertical

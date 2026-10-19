@@ -325,7 +325,11 @@
     "clearAll": "Clear all",
     "clearAllConfirm": "Confirm?",
     "clearAllLabel": "Clear all price changes",
-    "remove": "Remove this alert"
+    "remove": "Remove this alert",
+    "viewDeal": "View the deal ↗",
+    "openSite": "Open the site ↗",
+    "openInList": "View in list",
+    "itemFiltered": "This item is hidden by the list's filters."
   },
   "urgent": {
     "tabTitle": "Urgent",

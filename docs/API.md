@@ -1043,12 +1043,13 @@ A price alert is proposed once: not while the item already has a pending one, an
 The caller's own inbox, newest first, read or not (last 50) — only the kinds they currently want (`price_alerts_enabled`, then `price_drop_alerts_enabled` for `drop`/`deal` or `price_increase_alerts_enabled` for `increase`; `expired` under the master switch alone), and only for items on lists they can still access. Read entries are deleted after 30 days, unread ones after 90.
 
 ```json
-[{"id": 3, "item_id": 1, "item_title": "Console Nintendo Switch 2", "list_id": 1, "kind": "deal",
+[{"id": 3, "item_id": 1, "item_title": "Console Nintendo Switch 2", "list_id": 1,
+  "item_url": "https://www.example-shop.fr/console-switch-2", "kind": "deal",
   "old_price": 499, "new_price": 419, "source_url": "https://www.dealabs.com/bons-plans/console-nintendo-switch-2-3420521",
   "created_at": "2026-10-06T08:17:49.024Z"}]
 ```
 
-`kind` is `drop`/`increase` (the item's price moved from `old_price` to `new_price`), `deal` (`new_price` was found at `source_url` and waits as a pending price alert) or `expired` (the Dealabs deal at `source_url` the item follows has expired; `old_price` = `new_price` = its price). `read_at` is present once read.
+`kind` is `drop`/`increase` (the item's price moved from `old_price` to `new_price`), `deal` (`new_price` was found at `source_url` and waits as a pending price alert) or `expired` (the Dealabs deal at `source_url` the item follows has expired; `old_price` = `new_price` = its price). `read_at` is present once read. `item_title`, `list_id` and `item_url` are joined in from the item at read time: `item_url` is the item's own link as it stands now, omitted when it has none — a `drop`/`increase` carries no `source_url`, so it's what the 🔔 drawer opens when the entry is tapped (otherwise the item in its list, through `/?list={list_id}&item={item_id}`).
 
 ### `POST /api/v1/price-notifications/read`
 

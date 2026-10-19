@@ -1850,6 +1850,52 @@ function decoratePriceMovementRow(li, item, movement) {
   }
 }
 
+// The item a 🔔 entry (notifications.js) or a ?list=&item= deep link
+// (app.js) pointed at, highlighted for a moment once its row is in view
+// (base.css's .item-card--spotlight). Like the price glow above, a list is
+// often re-rendered just after (the server's copy, a poll), so the
+// highlight is kept here rather than on the row and resumed where it was.
+const ITEM_SPOTLIGHT_MS = 2400; // base.css's tk-item-spotlight duration
+let itemSpotlight = null; // { id, since }
+
+// `li` is buildItemRow's row: the card itself, or on a touch device the
+// swipe wrapper around it (gestures.js), whose overflow-hidden is why the
+// ring is drawn inside the card.
+function decorateItemSpotlight(li, item) {
+  if (!itemSpotlight || itemSpotlight.id !== item.id) return;
+  const elapsed = Date.now() - itemSpotlight.since;
+  if (elapsed >= ITEM_SPOTLIGHT_MS) return;
+  const card = li.classList.contains('item-card') ? li : li.querySelector(':scope > .item-card');
+  if (!card) return;
+  // One animation per card: the spotlight takes over the price glow.
+  card.classList.remove('item-card--price-flash');
+  card.classList.add('item-card--spotlight');
+  card.style.animationDelay = `-${elapsed}ms`;
+}
+
+// Scrolls the open list to one of its items and highlights it. A done item
+// is in the collapsed "done" section, which is opened first. Returns false
+// when the list doesn't show that item (a filter hides it, or it's gone).
+function revealListItem(itemId) {
+  const id = Number(itemId);
+  const row = listEls.itemsSection.querySelector(`[data-item-id="${id}"]`);
+  if (!row) return false;
+  if (listEls.doneSection.contains(row)) listEls.doneSection.open = true;
+  const spotlight = { id, since: Date.now() };
+  itemSpotlight = spotlight;
+  decorateItemSpotlight(row, { id });
+  const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  row.scrollIntoView({ block: 'center', behavior: reduceMotion ? 'auto' : 'smooth' });
+  // Under prefers-reduced-motion the highlight doesn't fade: take it off
+  // (unless another item has been revealed since).
+  setTimeout(() => {
+    if (itemSpotlight !== spotlight) return;
+    itemSpotlight = null;
+    for (const el of listEls.itemsSection.querySelectorAll('.item-card--spotlight')) el.classList.remove('item-card--spotlight');
+  }, ITEM_SPOTLIGHT_MS);
+  return true;
+}
+
 // A single eye-catching 🔥 glyph shown once an item's price has reached the
 // threshold set via its "Déclencher une alerte si le prix descend en
 // dessous de" field — an icon rather than the old full-text "Bonne affaire"
@@ -2510,6 +2556,8 @@ function buildItemRow(item, { showCheckbox = true, index, showQuantity = true, s
   // custom list).
   const priceMovement = showPrice ? recentPriceMovement(item) : null;
   if (priceMovement) decoratePriceMovementRow(li, item, priceMovement);
+  // revealListItem finds the row by it.
+  li.dataset.itemId = String(item.id);
 
   // rowTop: checkbox/marker + thumbnail + title + edit/delete + kebab — see
   // the header comment above for why this wrapper exists and why it needs
@@ -2822,6 +2870,7 @@ function buildItemRow(item, { showCheckbox = true, index, showQuantity = true, s
     // this mode: a swipe must never delete or complete an item while the
     // user is picking a selection.
     decorateSelectableRow(li, item);
+    decorateItemSpotlight(li, item);
     return li;
   }
 
@@ -2844,6 +2893,9 @@ function buildItemRow(item, { showCheckbox = true, index, showQuantity = true, s
   // row, or every element appended straight onto `li` for a compact one —
   // so it needs no changes for any of those shapes.
   attachItemSwipeGestures(li, item, { canToggleDone: showCheckbox });
+  // After the swipe wrapper, which moves the card's classes onto its
+  // foreground.
+  decorateItemSpotlight(li, item);
 
   return li;
 }

@@ -14,10 +14,13 @@
 //   waiting to be accepted ("Appliquer le nouveau prix", which PATCHes the
 //   item's price) or rejected ("Ignorer").
 //
-// The badge counts the unread changes plus the pending deals. Shares
+// The badge counts the unread changes plus the pending deals. A tap on a
+// card opens the page its price is on (new tab), or else the item in its
+// list, scrolled to and highlighted (openNotificationItem). Shares
 // `state`, `els`, `apiRequest`, `showError`/`hideError`, `t`, `formatEuro`,
-// `isSafeHttpUrl`, `refreshVisibleView` with app.js/list_view.js/planning.js
-// — same classic-<script>-tags shared-scope pattern as those files.
+// `isSafeHttpUrl`, `refreshVisibleView`, `selectList`, `revealListItem`
+// with app.js/list_view.js/planning.js — same classic-<script>-tags
+// shared-scope pattern as those files.
 //
 // Unlike the planning/urgent tabs this isn't a dashboard view: it's a
 // header-level drawer, independent of which tab is currently active, so it
@@ -106,7 +109,7 @@ const PRICE_NOTIFICATION_KIND = {
 function buildPriceNotificationRow(n) {
   const kind = PRICE_NOTIFICATION_KIND[n.kind] || PRICE_NOTIFICATION_KIND.drop;
   const li = document.createElement('li');
-  li.className = 'rounded-xl border border-slate-200 dark:border-slate-700 bg-white/60 dark:bg-slate-900/60 p-3';
+  li.className = NOTIFICATION_CARD_CLASS;
   li.dataset.priceNotificationId = String(n.id);
 
   const top = document.createElement('div');
@@ -166,17 +169,115 @@ function buildPriceNotificationRow(n) {
   }
   li.appendChild(prices);
 
-  // Same defense-in-depth scheme re-check as buildAlertRow's link below.
-  if (n.source_url && isSafeHttpUrl(n.source_url)) {
-    const link = document.createElement('a');
-    link.href = n.source_url;
-    link.target = '_blank';
-    link.rel = 'noopener noreferrer';
-    link.className = 'mt-1 block truncate text-xs text-sky-600 dark:text-sky-400 hover:underline';
-    link.textContent = n.source_url;
-    li.appendChild(link);
-  }
+  const externalUrl = priceNotificationExternalUrl(n);
+  const target = buildNotificationTarget({
+    externalUrl,
+    externalKey: n.kind === 'deal' ? 'notifications.viewDeal' : 'notifications.openSite',
+    listId: n.list_id,
+    itemId: n.item_id,
+  });
+  target.row.classList.add('mt-2');
+  li.appendChild(target.row);
+  makeNotificationCardClickable(li, target.primary);
   return li;
+}
+
+// Where tapping an inbox entry leads: the page the price is on, when the
+// entry has one — the deal's own page (source_url) for a deal, the item's
+// own link (item_url, joined in by the server) for a drop/increase, which
+// carries no source_url — else the item in its list. Every url is
+// re-checked client-side (isSafeHttpUrl, app.js) even though the server
+// only ever stores validated http(s) ones: the same defense in depth as
+// every other rendered <a>.
+function priceNotificationExternalUrl(n) {
+  const candidates = n.kind === 'deal' ? [n.source_url, n.item_url] : [n.item_url, n.source_url];
+  return candidates.find((url) => url && isSafeHttpUrl(url)) || null;
+}
+
+// The look of a drawer card, inbox entry or pending deal alike: the whole
+// card opens its target (makeNotificationCardClickable), hence the pointer
+// and the hover. Its backdrop (#notifications-modal) is slate-100, against
+// which slate-50 wouldn't show: the hover lifts to plain white instead.
+const NOTIFICATION_CARD_CLASS = 'cursor-pointer rounded-xl border border-slate-200 dark:border-slate-700 bg-white/60 dark:bg-slate-900/60 p-3 transition hover:border-sky-300 hover:bg-white dark:hover:border-sky-700 dark:hover:bg-slate-900';
+
+// The action line at the bottom of a card: its primary link — "Voir la
+// promotion ↗"/"Ouvrir le site ↗" with the site's name, or "Voir dans la
+// liste" when there's no page to open — plus, next to an outside link, a
+// way to the item in its list all the same. Returns the row and the primary
+// link, which a tap anywhere else on the card follows.
+function buildNotificationTarget({ externalUrl, externalKey, listId, itemId }) {
+  const row = document.createElement('div');
+  row.className = 'flex min-w-0 items-center gap-2 text-xs';
+  if (!externalUrl) {
+    const primary = buildNotificationListLink(listId, itemId);
+    row.appendChild(primary);
+    return { row, primary };
+  }
+  const primary = document.createElement('a');
+  primary.href = externalUrl;
+  primary.target = '_blank';
+  primary.rel = 'noopener noreferrer';
+  primary.title = externalUrl;
+  primary.className = 'shrink-0 rounded font-semibold text-sky-600 dark:text-sky-400 hover:underline';
+  primary.textContent = t(externalKey);
+  row.appendChild(primary);
+  const host = notificationLinkHost(externalUrl);
+  if (host) {
+    const hostEl = document.createElement('span');
+    hostEl.className = 'min-w-0 truncate text-slate-500 dark:text-slate-400';
+    hostEl.textContent = host;
+    row.appendChild(hostEl);
+  }
+  const inList = buildNotificationListLink(listId, itemId);
+  inList.classList.add('ml-auto');
+  row.appendChild(inList);
+  return { row, primary };
+}
+
+// "Voir dans la liste": a real link to the ?list=&item= deep link (app.js's
+// handleDeepLinkOrRestore), so it can open in a new tab; a plain click
+// opens the list right here instead, scrolled to the item.
+function buildNotificationListLink(listId, itemId) {
+  const link = document.createElement('a');
+  link.href = `/?list=${Number(listId)}&item=${Number(itemId)}`;
+  link.className = 'shrink-0 rounded font-medium text-slate-600 dark:text-slate-300 hover:text-sky-600 dark:hover:text-sky-400 hover:underline';
+  link.textContent = t('notifications.openInList');
+  link.addEventListener('click', (event) => {
+    if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+    event.preventDefault();
+    openNotificationItem(Number(listId), Number(itemId));
+  });
+  return link;
+}
+
+function notificationLinkHost(url) {
+  try {
+    return new URL(url).hostname.replace(/^www\./, '');
+  } catch {
+    return '';
+  }
+}
+
+// A tap anywhere on the card follows its primary link — except on the
+// card's own links and buttons (✕, Appliquer, Ignorer, the links of the
+// action line), which do their own thing, and except when it ends a text
+// selection.
+function makeNotificationCardClickable(li, primary) {
+  li.addEventListener('click', (event) => {
+    if (event.target.closest('a, button')) return;
+    if (String(window.getSelection?.() ?? '') !== '') return;
+    primary.click();
+  });
+}
+
+// Closes the drawer and opens the item's list on it (selectList,
+// revealListItem: list_view.js). selectList reports a list that can't be
+// opened; an item a filter hides gets a word, the list opening as is.
+async function openNotificationItem(listId, itemId) {
+  closeNotificationsModal();
+  await selectList(listId);
+  if (state.currentListId !== listId || revealListItem(itemId)) return;
+  if (isFilterStateActive(getFilterState(listId))) TrakkaToast.warning(t('notifications.itemFiltered'));
 }
 
 // A short, localized day + time for an inbox entry (created_at is UTC).
@@ -189,7 +290,7 @@ function formatNotificationDate(iso) {
 
 function buildAlertRow(alert) {
   const li = document.createElement('li');
-  li.className = 'rounded-xl border border-slate-200 dark:border-slate-700 bg-white/60 dark:bg-slate-900/60 p-3';
+  li.className = NOTIFICATION_CARD_CLASS;
 
   const title = document.createElement('p');
   title.className = 'mb-2 truncate text-sm font-medium text-slate-900 dark:text-slate-100';
@@ -227,18 +328,17 @@ function buildAlertRow(alert) {
   compare.append(oldPrice, arrow, newPrice);
   li.appendChild(compare);
 
-  // isSafeHttpUrl (defined in app.js) re-checks the scheme client-side even
-  // though the backend only ever persists a validated http(s) source_url —
-  // the same defense-in-depth pattern used for every other rendered <a>.
-  if (alert.source_url && isSafeHttpUrl(alert.source_url)) {
-    const link = document.createElement('a');
-    link.href = alert.source_url;
-    link.target = '_blank';
-    link.rel = 'noopener noreferrer';
-    link.className = 'mb-3 block truncate text-xs text-sky-600 dark:text-sky-400 hover:underline';
-    link.textContent = alert.source_url;
-    li.appendChild(link);
-  }
+  // The page the lower price was found on (see priceNotificationExternalUrl
+  // for the client-side scheme re-check).
+  const target = buildNotificationTarget({
+    externalUrl: alert.source_url && isSafeHttpUrl(alert.source_url) ? alert.source_url : null,
+    externalKey: 'notifications.viewDeal',
+    listId: alert.list_id,
+    itemId: alert.item_id,
+  });
+  target.row.classList.add('mb-3');
+  li.appendChild(target.row);
+  makeNotificationCardClickable(li, target.primary);
   // A price found elsewhere (Dealabs) brings its link along when applied —
   // the item then follows that page (db.AcceptPriceAlert): say so.
   if (alert.changes_url) {

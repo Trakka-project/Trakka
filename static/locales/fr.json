@@ -325,7 +325,11 @@
     "clearAll": "Tout effacer",
     "clearAllConfirm": "Confirmer ?",
     "clearAllLabel": "Effacer toutes les variations de prix",
-    "remove": "Supprimer cette alerte"
+    "remove": "Supprimer cette alerte",
+    "viewDeal": "Voir la promotion ↗",
+    "openSite": "Ouvrir le site ↗",
+    "openInList": "Voir dans la liste",
+    "itemFiltered": "Cet article est masqué par les filtres de la liste."
   },
   "urgent": {
     "tabTitle": "Urgent",

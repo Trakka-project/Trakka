@@ -710,10 +710,13 @@ type PricePoint struct {
 type PriceNotification struct {
 	ID     int64 `json:"id"`
 	ItemID int64 `json:"item_id"`
-	// ItemTitle/ListID are joined in from the item for display, like
-	// PriceAlert's.
+	// ItemTitle/ListID/ItemURL are joined in from the item for display,
+	// like PriceAlert's: ItemURL is the item's own link as it stands now
+	// (absent when it has none), which the 🔔 drawer opens on a tap — a
+	// drop/increase entry has no SourceURL of its own.
 	ItemTitle string  `json:"item_title"`
 	ListID    int64   `json:"list_id"`
+	ItemURL   *string `json:"item_url,omitempty"`
 	Kind      string  `json:"kind"`
 	OldPrice  float64 `json:"old_price"`
 	NewPrice  float64 `json:"new_price"`

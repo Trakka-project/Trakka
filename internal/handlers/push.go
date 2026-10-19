@@ -178,8 +178,8 @@ func (app *Application) handlePushTest(w http.ResponseWriter, r *http.Request) {
 // pushPayload is the JSON body every notification this app sends carries —
 // static/sw.js's 'push' listener reads these fields to call
 // self.registration.showNotification. URL is where notificationclick
-// navigates to (a deep link of the shape /?list={id} — see
-// handleDeepLinkOrRestore in static/js/app.js).
+// navigates to (a deep link of the shape /?list={id}, or itemDeepLink's
+// /?list={id}&item={id} — see handleDeepLinkOrRestore in static/js/app.js).
 type pushPayload struct {
 	Title string `json:"title"`
 	Body  string `json:"body"`
@@ -197,6 +197,15 @@ type pushPayload struct {
 	// models.User.VibrateOnNotification enabled, and leaves it out for the
 	// rest, which static/sw.js then shows as silent.
 	Vibrate []int `json:"vibrate,omitempty"`
+}
+
+// itemDeepLink is the URL of a notification about one item: its list,
+// opened scrolled to the item and highlighting it (revealListItem in
+// static/js/list_view.js). As static/sw.js tags a notification by its URL
+// unless the payload sets Tag, notifications about two items of the same
+// list don't replace each other, and a newer one about the same item does.
+func itemDeepLink(listID, itemID int64) string {
+	return fmt.Sprintf("/?list=%d&item=%d", listID, itemID)
 }
 
 // notificationVibratePattern is a short double buzz: 200ms on, 100ms off,

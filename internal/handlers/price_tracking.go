@@ -290,14 +290,15 @@ func (app *Application) notifyPriceChange(item *models.Item, kind string, oldPri
 			app.Logger.Error("listing price alert push recipients", "item_id", itemID, "list_id", listID, "error", err)
 			return
 		}
-		app.sendToUsers(ctx, recipients, priceChangePayload(kind, title, oldPrice, newPrice, listID))
+		app.sendToUsers(ctx, recipients, priceChangePayload(kind, title, oldPrice, newPrice, listID, itemID))
 	}()
 }
 
 // priceChangePayload is the push notification for notifyPriceChange.
-// French only, like every other push (see sendToUsers).
-func priceChangePayload(kind, title string, oldPrice, newPrice float64, listID int64) pushPayload {
-	payload := pushPayload{URL: fmt.Sprintf("/?list=%d", listID)}
+// French only, like every other push (see sendToUsers). A tap opens the
+// item in its list, like a tap on the same alert in the 🔔 drawer.
+func priceChangePayload(kind, title string, oldPrice, newPrice float64, listID, itemID int64) pushPayload {
+	payload := pushPayload{URL: itemDeepLink(listID, itemID)}
 	switch kind {
 	case db.PriceNotificationDrop:
 		payload.Title = "📉 Baisse de prix"
