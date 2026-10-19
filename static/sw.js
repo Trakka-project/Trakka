@@ -8,8 +8,8 @@ importScripts('/js/db.js', '/js/recurrence.js');
 
 // Bump both on any change to APP_SHELL's contents so activate()
 // evicts the old cache instead of serving stale assets forever.
-const SHELL_CACHE = 'trakka-shell-v137';
-const RUNTIME_CACHE = 'trakka-runtime-v128';
+const SHELL_CACHE = 'trakka-shell-v144';
+const RUNTIME_CACHE = 'trakka-runtime-v135';
 const KNOWN_CACHES = [SHELL_CACHE, RUNTIME_CACHE];
 
 const APP_SHELL = [
@@ -263,6 +263,13 @@ self.addEventListener('fetch', (event) => {
   // admin.js reports it in place. Reads (GET status/remote listing) still
   // take the normal path below.
   if (url.pathname.startsWith(API_PREFIX + '/admin/backups') && request.method !== 'GET') {
+    return;
+  }
+
+  // Restarting the server (admin console → "Serveur") likewise, both the
+  // challenge read and the POST: a restart must never be queued and fire
+  // later, nor a challenge be served from the offline fallback.
+  if (url.pathname.startsWith(API_PREFIX + '/admin/restart')) {
     return;
   }
 

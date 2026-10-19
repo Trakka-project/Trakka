@@ -1306,6 +1306,34 @@ curl -b cookies.txt "http://localhost:8080/api/v1/admin/logs?limit=50"
 
 Every mutating admin-management endpoint above (`PATCH`/`DELETE` on `users` and `spaces` — `logs` is read-only, so it has no mutation to gate) returns `503` immediately rather than queuing while offline, the same reasoning as `PATCH /api/v1/admin/settings` above.
 
+## Server restart
+
+Restarts the Trakka process from the admin console (Paramètres → Console d'Administration → Paramètres → "Serveur"). The server answers, then shuts down gracefully and **exits with status `75`** (`EX_TEMPFAIL`) for its supervisor to start it again — `restart: unless-stopped` in `compose.yml`, a Podman restart policy, or systemd's `Restart=on-failure`/`always`. With no supervisor, the server stays stopped. Design: [.claude/backend.md](../.claude/backend.md#server-restart).
+
+Both endpoints need, in this order (the first one that fails answers):
+
+- **No API token**: a request carrying `Authorization: Bearer trk_…` is `403` — at the token gate (neither route is in `apiTokenRoutes`) and again in the handler.
+- **An admin session**: `401` without one, `403 {"error": "admin access required"}` for a non-admin.
+- **`X-Trakka-Admin-Action: confirm-restart`**: `403` without it (or with any other value), on the `GET` too.
+
+`404 {"error": "server restart is not available"}` when the binary wasn't wired for it (only in tests).
+
+### `GET /api/v1/admin/restart-challenge`
+
+Mints a single-use challenge for the next restart **from this session**, valid 60 seconds. A new one replaces the session's previous one.
+
+```json
+{ "challenge": "kq3…", "expires_in": 60 }
+```
+
+### `POST /api/v1/admin/restart`
+
+```json
+{ "challenge": "kq3…" }
+```
+
+`200 {"message": "Server restarting..."}`, and the shutdown starts 500 ms later. The challenge is consumed by the first `POST` that presents one, valid or not: a wrong, expired, reused or other-session challenge is `403 {"error": "invalid or expired restart challenge"}`, and a new `GET` is needed. `409` while a restart is already under way. The service worker never queues either route offline.
+
 ## Admin backups
 
 Encrypted, off-site backups of the whole database to a WebDAV folder (Nextcloud, ownCloud, Synology, Apache `mod_dav`, `rclone serve webdav`, …) — on demand, on an automatic schedule, with a retention count — and restore from one of those backups. Every endpoint below is gated by `authorizeAdmin` (`403 {"error": "admin access required"}` for anyone else), checked before the request body is even read: a backup is a copy of every account's data, and a restore replaces it. The frontend is the "Sauvegardes" tab of the admin console (`static/js/admin.js`). Operator-side setup and the disaster-recovery procedure are in [docs/DEPLOYMENT.md](DEPLOYMENT.md#encrypted-webdav-backups); the design is in [.claude/backend.md](../.claude/backend.md#encrypted-webdav-backups).

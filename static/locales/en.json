@@ -50,6 +50,7 @@
     "todoProgress": "{done}/{total} completed",
     "listAllDoneBadge": "🎉 All done",
     "listEmptyBadge": "0 items",
+    "noPriceYet": "No price yet",
     "emptyShopping": "No shopping lists yet.",
     "emptyTodo": "No task spaces yet.",
     "emptyCustom": "No free lists yet."
@@ -674,6 +675,22 @@
           "too_new": "backup made by a newer version of Trakka: update Trakka first",
           "invalid_name": "invalid backup name"
         }
+      },
+      "restart": {
+        "sectionTitle": "Server",
+        "hint": "Restarts the Trakka process. It must be run by a supervisor (Docker, Podman, systemd) that starts it again automatically — otherwise it stays stopped.",
+        "button": "Restart the server",
+        "modalTitle": "Restart the server",
+        "confirmText": "Are you sure you want to restart the server? This will briefly interrupt connections.",
+        "cancel": "Cancel",
+        "confirm": "Restart",
+        "requesting": "Sending the restart request…",
+        "waiting": "Server restarting… Reconnecting.",
+        "back": "Server restarted. Reloading the app…",
+        "timeout": "The server still isn't answering. Check that a supervisor (Docker, Podman, systemd) starts it again, then reload the page.",
+        "alreadyRunning": "A restart is already in progress.",
+        "failed": "The restart failed: {error}",
+        "close": "Close"
       }
     },
     "userSettings": {

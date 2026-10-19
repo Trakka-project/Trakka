@@ -1150,3 +1150,158 @@ backupEls.restoreForm.addEventListener('submit', async (event) => {
     window.location.href = '/';
   }, 3000);
 });
+
+// ---------------------------------------------------------------------------
+// Server restart ("Paramètres" tab → "Serveur")
+//
+// POST /api/v1/admin/restart only accepts a request that carries the
+// X-Trakka-Admin-Action header and a single-use challenge fetched for this
+// session moments before (internal/handlers/admin_restart.go), so
+// confirming runs both calls back to back. The server then exits for its
+// supervisor (Docker/Podman, systemd) to start it again: this waits for
+// /healthz to go down and come back, then reloads the app. Confirmation is
+// a modal of its own (#admin-restart-modal, stacked on the console) rather
+// than the console's "click again" buttons, since it cuts every user off.
+// ---------------------------------------------------------------------------
+
+const adminRestartEls = {
+  openButton: document.getElementById('admin-restart-button'),
+  modal: document.getElementById('admin-restart-modal'),
+  text: document.getElementById('admin-restart-modal-text'),
+  progress: document.getElementById('admin-restart-progress'),
+  progressText: document.getElementById('admin-restart-progress-text'),
+  error: document.getElementById('admin-restart-error'),
+  cancel: document.getElementById('admin-restart-cancel'),
+  confirm: document.getElementById('admin-restart-confirm'),
+};
+
+const ADMIN_RESTART_HEADERS = {
+  'Content-Type': 'application/json',
+  'X-Trakka-Admin-Action': 'confirm-restart',
+};
+const ADMIN_RESTART_POLL_MS = 1000;
+// A restart quicker than one poll can go unnoticed: past this, a healthy
+// /healthz counts as "back" even if no downtime was seen.
+const ADMIN_RESTART_MIN_WAIT_MS = 5000;
+const ADMIN_RESTART_TIMEOUT_MS = 90000;
+
+let adminRestartBusy = false;
+
+function restartT(key, vars) {
+  return t(`modals.adminConsole.restart.${key}`, vars);
+}
+
+function setAdminRestartProgress(text) {
+  adminRestartEls.progress.hidden = !text;
+  adminRestartEls.progressText.textContent = text || '';
+}
+
+function setAdminRestartError(text) {
+  adminRestartEls.error.hidden = !text;
+  adminRestartEls.error.textContent = text || '';
+}
+
+function setAdminRestartButtonsDisabled(disabled) {
+  adminRestartEls.cancel.disabled = disabled;
+  adminRestartEls.confirm.disabled = disabled;
+}
+
+function openAdminRestartModal() {
+  setAdminRestartProgress('');
+  setAdminRestartError('');
+  setAdminRestartButtonsDisabled(false);
+  adminRestartEls.confirm.hidden = false;
+  adminRestartEls.cancel.textContent = restartT('cancel');
+  adminRestartEls.modal.hidden = false;
+  adminRestartEls.cancel.focus();
+}
+
+// Never while a restart is under way: the modal is the only place its
+// progress shows.
+function closeAdminRestartModal() {
+  if (adminRestartBusy) return;
+  adminRestartEls.modal.hidden = true;
+  adminRestartEls.openButton.focus();
+}
+
+async function serverAnswersHealthz() {
+  try {
+    const res = await fetch('/healthz', { cache: 'no-store' });
+    return res.ok;
+  } catch {
+    return false;
+  }
+}
+
+// Resolves true once a new process answers, false after
+// ADMIN_RESTART_TIMEOUT_MS (no supervisor brought it back).
+async function waitForServerRestart() {
+  const started = Date.now();
+  let sawDown = false;
+  while (Date.now() - started < ADMIN_RESTART_TIMEOUT_MS) {
+    await new Promise((resolve) => setTimeout(resolve, ADMIN_RESTART_POLL_MS));
+    if (!(await serverAnswersHealthz())) {
+      sawDown = true;
+    } else if (sawDown || Date.now() - started >= ADMIN_RESTART_MIN_WAIT_MS) {
+      return true;
+    }
+  }
+  return false;
+}
+
+async function confirmAdminRestart() {
+  if (adminRestartBusy) return;
+  adminRestartBusy = true;
+  setAdminRestartButtonsDisabled(true);
+  setAdminRestartError('');
+  setAdminRestartProgress(restartT('requesting'));
+
+  try {
+    const { challenge } = await apiRequest('/admin/restart-challenge', { headers: ADMIN_RESTART_HEADERS });
+    await apiRequest('/admin/restart', {
+      method: 'POST',
+      headers: ADMIN_RESTART_HEADERS,
+      body: JSON.stringify({ challenge }),
+    });
+  } catch (err) {
+    // 409: another admin's restart is already under way — wait for it
+    // like for our own.
+    if (err.status !== 409) {
+      adminRestartBusy = false;
+      setAdminRestartProgress('');
+      setAdminRestartButtonsDisabled(false);
+      setAdminRestartError(isNetworkError(err) ? err.message : restartT('failed', { error: err.message }));
+      return;
+    }
+  }
+
+  setAdminRestartProgress(restartT('waiting'));
+  if (await waitForServerRestart()) {
+    setAdminRestartProgress(restartT('back'));
+    window.location.reload();
+    return;
+  }
+
+  adminRestartBusy = false;
+  setAdminRestartProgress('');
+  setAdminRestartError(restartT('timeout'));
+  adminRestartEls.confirm.hidden = true;
+  adminRestartEls.cancel.textContent = restartT('close');
+  adminRestartEls.cancel.disabled = false;
+}
+
+adminRestartEls.openButton.addEventListener('click', openAdminRestartModal);
+adminRestartEls.cancel.addEventListener('click', closeAdminRestartModal);
+adminRestartEls.confirm.addEventListener('click', confirmAdminRestart);
+adminRestartEls.modal.addEventListener('click', (event) => {
+  if (event.target === adminRestartEls.modal) closeAdminRestartModal();
+});
+// Capture phase on window, ahead of the console's and the settings modal's
+// own document-level Escape handlers: this Escape closes only this modal
+// (and none of them while a restart is under way).
+window.addEventListener('keydown', (event) => {
+  if (event.key !== 'Escape' || adminRestartEls.modal.hidden) return;
+  event.preventDefault();
+  event.stopPropagation();
+  closeAdminRestartModal();
+}, true);

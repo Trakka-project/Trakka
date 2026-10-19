@@ -14,6 +14,7 @@ import (
 	"path"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"trakka/internal/auth"
@@ -61,6 +62,13 @@ type Application struct {
 	// endpoints answer 404.
 	Backups *backup.Service
 
+	// RequestRestart asks cmd/server to shut down gracefully and exit for
+	// its supervisor to start it again — what POST /api/v1/admin/restart
+	// calls once every check has passed (see admin_restart.go). May be nil
+	// (e.g. in tests that build an Application by hand), in which case the
+	// restart endpoints answer 404.
+	RequestRestart func()
+
 	// Authentication rate-limiter state (see ratelimit.go). Lazily built
 	// through sync.Once rather than in a constructor, because Application is
 	// built as a plain struct literal in cmd/server and in tests — a zero
@@ -91,6 +99,12 @@ type Application struct {
 	// oidc_app.go), lazily built for the same reason.
 	appHandoffsOnce sync.Once
 	appHandoffsVal  *appHandoffStore
+
+	// Pending server-restart challenges (see admin_restart.go), lazily built
+	// for the same reason, and whether a restart is already under way.
+	restartChallengesOnce sync.Once
+	restartChallengesVal  *restartChallengeStore
+	restarting            atomic.Bool
 
 	// Retried OIDC discovery (see oidc_discovery.go): one attempt at a time,
 	// and the time and error of the last one.
@@ -259,6 +273,10 @@ func (app *Application) Routes() http.Handler {
 	// saved, and no GET route in this app may change state (see csrf.go).
 	apiMux.HandleFunc("POST /api/v1/admin/backups/key/export", app.handleAdminBackupsKeyExport)
 	apiMux.HandleFunc("POST /api/v1/admin/backups/restore", app.handleAdminBackupsRestore)
+	// Only ever minted for a request carrying the restart action header, so
+	// a plain navigation to this GET changes nothing (see admin_restart.go).
+	apiMux.HandleFunc("GET /api/v1/admin/restart-challenge", app.handleAdminRestartChallenge)
+	apiMux.HandleFunc("POST /api/v1/admin/restart", app.handleAdminRestart)
 
 	apiMux.HandleFunc("GET /api/v1/push/vapid-public-key", app.handlePushVAPIDPublicKey)
 	apiMux.HandleFunc("POST /api/v1/push/subscribe", app.handlePushSubscribe)

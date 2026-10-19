@@ -1149,6 +1149,15 @@
 
             <button type="submit" data-i18n="modals.adminSettings.submit" class="w-full rounded-xl bg-sky-500 px-4 py-3 text-base font-semibold text-white transition hover:bg-sky-400 active:scale-[0.98]">Enregistrer</button>
           </form>
+
+          <!-- Outside the settings form: restarting is its own action, confirmed in
+               #admin-restart-modal (admin.js). -->
+          <section aria-labelledby="admin-restart-title" class="mt-6 space-y-2 border-t border-slate-200 dark:border-slate-700 pt-4">
+            <h3 id="admin-restart-title" data-i18n="modals.adminConsole.restart.sectionTitle" class="text-sm font-semibold text-slate-800 dark:text-slate-200">Serveur</h3>
+            <p data-i18n="modals.adminConsole.restart.hint" class="text-xs text-slate-500 dark:text-slate-400">Redémarre le processus Trakka. Il doit être lancé par un gestionnaire (Docker, Podman, systemd) qui le relance automatiquement — sinon, il restera arrêté.</p>
+            <button type="button" id="admin-restart-button" data-i18n="modals.adminConsole.restart.button"
+                    class="min-h-[44px] w-full rounded-xl border border-rose-300 dark:border-rose-800 bg-white dark:bg-slate-900 px-4 py-3 text-sm font-semibold text-rose-700 dark:text-rose-300 hover:bg-rose-50 dark:hover:bg-rose-950/40">Redémarrer le serveur</button>
+          </section>
         </div>
 
         <div id="admin-panel-users" hidden class="space-y-4">
@@ -1809,6 +1818,31 @@
           <button type="submit" data-i18n="modals.userSettings.submit" class="w-full rounded-xl bg-sky-500 px-4 py-3 text-base font-semibold text-white transition hover:bg-sky-400 active:scale-[0.98]">Enregistrer</button>
         </div>
       </form>
+    </div>
+  </div>
+
+  <!-- Stacked on #admin-console-modal (z-50), hence z-[60]. See admin.js's
+       "Server restart" section. -->
+  <div id="admin-restart-modal" hidden class="fixed inset-0 z-[60] flex items-end justify-center bg-slate-950/40 dark:bg-slate-950/80 p-0 sm:items-center sm:p-4">
+    <div role="alertdialog" aria-modal="true" aria-labelledby="admin-restart-modal-title" aria-describedby="admin-restart-modal-text" class="w-full max-w-md rounded-t-2xl bg-slate-100 dark:bg-slate-800 p-5 shadow-xl sm:rounded-2xl">
+      <h2 id="admin-restart-modal-title" data-i18n="modals.adminConsole.restart.modalTitle" class="mb-3 text-lg font-semibold">Redémarrer le serveur</h2>
+      <p id="admin-restart-modal-text" data-i18n="modals.adminConsole.restart.confirmText" class="mb-4 text-sm text-slate-600 dark:text-slate-300">Êtes-vous sûr de vouloir redémarrer le serveur ? Cette action interrompra brièvement les connexions.</p>
+
+      <div id="admin-restart-progress" hidden role="status" aria-live="polite" class="mb-4 flex items-center gap-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-4 py-3 text-sm text-slate-700 dark:text-slate-200">
+        <svg id="admin-restart-spinner" viewBox="0 0 24 24" fill="none" class="h-5 w-5 shrink-0 animate-spin text-sky-500" aria-hidden="true">
+          <circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="3" class="opacity-25"/>
+          <path d="M21 12a9 9 0 0 0-9-9" stroke="currentColor" stroke-width="3" stroke-linecap="round"/>
+        </svg>
+        <span id="admin-restart-progress-text"></span>
+      </div>
+      <p id="admin-restart-error" hidden role="alert" class="mb-4 text-sm text-rose-600 dark:text-rose-400"></p>
+
+      <div class="flex gap-2">
+        <button type="button" id="admin-restart-cancel" data-i18n="modals.adminConsole.restart.cancel"
+                class="min-h-[44px] flex-1 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-4 py-3 text-sm font-medium text-slate-700 dark:text-slate-200 hover:bg-slate-200 dark:hover:bg-slate-700 disabled:cursor-not-allowed disabled:opacity-50">Annuler</button>
+        <button type="button" id="admin-restart-confirm" data-i18n="modals.adminConsole.restart.confirm"
+                class="min-h-[44px] flex-1 rounded-xl bg-rose-600 px-4 py-3 text-sm font-semibold text-white hover:bg-rose-500 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50">Redémarrer</button>
+      </div>
     </div>
   </div>
 

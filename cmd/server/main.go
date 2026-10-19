@@ -155,6 +155,11 @@ func main() {
 		AllowPrivateNetworks: cfg.BackupWebDAVAllowPrivate,
 	})
 
+	// A restart from the admin console (POST /api/v1/admin/restart) lands
+	// here, and is handled like a shutdown signal below. Buffered and
+	// non-blocking: one pending request is all that matters.
+	restartRequested := make(chan struct{}, 1)
+
 	app := &handlers.Application{
 		DB:            database,
 		StaticDir:     cfg.StaticDir,
@@ -165,6 +170,12 @@ func main() {
 		LogBuffer:     logHandler,
 		Location:      location,
 		Backups:       backups,
+		RequestRestart: func() {
+			select {
+			case restartRequested <- struct{}{}:
+			default:
+			}
+		},
 	}
 
 	srv := &http.Server{
@@ -248,13 +259,38 @@ func main() {
 
 	case <-stop:
 		logger.Info("shutdown signal received")
-		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-		defer cancel()
-		if err := srv.Shutdown(ctx); err != nil {
-			logger.Error("graceful shutdown failed", "error", err)
-		}
+		shutdownServer(srv, logger)
 		// database.Close() runs via the deferred call above once main
 		// returns, after in-flight requests have drained.
+
+	case <-restartRequested:
+		logger.Warn("restart requested from the admin console; exiting for the supervisor to start the server again", "exit_code", restartExitCode)
+		shutdownServer(srv, logger)
+		// os.Exit skips the deferred calls above: stop the background loops
+		// and close the database here instead.
+		cancelPriceScan()
+		if err := database.Close(); err != nil {
+			logger.Error("closing database", "error", err)
+		}
+		os.Exit(restartExitCode)
+	}
+}
+
+// restartExitCode is the exit status of a restart asked for from the admin
+// console: EX_TEMPFAIL (sysexits.h, "try again later"). Non-zero on purpose,
+// so a supervisor that only restarts a failed process (systemd's
+// Restart=on-failure, Docker's on-failure policy) starts it again too, as
+// well as compose.yml's unless-stopped. With no supervisor at all, the
+// server simply stays stopped.
+const restartExitCode = 75
+
+// shutdownServer stops accepting connections and waits up to 10 seconds for
+// requests in flight to finish.
+func shutdownServer(srv *http.Server, logger *slog.Logger) {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	if err := srv.Shutdown(ctx); err != nil {
+		logger.Error("graceful shutdown failed", "error", err)
 	}
 }
 
