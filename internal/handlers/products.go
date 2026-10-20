@@ -152,9 +152,10 @@ func (app *Application) addToQuickShoppingList(ctx context.Context, list *models
 }
 
 // recordProductAdded notes a product added to a Courses list in its House's
-// catalog. Best effort: the item is already saved, and a catalog that
-// misses one addition only suggests a little less well.
-func (app *Application) recordProductAdded(ctx context.Context, list *models.List, item *models.Item, aisleExplicit bool, barcode string) {
+// catalog, with the scores the request gave for it (scores, known ones
+// replacing the product's). Best effort: the item is already saved, and a
+// catalog that misses one addition only suggests a little less well.
+func (app *Application) recordProductAdded(ctx context.Context, list *models.List, item *models.Item, aisleExplicit bool, barcode string, scores nutritionScores) {
 	key := catalog.Key(item.Title)
 	if key == "" {
 		return
@@ -166,6 +167,8 @@ func (app *Application) recordProductAdded(ctx context.Context, list *models.Lis
 		Aisle:         stringValue(item.Aisle),
 		AisleExplicit: aisleExplicit,
 		Barcode:       barcode,
+		NutriScore:    scores.NutriScore,
+		YukaScore:     scores.YukaScore,
 	})
 	if err != nil {
 		app.Logger.Warn("recording product addition", "house_id", list.HouseID, "item_id", item.ID, "error", err)
@@ -197,11 +200,12 @@ func (app *Application) learnProductAisle(ctx context.Context, list *models.List
 }
 
 // updateProductCatalog keeps a Courses list's House catalog in step with an
-// edit of one of its items: an aisle someone chose becomes the product's
-// usual one, a check-off counts as a purchase. Nothing to do for another
-// list type, nor when neither happened (the list isn't even read then).
-func (app *Application) updateProductCatalog(ctx context.Context, item *models.Item, aisleChanged, justCompleted bool) {
-	if !aisleChanged && !justCompleted {
+// edit of one of its items: an aisle or nutrition scores someone chose
+// become the product's, a check-off counts as a purchase. Nothing to do for
+// another list type, nor when none of that happened (the list isn't even
+// read then).
+func (app *Application) updateProductCatalog(ctx context.Context, item *models.Item, aisleChanged, nutritionChanged, justCompleted bool) {
+	if !aisleChanged && !nutritionChanged && !justCompleted {
 		return
 	}
 	list, err := app.DB.GetList(ctx, item.ListID)
@@ -214,6 +218,9 @@ func (app *Application) updateProductCatalog(ctx context.Context, item *models.I
 	}
 	if aisleChanged {
 		app.learnProductAisle(ctx, list, item)
+	}
+	if nutritionChanged {
+		app.learnProductNutrition(ctx, list, item)
 	}
 	if justCompleted {
 		app.recordProductPurchased(ctx, list, item)
@@ -462,7 +469,9 @@ func (app *Application) handleProductsDelete(w http.ResponseWriter, r *http.Requ
 // derived from the categories found there or guessed from its name. An
 // unknown code is a 404 with code "not_found" (or "lookup_failed" when Open
 // Food Facts couldn't be asked): the frontend then asks for the product's
-// name, and the item added with the code teaches the catalog.
+// name, and the item added with the code teaches the catalog. Either way the
+// answer carries the product's Nutri-Score when known (see nutrition.go):
+// the client sends it along with the item.
 func (app *Application) handleProductBarcodeLookup(w http.ResponseWriter, r *http.Request) {
 	houseID, ok := pathID(w, r)
 	if !ok || !app.authorizeHouseAccess(w, r, houseID) {
@@ -474,9 +483,15 @@ func (app *Application) handleProductBarcodeLookup(w http.ResponseWriter, r *htt
 		return
 	}
 
+	user := userFromContext(r)
 	product, err := app.DB.GetProductByBarcode(r.Context(), houseID, code)
 	if err == nil {
-		writeJSON(w, http.StatusOK, models.BarcodeLookup{Barcode: code, Name: product.Name, Aisle: product.Aisle, Source: "house", Product: product})
+		app.enrichProductNutriScore(r.Context(), user, product, code)
+		writeJSON(w, http.StatusOK, models.BarcodeLookup{
+			Barcode: code, Name: product.Name, Aisle: product.Aisle,
+			NutriScore: product.NutriScore, YukaScore: product.YukaScore,
+			Source: "house", Product: product,
+		})
 		return
 	}
 	if !errors.Is(err, db.ErrNotFound) {
@@ -488,7 +503,6 @@ func (app *Application) handleProductBarcodeLookup(w http.ResponseWriter, r *htt
 		return
 	}
 
-	user := userFromContext(r)
 	if !app.barcodeLookupLimiter().allow(strconv.FormatInt(user.ID, 10), barcodeLookupRateLimit) {
 		w.Header().Set("Retry-After", strconv.Itoa(int(barcodeLookupRateWin.Seconds())))
 		writeError(w, http.StatusTooManyRequests, "too many barcode lookups, try again in a minute")
@@ -516,7 +530,7 @@ func (app *Application) handleProductBarcodeLookup(w http.ResponseWriter, r *htt
 	if aisle == "" {
 		aisle = catalog.GuessAisle(name)
 	}
-	writeJSON(w, http.StatusOK, models.BarcodeLookup{Barcode: code, Name: name, Aisle: aisle, Source: "openfoodfacts"})
+	writeJSON(w, http.StatusOK, models.BarcodeLookup{Barcode: code, Name: name, Aisle: aisle, NutriScore: found.NutriScore, Source: "openfoodfacts"})
 }
 
 // lookupBarcode asks Open Food Facts about a barcode:

@@ -133,6 +133,18 @@ type Application struct {
 	// scraper.LookupBarcode (Open Food Facts) in lookupBarcode, for the same
 	// reason as productPageHook.
 	barcodeLookupHook func(ctx context.Context, code, lang string) (*scraper.BarcodeProduct, error)
+
+	// productSearchHook, when set (tests only), stands in for
+	// scraper.SearchProducts (Open Food Facts' text search) in
+	// searchProducts, for the same reason as productPageHook.
+	productSearchHook func(ctx context.Context, terms, lang string) ([]scraper.SearchProduct, error)
+
+	// productSearchLimiterOnce/Val is the instance-wide Open Food Facts
+	// text-search bucket, and productSearchCache what recent searches
+	// found (see product_enrichment.go).
+	productSearchLimiterOnce sync.Once
+	productSearchLimiterVal  *rateLimiter
+	productSearchCache       productSearchCache
 }
 
 // fetchProductPage reads an item's own page for a price check:

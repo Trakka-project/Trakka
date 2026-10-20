@@ -8,7 +8,7 @@ importScripts('/js/db.js', '/js/recurrence.js');
 
 // Bump both on any change to APP_SHELL's contents so activate()
 // evicts the old cache instead of serving stale assets forever.
-const SHELL_CACHE = 'trakka-shell-v148';
+const SHELL_CACHE = 'trakka-shell-v150';
 const RUNTIME_CACHE = 'trakka-runtime-v137';
 const KNOWN_CACHES = [SHELL_CACHE, RUNTIME_CACHE];
 
@@ -34,6 +34,7 @@ const APP_SHELL = [
   '/js/barcode.js',
   '/js/scanner.js',
   '/js/quick-shop.js',
+  '/js/nutrition.js',
   '/js/budget.js',
   '/js/assignees.js',
   '/js/planning.js',

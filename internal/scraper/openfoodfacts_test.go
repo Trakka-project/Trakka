@@ -9,16 +9,16 @@ import (
 	"testing"
 )
 
-// withOpenFoodFacts points LookupBarcode at handler for one test: the base
-// URL at an httptest server, and httpClient at that server's own client
-// (the SSRF guard would refuse its loopback address).
+// withOpenFoodFacts points LookupBarcode and SearchProducts at handler for
+// one test: both base URLs at an httptest server, and httpClient at that
+// server's own client (the SSRF guard would refuse its loopback address).
 func withOpenFoodFacts(t *testing.T, handler http.HandlerFunc) {
 	t.Helper()
 	srv := httptest.NewServer(handler)
-	savedClient, savedURL := httpClient, openFoodFactsBaseURL
-	httpClient, openFoodFactsBaseURL = srv.Client(), srv.URL
+	savedClient, savedURL, savedSearchURL := httpClient, openFoodFactsBaseURL, openFoodFactsSearchBaseURL
+	httpClient, openFoodFactsBaseURL, openFoodFactsSearchBaseURL = srv.Client(), srv.URL, srv.URL
 	t.Cleanup(func() {
-		httpClient, openFoodFactsBaseURL = savedClient, savedURL
+		httpClient, openFoodFactsBaseURL, openFoodFactsSearchBaseURL = savedClient, savedURL, savedSearchURL
 		srv.Close()
 	})
 }
@@ -30,23 +30,39 @@ func TestLookupBarcodeFound(t *testing.T) {
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{"code":"3017620422003","status":1,"status_verbose":"product found",
 			"product":{"code":"3017620422003","product_name":"Nutella","product_name_fr":"  Nutella   pâte à tartiner ",
-			"brands":"Ferrero, Nutella","categories_tags":["en:breakfasts","en:sweet-spreads"]}}`))
+			"brands":"Ferrero, Nutella","categories_tags":["en:breakfasts","en:sweet-spreads"],"nutriscore_grade":"e"}}`))
 	})
 
 	p, err := LookupBarcode(context.Background(), "3017620422003", "fr")
 	if err != nil {
 		t.Fatalf("LookupBarcode: %v", err)
 	}
-	if gotPath != "/api/v2/product/3017620422003" || !strings.HasPrefix(gotAgent, "Trakka/") || !strings.Contains(gotFields, "categories_tags") {
+	if gotPath != "/api/v2/product/3017620422003" || !strings.HasPrefix(gotAgent, "Trakka/") || !strings.Contains(gotFields, "categories_tags") || !strings.Contains(gotFields, "nutriscore_grade") {
 		t.Fatalf("request path %q, agent %q, fields %q", gotPath, gotAgent, gotFields)
 	}
-	if p.Name != "Nutella pâte à tartiner" || p.Brand != "Ferrero" || len(p.Categories) != 2 || p.Barcode != "3017620422003" {
+	if p.Name != "Nutella pâte à tartiner" || p.Brand != "Ferrero" || len(p.Categories) != 2 || p.Barcode != "3017620422003" || p.NutriScore != "E" {
 		t.Fatalf("got %+v", p)
 	}
 
 	// English falls back to the default name when there's no English one.
 	if p, _ = LookupBarcode(context.Background(), "3017620422003", "en"); p.Name != "Nutella" {
 		t.Fatalf("english name %q, want the default name", p.Name)
+	}
+}
+
+// Open Food Facts' nutriscore_grade becomes an upper-case grade, and its
+// placeholders for "no grade" become "".
+func TestOpenFoodFactsNutriScore(t *testing.T) {
+	for raw, want := range map[string]string{"a": "A", "B": "B", " c ": "C", "d": "D", "e": "E",
+		"": "", "unknown": "", "not-applicable": "", "f": "", "ab": ""} {
+		body := `{"status":1,"product":{"code":"3017620422003","product_name":"X","nutriscore_grade":"` + raw + `"}}`
+		p, err := parseOpenFoodFactsProduct([]byte(body), "3017620422003", "fr")
+		if err != nil {
+			t.Fatalf("parsing grade %q: %v", raw, err)
+		}
+		if p.NutriScore != want {
+			t.Errorf("nutriscore_grade %q → %q, want %q", raw, p.NutriScore, want)
+		}
 	}
 }
 

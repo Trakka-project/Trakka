@@ -22,7 +22,7 @@ const openFoodFactsUserAgent = "Trakka/1.0 (self-hosted shopping lists; https://
 
 // openFoodFactsFields is everything LookupBarcode reads; asking for only
 // these keeps the answer a few hundred bytes instead of the full record.
-const openFoodFactsFields = "code,product_name,product_name_fr,product_name_en,generic_name,generic_name_fr,generic_name_en,brands,categories_tags"
+const openFoodFactsFields = "code,product_name,product_name_fr,product_name_en,generic_name,generic_name_fr,generic_name_en,brands,categories_tags,nutriscore_grade"
 
 // barcodePattern is what LookupBarcode accepts: the caller normalizes with
 // internal/validate.Barcode first; this is a second check right where the
@@ -41,20 +41,25 @@ type BarcodeProduct struct {
 	Name       string
 	Brand      string
 	Categories []string
+	// NutriScore is the product's Nutri-Score grade, "A" to "E", or ""
+	// when Open Food Facts has none (it answers "unknown" or
+	// "not-applicable" then, or nothing at all).
+	NutriScore string
 }
 
 type openFoodFactsResponse struct {
 	Status  int `json:"status"`
 	Product struct {
-		Code           string   `json:"code"`
-		ProductName    string   `json:"product_name"`
-		ProductNameFR  string   `json:"product_name_fr"`
-		ProductNameEN  string   `json:"product_name_en"`
-		GenericName    string   `json:"generic_name"`
-		GenericNameFR  string   `json:"generic_name_fr"`
-		GenericNameEN  string   `json:"generic_name_en"`
-		Brands         string   `json:"brands"`
-		CategoriesTags []string `json:"categories_tags"`
+		Code            string   `json:"code"`
+		ProductName     string   `json:"product_name"`
+		ProductNameFR   string   `json:"product_name_fr"`
+		ProductNameEN   string   `json:"product_name_en"`
+		GenericName     string   `json:"generic_name"`
+		GenericNameFR   string   `json:"generic_name_fr"`
+		GenericNameEN   string   `json:"generic_name_en"`
+		Brands          string   `json:"brands"`
+		CategoriesTags  []string `json:"categories_tags"`
+		NutriscoreGrade string   `json:"nutriscore_grade"`
 	} `json:"product"`
 }
 
@@ -121,7 +126,19 @@ func parseOpenFoodFactsProduct(body []byte, barcode, lang string) (*BarcodeProdu
 		Name:       name,
 		Brand:      strings.TrimSpace(brand),
 		Categories: p.CategoriesTags,
+		NutriScore: nutriScoreGrade(p.NutriscoreGrade),
 	}, nil
+}
+
+// nutriScoreGrade turns Open Food Facts' nutriscore_grade ("a" to "e",
+// else "unknown", "not-applicable" or "") into "A" to "E", or "" for
+// anything else.
+func nutriScoreGrade(raw string) string {
+	switch grade := strings.ToUpper(strings.TrimSpace(raw)); grade {
+	case "A", "B", "C", "D", "E":
+		return grade
+	}
+	return ""
 }
 
 func firstNonBlank(values ...string) string {

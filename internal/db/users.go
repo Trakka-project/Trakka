@@ -59,7 +59,8 @@ const userSelectColumns = `id, email, display_name, created_at, is_admin, keep_l
 		 reminder_default_offset_days, reminder_default_time, reminder_default_at_due_time,
 		 vibrate_on_notification, reminders_enabled, overdue_tasks_summary_enabled, overdue_tasks_summary_time,
 		 collaborator_actions_enabled, item_additions_enabled, list_sharing_enabled,
-		 price_alerts_enabled, price_drop_alerts_enabled, price_increase_alerts_enabled, price_change_indicators_enabled`
+		 price_alerts_enabled, price_drop_alerts_enabled, price_increase_alerts_enabled, price_change_indicators_enabled,
+		 nutrition_scores_mobile, nutrition_scores_web`
 
 // userCredentialColumns is userSelectColumns plus the credentials
 // getUserWithCredentials scans into models.UserWithCredentials.
@@ -70,11 +71,13 @@ const userCredentialColumns = userSelectColumns + `, password_hash, oidc_subject
 func scanUser(row rowScanner, u *models.User, extra ...any) error {
 	var isAdmin, keepLastPage, atDueTime, vibrate, reminders, overdueSummary, collaborators, additions, sharing int
 	var priceAlerts, priceDrops, priceIncreases, priceIndicators int
+	var nutritionMobile, nutritionWeb int
 	dest := append([]any{&u.ID, &u.Email, &u.DisplayName, &u.CreatedAt, &isAdmin, &keepLastPage, &u.Language,
 		&u.ReminderDefaultOffsetDays, &u.ReminderDefaultTime, &atDueTime, &vibrate,
 		&reminders, &overdueSummary, &u.OverdueTasksSummaryTime,
 		&collaborators, &additions, &sharing,
-		&priceAlerts, &priceDrops, &priceIncreases, &priceIndicators}, extra...)
+		&priceAlerts, &priceDrops, &priceIncreases, &priceIndicators,
+		&nutritionMobile, &nutritionWeb}, extra...)
 	if err := row.Scan(dest...); err != nil {
 		return err
 	}
@@ -91,6 +94,8 @@ func scanUser(row rowScanner, u *models.User, extra ...any) error {
 	u.PriceDropAlertsEnabled = priceDrops != 0
 	u.PriceIncreaseAlertsEnabled = priceIncreases != 0
 	u.PriceChangeIndicatorsEnabled = priceIndicators != 0
+	u.NutritionScoresMobile = nutritionMobile != 0
+	u.NutritionScoresWeb = nutritionWeb != 0
 	return nil
 }
 
@@ -260,6 +265,30 @@ func (d *DB) UpdateUserNotificationPreferences(ctx context.Context, id int64, pr
 	affected, err := res.RowsAffected()
 	if err != nil {
 		return nil, fmt.Errorf("reading rows affected updating user %d notification preferences: %w", id, err)
+	}
+	if affected == 0 {
+		return nil, ErrNotFound
+	}
+	return d.GetUser(ctx, id)
+}
+
+// UpdateUserNutritionScoreDisplay sets where the list view shows nutrition
+// scores (see models.User.NutritionScoresMobile/NutritionScoresWeb): a nil
+// argument leaves that one as it is. Returns ErrNotFound if no such user
+// exists.
+func (d *DB) UpdateUserNutritionScoreDisplay(ctx context.Context, id int64, mobile, web *bool) (*models.User, error) {
+	res, err := d.conn.ExecContext(ctx,
+		`UPDATE users SET
+		   nutrition_scores_mobile = COALESCE(?, nutrition_scores_mobile),
+		   nutrition_scores_web = COALESCE(?, nutrition_scores_web)
+		 WHERE id = ?`,
+		nullableBoolToInt(mobile), nullableBoolToInt(web), id)
+	if err != nil {
+		return nil, fmt.Errorf("updating user %d nutrition score display: %w", id, err)
+	}
+	affected, err := res.RowsAffected()
+	if err != nil {
+		return nil, fmt.Errorf("reading rows affected updating user %d nutrition score display: %w", id, err)
 	}
 	if affected == 0 {
 		return nil, ErrNotFound

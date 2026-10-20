@@ -20,17 +20,21 @@ import (
 const productSelectColumns = `house_products.id, house_products.house_id, house_products.name, house_products.aisle,
 	house_products.is_favorite, house_products.add_count, house_products.purchase_count,
 	house_products.first_purchased_at, house_products.last_purchased_at,
-	house_products.created_at, house_products.updated_at`
+	house_products.created_at, house_products.updated_at,
+	house_products.nutri_score, house_products.yuka_score`
 
 func scanProduct(row rowScanner) (*models.Product, error) {
 	p := &models.Product{}
-	var aisle, firstPurchase, lastPurchase sql.NullString
+	var aisle, firstPurchase, lastPurchase, nutriScore sql.NullString
+	var yukaScore sql.NullInt64
 	var isFavorite int
 	if err := row.Scan(&p.ID, &p.HouseID, &p.Name, &aisle, &isFavorite, &p.AddCount, &p.PurchaseCount,
-		&firstPurchase, &lastPurchase, &p.CreatedAt, &p.UpdatedAt); err != nil {
+		&firstPurchase, &lastPurchase, &p.CreatedAt, &p.UpdatedAt, &nutriScore, &yukaScore); err != nil {
 		return nil, err
 	}
 	p.Aisle = aisle.String
+	p.NutriScore = nutriScore.String
+	p.YukaScore = nullIntPtr(yukaScore)
 	p.IsFavorite = isFavorite != 0
 	p.FirstPurchasedAt = nullStringPtr(firstPurchase)
 	p.LastPurchasedAt = nullStringPtr(lastPurchase)
@@ -84,6 +88,11 @@ type ProductAddition struct {
 	// it (house_product_barcodes), moving it off whichever other product of
 	// the House it was filed under before.
 	Barcode string
+	// NutriScore ("" for none, else "A" to "E", already validated) and
+	// YukaScore (nil for none) are the scores the item was added with: a
+	// known one replaces the product's, an unknown one leaves it as it was.
+	NutriScore string
+	YukaScore  *int
 }
 
 // RecordProductAdded notes in the House's catalog that a product was added
@@ -98,15 +107,17 @@ func (d *DB) RecordProductAdded(ctx context.Context, p ProductAddition) error {
 
 	now := time.Now().UTC().Format(timeFormat)
 	if _, err := tx.ExecContext(ctx,
-		`INSERT INTO house_products (house_id, name, name_key, aisle, add_count, last_added_at)
-		 VALUES (?, ?, ?, ?, 1, ?)
+		`INSERT INTO house_products (house_id, name, name_key, aisle, add_count, last_added_at, nutri_score, yuka_score)
+		 VALUES (?, ?, ?, ?, 1, ?, ?, ?)
 		 ON CONFLICT (house_id, name_key) DO UPDATE SET
 		   name = excluded.name,
 		   add_count = add_count + 1,
 		   last_added_at = excluded.last_added_at,
 		   aisle = CASE WHEN ? THEN excluded.aisle ELSE COALESCE(aisle, excluded.aisle) END,
+		   nutri_score = COALESCE(excluded.nutri_score, nutri_score),
+		   yuka_score = COALESCE(excluded.yuka_score, yuka_score),
 		   updated_at = excluded.last_added_at`,
-		p.HouseID, p.Name, p.Key, nullIfEmpty(p.Aisle), now,
+		p.HouseID, p.Name, p.Key, nullIfEmpty(p.Aisle), now, nullIfEmpty(p.NutriScore), p.YukaScore,
 		p.AisleExplicit && p.Aisle != "",
 	); err != nil {
 		return fmt.Errorf("recording product addition: %w", err)
@@ -160,6 +171,41 @@ func (d *DB) SetProductAisle(ctx context.Context, houseID int64, name, key, aisl
 		houseID, name, key, nullIfEmpty(aisle),
 	); err != nil {
 		return fmt.Errorf("setting product aisle: %w", err)
+	}
+	return nil
+}
+
+// SetProductNutrition makes nutriScore ("" clears it) and yukaScore (nil
+// clears it) the scores of the product keyed key — what someone just set on
+// an item, or what Open Food Facts answered for a code the House already
+// knew — creating the product if the catalog doesn't know it yet. Both
+// must already be validated (internal/validate.NutriScore/YukaScore).
+func (d *DB) SetProductNutrition(ctx context.Context, houseID int64, name, key, nutriScore string, yukaScore *int) error {
+	if _, err := d.conn.ExecContext(ctx,
+		`INSERT INTO house_products (house_id, name, name_key, nutri_score, yuka_score) VALUES (?, ?, ?, ?, ?)
+		 ON CONFLICT (house_id, name_key) DO UPDATE SET
+		   nutri_score = excluded.nutri_score,
+		   yuka_score = excluded.yuka_score,
+		   updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now')`,
+		houseID, name, key, nullIfEmpty(nutriScore), yukaScore,
+	); err != nil {
+		return fmt.Errorf("setting product nutrition scores: %w", err)
+	}
+	return nil
+}
+
+// FillProductEnrichment fills in the aisle and nutri-score an Open Food
+// Facts text search found for the product keyed key ("" for nothing), only
+// where the catalog has none: the household's own choices always win. A
+// product the catalog doesn't know is left alone.
+func (d *DB) FillProductEnrichment(ctx context.Context, houseID int64, key, aisle, nutriScore string) error {
+	a, n := nullIfEmpty(aisle), nullIfEmpty(nutriScore)
+	if _, err := d.conn.ExecContext(ctx,
+		`UPDATE house_products SET aisle = COALESCE(aisle, ?), nutri_score = COALESCE(nutri_score, ?),
+		   updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now')
+		 WHERE house_id = ? AND name_key = ? AND ((aisle IS NULL AND ? IS NOT NULL) OR (nutri_score IS NULL AND ? IS NOT NULL))`,
+		a, n, houseID, key, a, n); err != nil {
+		return fmt.Errorf("filling product enrichment: %w", err)
 	}
 	return nil
 }

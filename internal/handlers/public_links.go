@@ -520,7 +520,7 @@ func (app *Application) handlePublicItemCreate(w http.ResponseWriter, r *http.Re
 			app.serverError(w, r, err)
 			return
 		}
-		app.recordProductAdded(r.Context(), list, item, false, "")
+		app.recordProductAdded(r.Context(), list, item, false, "", nutritionScores{})
 		if merged {
 			app.notifyListChange(list, nil, item.Title, itemAdded)
 			app.writePublicAddition(w, link, http.StatusOK, item)
@@ -649,7 +649,7 @@ func (app *Application) handlePublicItemPatch(w http.ResponseWriter, r *http.Req
 			return
 		}
 	}
-	app.updateProductCatalog(r.Context(), updated, false, justCompleted)
+	app.updateProductCatalog(r.Context(), updated, false, false, justCompleted)
 	if justCompleted || justUnchecked {
 		app.notifyListChange(list, nil, updated.Title, doneChange(justCompleted))
 	}

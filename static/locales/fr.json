@@ -243,6 +243,14 @@
     "paidPriceAriaLabel": "Payé {paid} (prévu {estimated})",
     "paidPriceNoEstimateAriaLabel": "Payé {paid} (non prévu)"
   },
+  "nutrition": {
+    "nutriScoreLabel": "Nutri-Score {grade}",
+    "yukaScoreLabel": "Score Yuka : {score}/100",
+    "nutriScoreField": "Nutri-Score",
+    "yukaScoreField": "Score Yuka (0-100)",
+    "none": "Aucun",
+    "yukaValidationError": "Le score Yuka doit être un nombre entier entre 0 et 100."
+  },
   "quickShop": {
     "panelButtonAriaLabel": "Favoris et produits habituels",
     "scanButtonAriaLabel": "Scanner un code-barres",
@@ -798,6 +806,12 @@
       "priceAlertsDisabledHint": "Aucune alerte de prix, ni push ni dans l'application (y compris les seuils de prix). Le suivi des prix continue.",
       "priceIndicatorsLabel": "Afficher les indicateurs visuels de variation de prix",
       "priceIndicatorsHint": "Prix en vert après une baisse, en rouge après une hausse, pendant 7 jours",
+      "nutritionTitle": "Scores nutritionnels",
+      "nutritionHint": "Affiche le Nutri-Score (et le score Yuka s'il est renseigné) devant le nom des articles de vos listes de courses. Le Nutri-Score vient d'Open Food Facts lors d'un scan.",
+      "nutritionMobileLabel": "Afficher sur mobile",
+      "nutritionMobileHint": "Application Android et écrans de téléphone",
+      "nutritionWebLabel": "Afficher sur le web",
+      "nutritionWebHint": "Navigateur sur tablette ou ordinateur",
       "pushUnsupported": "Les notifications push ne sont pas prises en charge par ce navigateur.",
       "pushUnsupportedAndroidApp": "Les notifications push ne sont pas encore prises en charge dans l'application mobile. Utilisez la PWA dans votre navigateur pour recevoir les rappels.",
       "localRemindersLabel": "Rappels locaux (mode hors-ligne supporté)",

@@ -48,6 +48,7 @@ func TestMigrationRewritesLegacyRecurrenceRules(t *testing.T) {
 	// 24's, 26's and 27's ADD COLUMNs, 25's CREATE TABLE and 28's and 30's
 	// tables and columns, and 32's, have to be undone first (31 only writes
 	// data).
+	undoMigration39(t, d.conn)
 	if _, err := d.conn.Exec(`ALTER TABLE users DROP COLUMN vibrate_on_notification`); err != nil {
 		t.Fatalf("undoing migration 24: %v", err)
 	}

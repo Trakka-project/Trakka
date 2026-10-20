@@ -273,6 +273,16 @@ type Item struct {
 	// household's usual aisle for that product, else a keyword guess (see
 	// internal/handlers.resolveItemAisle); the list view can group by it.
 	Aisle *string `json:"aisle,omitempty"`
+	// NutriScore is the product's Nutri-Score grade ("A" to "E"), nil when
+	// unknown; YukaScore a 0-100 score, nil when unknown (migration 39).
+	// Both optional on POST/PUT/PATCH /api/v1/items; on a "Courses" list a
+	// new item sent without them inherits the House catalog product's (see
+	// internal/handlers.resolveItemNutrition). Nothing fills YukaScore in
+	// by itself: Yuka has no public API, so it only holds what a client
+	// sent. Whether the list view shows them is the user's
+	// NutritionScoresMobile/NutritionScoresWeb.
+	NutriScore *string `json:"nutri_score,omitempty"`
+	YukaScore  *int    `json:"yuka_score,omitempty"`
 	// IsPlanned is the items.is_planned flag: a not-yet-bought item added
 	// while estimating (a list created from a template, or "Prévu" chosen
 	// on the item) rather than confirmed as needed. Never serialized: the
@@ -296,6 +306,13 @@ type Item struct {
 	// quantity — instead of creating a duplicate. The response is then that
 	// existing item, with its own id, and a 200 rather than a 201.
 	Merged bool `json:"merged,omitempty"`
+	// EnrichmentStatus is another response-only field, set by
+	// POST /api/v1/items on a Courses list: "pending" when the server is
+	// looking the product up in Open Food Facts' text search in the
+	// background, to fill in its aisle and/or Nutri-Score (see
+	// internal/handlers.maybeEnrichProduct) — read the item again a few
+	// seconds later. Omitted otherwise.
+	EnrichmentStatus string `json:"enrichment_status,omitempty"`
 }
 
 // ItemAssignee is one person an item is assigned to (Item.Assignees).
@@ -424,6 +441,10 @@ type Product struct {
 	// Aisle is the household's aisle for it, "" when unknown.
 	Aisle      string `json:"aisle,omitempty"`
 	IsFavorite bool   `json:"is_favorite"`
+	// NutriScore/YukaScore are the last scores known for it (see
+	// Item.NutriScore/YukaScore), ""/nil when unknown.
+	NutriScore string `json:"nutri_score,omitempty"`
+	YukaScore  *int   `json:"yuka_score,omitempty"`
 	// AddCount/PurchaseCount count how many times it was added to a list,
 	// and checked off one.
 	AddCount         int     `json:"add_count"`
@@ -450,13 +471,17 @@ type ProductSuggestion struct {
 // barcode stands for. Source is "house" when the household's own catalog
 // knows the code (Product is then that entry), or "openfoodfacts" when it
 // was found in the Open Food Facts database instead (Product is nil:
-// nothing is stored until the item is actually added).
+// nothing is stored until the item is actually added). NutriScore/
+// YukaScore are the product's scores when known (see Item.NutriScore), for
+// the client to send along with the item it adds.
 type BarcodeLookup struct {
-	Barcode string   `json:"barcode"`
-	Name    string   `json:"name"`
-	Aisle   string   `json:"aisle,omitempty"`
-	Source  string   `json:"source"`
-	Product *Product `json:"product,omitempty"`
+	Barcode    string   `json:"barcode"`
+	Name       string   `json:"name"`
+	Aisle      string   `json:"aisle,omitempty"`
+	NutriScore string   `json:"nutri_score,omitempty"`
+	YukaScore  *int     `json:"yuka_score,omitempty"`
+	Source     string   `json:"source"`
+	Product    *Product `json:"product,omitempty"`
 }
 
 // ValidListTypes enumerates the allowed values for List.Type. `shopping`
@@ -588,6 +613,13 @@ type User struct {
 	PriceDropAlertsEnabled       bool `json:"price_drop_alerts_enabled"`
 	PriceIncreaseAlertsEnabled   bool `json:"price_increase_alerts_enabled"`
 	PriceChangeIndicatorsEnabled bool `json:"price_change_indicators_enabled"`
+	// NutritionScoresMobile/NutritionScoresWeb choose where the list view
+	// shows an item's Nutri-Score/Yuka score (Item.NutriScore/YukaScore):
+	// on a phone (the Android app or a narrow screen) and on a wider web
+	// screen, each on its own — see static/js/nutrition.js. Both off by
+	// default; settable via PATCH /api/v1/me.
+	NutritionScoresMobile bool `json:"nutrition_scores_mobile"`
+	NutritionScoresWeb    bool `json:"nutrition_scores_web"`
 }
 
 // UserSearchResult is one suggestion of the sharing autocomplete

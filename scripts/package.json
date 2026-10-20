@@ -9,7 +9,8 @@
     "test:quick-shopping": "node test-quick-shopping.js",
     "test:budget-templates": "node test-budget-templates.js",
     "test:assignees": "node test-assignees.js",
-    "test:price-alert-links": "node test-price-alert-links.js"
+    "test:price-alert-links": "node test-price-alert-links.js",
+    "test:nutrition-scores": "node test-nutrition-scores.js"
   },
   "devDependencies": {
     "playwright": "1.62.1"

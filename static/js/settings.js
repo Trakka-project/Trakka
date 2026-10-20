@@ -65,6 +65,8 @@ const userSettingsEls = {
   priceIncreaseAlerts: document.getElementById('user-settings-price-increase-alerts'),
   priceAlertsDisabled: document.getElementById('user-settings-price-alerts-disabled'),
   priceIndicators: document.getElementById('user-settings-price-indicators'),
+  nutritionMobile: document.getElementById('user-settings-nutrition-mobile'),
+  nutritionWeb: document.getElementById('user-settings-nutrition-web'),
   reminderPreset: document.getElementById('user-settings-reminder-preset'),
   reminderOffset: document.getElementById('user-settings-reminder-offset'),
   reminderOffsetSuffix: document.getElementById('user-settings-reminder-offset-suffix'),
@@ -193,6 +195,9 @@ function openUserSettingsModal() {
   userSettingsEls.priceAlertsDisabled.checked = !wants('price_alerts_enabled');
   userSettingsEls.priceIndicators.checked = wants('price_change_indicators_enabled');
   updatePriceAlertSwitchesState();
+  // "Scores nutritionnels": opt-in, so off until /me says otherwise.
+  userSettingsEls.nutritionMobile.checked = Boolean(state.currentUser && state.currentUser.nutrition_scores_mobile);
+  userSettingsEls.nutritionWeb.checked = Boolean(state.currentUser && state.currentUser.nutrition_scores_web);
   userSettingsEls.overdueSummaryTime.value = (state.currentUser && state.currentUser.overdue_tasks_summary_time) || '08:00';
   updateOverdueSummaryTimeVisibility();
   // state.currentUser's own reminder_default_offset_days/_time/_at_due_time
@@ -396,6 +401,8 @@ userSettingsEls.form.addEventListener('submit', async (event) => {
     price_drop_alerts_enabled: userSettingsEls.priceDropAlerts.checked,
     price_increase_alerts_enabled: userSettingsEls.priceIncreaseAlerts.checked,
     price_change_indicators_enabled: userSettingsEls.priceIndicators.checked,
+    nutrition_scores_mobile: userSettingsEls.nutritionMobile.checked,
+    nutrition_scores_web: userSettingsEls.nutritionWeb.checked,
     reminder_default_offset_days: reminderDefaultOffsetDays,
     reminder_default_time: reminderDefaultTime,
     reminder_default_at_due_time: reminderDefaultAtDueTime,
@@ -422,8 +429,9 @@ userSettingsEls.form.addEventListener('submit', async (event) => {
   // mirror in step immediately, rather than waiting for the next reload's
   // /me call to do it.
   setKeepLastPagePreference(keepLastPage);
-  // The visual price indicators follow state.currentUser at render time
-  // (recentPriceMovement in list_view.js): re-render whatever is on screen
+  // The visual price indicators and the nutrition badges follow
+  // state.currentUser at render time (recentPriceMovement in list_view.js,
+  // nutritionScoresShown in nutrition.js): re-render whatever is on screen
   // so turning them on or off shows right away. refreshVisibleView is
   // defined in app.js.
   refreshVisibleView();
