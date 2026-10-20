@@ -263,6 +263,7 @@ func TestSeedHouseProductsMigration(t *testing.T) {
 	unknown := insert(groceries.ID, "Cadeau Léa", 0, "2026-08-11T08:00:00.000Z", "2026-08-11T08:00:00.000Z")
 	chore := insert(todo.ID, "Lessive", 0, "2026-08-11T08:00:00.000Z", "2026-08-11T08:00:00.000Z")
 
+	undoMigration39(t, d.conn)
 	undoMigrationsSince32(t, d.conn)
 	if _, err := d.conn.Exec(`PRAGMA user_version = 30`); err != nil {
 		t.Fatalf("rewinding user_version: %v", err)

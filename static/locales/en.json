@@ -243,6 +243,14 @@
     "paidPriceAriaLabel": "Paid {paid} (estimated {estimated})",
     "paidPriceNoEstimateAriaLabel": "Paid {paid} (not budgeted)"
   },
+  "nutrition": {
+    "nutriScoreLabel": "Nutri-Score {grade}",
+    "yukaScoreLabel": "Yuka score: {score}/100",
+    "nutriScoreField": "Nutri-Score",
+    "yukaScoreField": "Yuka score (0-100)",
+    "none": "None",
+    "yukaValidationError": "The Yuka score must be a whole number from 0 to 100."
+  },
   "quickShop": {
     "panelButtonAriaLabel": "Favorites and usual products",
     "scanButtonAriaLabel": "Scan a barcode",
@@ -798,6 +806,12 @@
       "priceAlertsDisabledHint": "No price alerts at all, neither push nor in the app (target prices included). Prices keep being tracked.",
       "priceIndicatorsLabel": "Show visual price change indicators",
       "priceIndicatorsHint": "Prices in green after a drop, in red after an increase, for 7 days",
+      "nutritionTitle": "Nutrition scores",
+      "nutritionHint": "Shows the Nutri-Score (and the Yuka score when filled in) before the name of the items on your grocery lists. The Nutri-Score comes from Open Food Facts when you scan a product.",
+      "nutritionMobileLabel": "Show on mobile",
+      "nutritionMobileHint": "Android app and phone screens",
+      "nutritionWebLabel": "Show on the web",
+      "nutritionWebHint": "Browser on a tablet or computer",
       "pushUnsupported": "Push notifications aren't supported by this browser.",
       "pushUnsupportedAndroidApp": "Push notifications aren't supported in the mobile app yet. Use the PWA in your browser to get reminders.",
       "localRemindersLabel": "Local reminders (works offline)",

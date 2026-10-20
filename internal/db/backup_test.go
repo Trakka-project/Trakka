@@ -92,6 +92,7 @@ func TestPrepareRestoreFileMigratesOlderSchema(t *testing.T) {
 	if err != nil {
 		t.Fatalf("opening snapshot: %v", err)
 	}
+	undoMigration39(t, old.conn)
 	for _, stmt := range []string{
 		`DROP TABLE backup_runs`,
 		`DROP INDEX idx_items_next_due_date`,

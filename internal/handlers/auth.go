@@ -536,7 +536,9 @@ func (app *Application) materializeInvitations(r *http.Request, user *models.Use
 // price_drop_alerts_enabled, price_increase_alerts_enabled,
 // price_change_indicators_enabled (models.User.PriceAlertsEnabled and the
 // fields after it); overdue_tasks_summary_time is an HH:MM that may be
-// given on its own.
+// given on its own. nutrition_scores_mobile/nutrition_scores_web (where the
+// list view shows nutrition scores, models.User.NutritionScoresMobile/
+// NutritionScoresWeb) are plain on/offs too, each on its own.
 func (app *Application) handleMeUpdate(w http.ResponseWriter, r *http.Request) {
 	var in struct {
 		KeepLastPage               *bool   `json:"keep_last_page"`
@@ -556,6 +558,9 @@ func (app *Application) handleMeUpdate(w http.ResponseWriter, r *http.Request) {
 		PriceDropAlertsEnabled       *bool `json:"price_drop_alerts_enabled"`
 		PriceIncreaseAlertsEnabled   *bool `json:"price_increase_alerts_enabled"`
 		PriceChangeIndicatorsEnabled *bool `json:"price_change_indicators_enabled"`
+
+		NutritionScoresMobile *bool `json:"nutrition_scores_mobile"`
+		NutritionScoresWeb    *bool `json:"nutrition_scores_web"`
 	}
 	if !decodeJSON(w, r, &in) {
 		return
@@ -657,6 +662,18 @@ func (app *Application) handleMeUpdate(w http.ResponseWriter, r *http.Request) {
 		PriceChangeIndicatorsEnabled: in.PriceChangeIndicatorsEnabled,
 	}); prefs.Any() {
 		updated, err := app.DB.UpdateUserNotificationPreferences(r.Context(), user.ID, prefs)
+		if errors.Is(err, db.ErrNotFound) {
+			writeError(w, http.StatusNotFound, "user not found")
+			return
+		} else if err != nil {
+			app.serverError(w, r, err)
+			return
+		}
+		user = updated
+	}
+
+	if in.NutritionScoresMobile != nil || in.NutritionScoresWeb != nil {
+		updated, err := app.DB.UpdateUserNutritionScoreDisplay(r.Context(), user.ID, in.NutritionScoresMobile, in.NutritionScoresWeb)
 		if errors.Is(err, db.ErrNotFound) {
 			writeError(w, http.StatusNotFound, "user not found")
 			return

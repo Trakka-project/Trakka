@@ -1519,6 +1519,46 @@
               </span>
             </label>
 
+            <!-- "Scores nutritionnels": where the Nutri-Score/Yuka badge shows before a "Courses"
+                 item's title (users.nutrition_scores_mobile/_web, PATCH /api/v1/me, saved with the
+                 form — settings.js; applied by nutrition.js). Both off by default. -->
+            <section aria-labelledby="user-settings-nutrition-title" class="space-y-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-4 py-3">
+              <div>
+                <h3 id="user-settings-nutrition-title" class="flex items-center gap-2 text-sm font-semibold text-slate-700 dark:text-slate-200">
+                  <span aria-hidden="true">🥗</span>
+                  <span data-i18n="modals.userSettings.nutritionTitle">Scores nutritionnels</span>
+                </h3>
+                <p class="mt-0.5 text-xs font-normal text-slate-500 dark:text-slate-400" data-i18n="modals.userSettings.nutritionHint">Affiche le Nutri-Score (et le score Yuka s'il est renseigné) devant le nom des articles de vos listes de courses. Le Nutri-Score vient d'Open Food Facts lors d'un scan.</p>
+              </div>
+              <div role="group" aria-labelledby="user-settings-nutrition-title"
+                   class="divide-y divide-slate-200 dark:divide-slate-700 rounded-xl border border-slate-200 dark:border-slate-700 px-3">
+                  <div class="py-3">
+                    <label class="flex cursor-pointer items-center justify-between gap-3">
+                      <span class="min-w-0">
+                        <span class="block text-sm font-medium text-slate-700 dark:text-slate-200" data-i18n="modals.userSettings.nutritionMobileLabel">Afficher sur mobile</span>
+                        <span class="mt-0.5 block text-xs text-slate-500 dark:text-slate-400" data-i18n="modals.userSettings.nutritionMobileHint">Application Android et écrans de téléphone</span>
+                      </span>
+                      <span class="relative inline-flex shrink-0">
+                        <input type="checkbox" role="switch" id="user-settings-nutrition-mobile" class="peer sr-only">
+                        <span aria-hidden="true" class="block h-6 w-11 rounded-full bg-slate-300 dark:bg-slate-600 transition-colors peer-checked:bg-sky-500 peer-disabled:opacity-50 peer-focus-visible:ring-2 peer-focus-visible:ring-sky-500/50 peer-focus-visible:ring-offset-2 dark:peer-focus-visible:ring-offset-slate-900 after:absolute after:left-0.5 after:top-0.5 after:h-5 after:w-5 after:rounded-full after:bg-white after:shadow after:transition-transform after:content-[''] peer-checked:after:translate-x-5"></span>
+                      </span>
+                    </label>
+                  </div>
+                  <div class="py-3">
+                    <label class="flex cursor-pointer items-center justify-between gap-3">
+                      <span class="min-w-0">
+                        <span class="block text-sm font-medium text-slate-700 dark:text-slate-200" data-i18n="modals.userSettings.nutritionWebLabel">Afficher sur le web</span>
+                        <span class="mt-0.5 block text-xs text-slate-500 dark:text-slate-400" data-i18n="modals.userSettings.nutritionWebHint">Navigateur sur tablette ou ordinateur</span>
+                      </span>
+                      <span class="relative inline-flex shrink-0">
+                        <input type="checkbox" role="switch" id="user-settings-nutrition-web" class="peer sr-only">
+                        <span aria-hidden="true" class="block h-6 w-11 rounded-full bg-slate-300 dark:bg-slate-600 transition-colors peer-checked:bg-sky-500 peer-disabled:opacity-50 peer-focus-visible:ring-2 peer-focus-visible:ring-sky-500/50 peer-focus-visible:ring-offset-2 dark:peer-focus-visible:ring-offset-slate-900 after:absolute after:left-0.5 after:top-0.5 after:h-5 after:w-5 after:rounded-full after:bg-white after:shadow after:transition-transform after:content-[''] peer-checked:after:translate-x-5"></span>
+                      </span>
+                    </label>
+                  </div>
+              </div>
+            </section>
+
             <button type="button" id="install-help-button"
                     class="flex w-full items-center justify-center gap-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-4 py-3 text-sm font-medium text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-800">
               <span aria-hidden="true">📱</span>
@@ -2154,6 +2194,28 @@
                   class="w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-4 py-3 text-base text-slate-900 dark:text-slate-100 focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500/30">
             <option value="" data-i18n="items.aisleNone">Sans rayon</option>
           </select>
+        </div>
+
+        <!-- Nutrition scores (nutrition.js's fillEditItemNutrition): a "Courses" list, for a user
+             who shows the scores somewhere (Paramètres → Scores nutritionnels). -->
+        <div id="edit-item-nutrition" hidden class="grid grid-cols-2 gap-2">
+          <div>
+            <label for="edit-item-nutri-score" data-i18n="nutrition.nutriScoreField" class="mb-1 block text-sm font-medium text-slate-600 dark:text-slate-300">Nutri-Score</label>
+            <select id="edit-item-nutri-score"
+                    class="w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-4 py-3 text-base text-slate-900 dark:text-slate-100 focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500/30">
+              <option value="" data-i18n="nutrition.none">Aucun</option>
+              <option value="A">A</option>
+              <option value="B">B</option>
+              <option value="C">C</option>
+              <option value="D">D</option>
+              <option value="E">E</option>
+            </select>
+          </div>
+          <div>
+            <label for="edit-item-yuka-score" data-i18n="nutrition.yukaScoreField" class="mb-1 block text-sm font-medium text-slate-600 dark:text-slate-300">Score Yuka (0-100)</label>
+            <input type="number" id="edit-item-yuka-score" min="0" max="100" step="1" inputmode="numeric" placeholder="—"
+                   class="w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-4 py-3 text-base text-slate-900 dark:text-slate-100 placeholder:text-slate-500 focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500/30">
+          </div>
         </div>
 
         <div data-item-field="urgent">
@@ -2970,6 +3032,7 @@
   <script src="/js/barcode.js" defer></script>
   <script src="/js/scanner.js" defer></script>
   <script src="/js/quick-shop.js" defer></script>
+  <script src="/js/nutrition.js" defer></script>
   <script src="/js/budget.js" defer></script>
   <script src="/js/assignees.js" defer></script>
   <script src="/js/planning.js" defer></script>

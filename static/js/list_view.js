@@ -1714,7 +1714,7 @@ function buildNextDueBadge(item, { interactive = true } = {}) {
 const CLEARABLE_ITEM_FIELDS = [
   'due_date', 'due_time', 'next_due_date', 'notification_sent_at',
   'recurrence_rule', 'recurrence_end_date', 'reminder_offset_days', 'reminder_time', 'aisle',
-  'actual_price',
+  'actual_price', 'nutri_score', 'yuka_score',
 ];
 function mergeServerItem(item, updated) {
   if (updated && updated.id !== undefined) {
@@ -2641,6 +2641,14 @@ function buildItemRow(item, { showCheckbox = true, index, showQuantity = true, s
     rowTop.appendChild(buildItemThumbnail(item));
   }
 
+  // The Nutri-Score/Yuka badge (buildNutritionBadge, nutrition.js), right
+  // before the title: only when the user shows the scores on this kind of
+  // screen and the item has one. A fixed-size `shrink-0` block that rowTop's
+  // `items-center` centres like the checkbox and the kebab, so neither
+  // moves; the title elides around it.
+  const nutritionBadge = buildNutritionBadge(item);
+  if (nutritionBadge) rowTop.appendChild(nutritionBadge);
+
   const title = document.createElement('span');
   // `truncate` (Tailwind's overflow-hidden/text-overflow-ellipsis/
   // whitespace-nowrap shorthand) needs a `min-w-0` flex ancestor to actually
@@ -2662,8 +2670,14 @@ function buildItemRow(item, { showCheckbox = true, index, showQuantity = true, s
   // before the sync-dot/link/kebab group that follows, on top of (not
   // instead of) `li`'s regular flex `gap`. Every other row (including a
   // compactView-toggled price list) keeps `truncate`, since it still has to
-  // share the line with a price figure.
-  const titleOverflowClass = structurallyCompact ? 'whitespace-normal break-words mr-2' : 'truncate';
+  // share the line with a price figure — except next to a nutrition badge,
+  // which takes ~66px of the line: there the title may use a second line
+  // (`line-clamp-2`, eliding only after it) rather than shrinking to a few
+  // letters on a 320px phone. Two lines of `text-sm` (40px) still fit the
+  // row's 44px touch height.
+  let titleOverflowClass = 'truncate';
+  if (structurallyCompact) titleOverflowClass = 'whitespace-normal break-words mr-2';
+  else if (nutritionBadge) titleOverflowClass = 'line-clamp-2 whitespace-normal break-words';
   title.className = item.done
     ? `min-w-0 flex-1 cursor-pointer ${titleOverflowClass} ${titleSize} font-semibold text-slate-500 line-through opacity-60`
     : `min-w-0 flex-1 cursor-pointer ${titleOverflowClass} ${titleSize} font-semibold text-slate-900 dark:text-slate-100`;
@@ -3808,7 +3822,7 @@ listEls.createItemForm.addEventListener('submit', async (event) => {
     listEls.itemQuantity.value = '1';
     setQuickAddAdvancedExpanded(false);
     listEls.itemTitle.focus();
-    await addQuickShopItem({ title, quantity, aisle, aisleHint: scan.aisleHint, barcode: scan.barcode, urgent: isUrgent, price, planned });
+    await addQuickShopItem({ title, quantity, aisle, aisleHint: scan.aisleHint, barcode: scan.barcode, urgent: isUrgent, price, planned, nutrition: scan.nutrition });
     await refreshPendingBadge();
     return;
   }
@@ -3982,6 +3996,8 @@ function openEditItemModal(item, { focus } = {}) {
   updateReminderCustomFieldsVisibility(listEls.editItemReminder, listEls.editItemReminderCustomFields);
   listEls.editItemUrgent.checked = Boolean(item.is_urgent);
   listEls.editItemAisle.value = item.aisle || '';
+  // fillEditItemNutrition is defined in nutrition.js.
+  fillEditItemNutrition(item, state.currentList);
   listEls.editItemPurchaseStatus.value = purchaseStatusOf(item);
   listEls.editItemActualPrice.value = item.done && typeof item.actual_price === 'number' ? item.actual_price : '';
   syncEditItemActualPrice();
@@ -4501,6 +4517,14 @@ listEls.editItemForm.addEventListener('submit', async (event) => {
   // "" clears it. On a Courses list the server also makes this the
   // household's usual aisle for the product.
   if (visibility.aisle) payload.aisle = listEls.editItemAisle.value;
+  // The scores ("" / null clear them), when the fields are shown — see
+  // editItemNutritionPayload in nutrition.js.
+  const nutrition = editItemNutritionPayload();
+  if (!nutrition) {
+    showError(t('nutrition.yukaValidationError'));
+    return;
+  }
+  Object.assign(payload, nutrition);
 
   const item = editingItem;
   // Only sent when the assignees changed (editItemAssigneeIds, assignees.js)
@@ -4525,6 +4549,8 @@ listEls.editItemForm.addEventListener('submit', async (event) => {
     reminder_time: item.reminder_time,
     is_urgent: item.is_urgent,
     aisle: item.aisle,
+    nutri_score: item.nutri_score,
+    yuka_score: item.yuka_score,
     done: item.done,
     purchase_status: item.purchase_status,
     actual_price: item.actual_price,
@@ -4549,6 +4575,8 @@ listEls.editItemForm.addEventListener('submit', async (event) => {
   if ('reminder_offset_days' in payload) item.reminder_offset_days = payload.reminder_offset_days;
   if ('reminder_time' in payload) item.reminder_time = payload.reminder_time || null;
   if ('aisle' in payload) item.aisle = payload.aisle || null;
+  if ('nutri_score' in payload) item.nutri_score = payload.nutri_score || null;
+  if ('yuka_score' in payload) item.yuka_score = payload.yuka_score;
   if (assigneeIds) item.assignees = resolveAssignees(assigneeIds, state.currentList, item.assignees || []);
   item.is_urgent = payload.is_urgent;
   renderItems();

@@ -74,7 +74,7 @@ const quickShop = {
   favoriteKeys: new Set(),
   recurring: [],
   // A scanned barcode waiting for the quick-add field to be submitted:
-  // { barcode, aisleHint } (see prefillFromScan).
+  // { barcode, aisleHint, nutrition } (see prefillFromScan).
   pendingScan: null,
   autocompleteTimer: null,
   autocompleteRequest: 0,
@@ -432,8 +432,10 @@ function mergedQuantity(existing, requested) {
 // the product's own chip instead).
 // `price` (an estimate, or null) and `planned` come from the quick-add
 // form's advanced panel; a product already on the list only gets the price
-// when it has none, and always comes back "to buy".
-async function addQuickShopItem({ title, quantity = 1, aisle = '', aisleHint = '', barcode = '', urgent = false, quiet = false, price = null, planned = false }) {
+// when it has none, and always comes back "to buy". `nutrition` is the
+// {nutri_score?, yuka_score?} a barcode lookup answered (nutritionFromLookup
+// in nutrition.js), or null: sent with the item, replacing the item's own.
+async function addQuickShopItem({ title, quantity = 1, aisle = '', aisleHint = '', barcode = '', urgent = false, quiet = false, price = null, planned = false, nutrition = null }) {
   const list = state.currentList;
   if (!list) return null;
   const existing = findDuplicateItem(list.items, title);
@@ -446,20 +448,21 @@ async function addQuickShopItem({ title, quantity = 1, aisle = '', aisleHint = '
     // stays a PATCH — a queued POST would put a duplicate in the mirror —
     // and the code is filed the next time the product is added.
     const filing = barcode && navigator.onLine ? { title, barcode, aisleHint, quantity } : null;
-    await bringBackItem(existing, quantity, { aisle: aisle || aisleHint, urgent, quiet, filing, price });
+    await bringBackItem(existing, quantity, { aisle: aisle || aisleHint, urgent, quiet, filing, price, nutrition });
     outcome = 'merged';
   } else {
-    outcome = await createQuickShopItem({ title, quantity, aisle, aisleHint, barcode, urgent, quiet, price, planned });
+    outcome = await createQuickShopItem({ title, quantity, aisle, aisleHint, barcode, urgent, quiet, price, planned, nutrition });
   }
   if (!quickShopEls.sheet.hidden) renderQuickShopPanel();
   return outcome;
 }
 
-async function bringBackItem(item, quantity, { aisle, urgent, quiet, filing = null, price = null }) {
+async function bringBackItem(item, quantity, { aisle, urgent, quiet, filing = null, price = null, nutrition = null }) {
   const wasDone = item.done;
   const previous = {
     done: item.done, quantity: item.quantity, aisle: item.aisle, is_urgent: item.is_urgent, next_due_date: item.next_due_date,
     price: item.price, purchase_status: item.purchase_status, actual_price: item.actual_price,
+    nutri_score: item.nutri_score, yuka_score: item.yuka_score,
   };
   // Adding a product is wanting it: back "to buy" (not planned), any price
   // paid for its previous purchase dropped — the server's POST merge does
@@ -468,6 +471,7 @@ async function bringBackItem(item, quantity, { aisle, urgent, quiet, filing = nu
   if (!item.aisle && aisle) payload.aisle = aisle;
   if (urgent && !item.is_urgent) payload.is_urgent = true;
   if (price !== null && typeof item.price !== 'number') payload.price = price;
+  if (nutrition) Object.assign(payload, nutrition);
 
   item.done = false;
   item.next_due_date = null;
@@ -477,6 +481,7 @@ async function bringBackItem(item, quantity, { aisle, urgent, quiet, filing = nu
   if (payload.aisle) item.aisle = payload.aisle;
   if (payload.is_urgent) item.is_urgent = true;
   if ('price' in payload) item.price = payload.price;
+  if (nutrition) Object.assign(item, nutrition);
   renderItems();
   if (!quiet) {
     TrakkaToast.success(wasDone
@@ -489,6 +494,7 @@ async function bringBackItem(item, quantity, { aisle, urgent, quiet, filing = nu
       const body = { list_id: item.list_id, title: filing.title, quantity: filing.quantity, barcode: filing.barcode };
       if (filing.aisleHint) body.aisle_hint = filing.aisleHint;
       if (urgent) body.is_urgent = true;
+      if (nutrition) Object.assign(body, nutrition);
       const created = await apiRequest('/items', { method: 'POST', body: JSON.stringify(body) });
       if (created && created.id === item.id) {
         mergeServerItem(item, created);
@@ -512,7 +518,7 @@ async function bringBackItem(item, quantity, { aisle, urgent, quiet, filing = nu
   }
 }
 
-async function createQuickShopItem({ title, quantity, aisle, aisleHint, barcode, urgent, quiet, price = null, planned = false }) {
+async function createQuickShopItem({ title, quantity, aisle, aisleHint, barcode, urgent, quiet, price = null, planned = false, nutrition = null }) {
   const list = state.currentList;
   const known = [...quickShop.favorites, ...quickShop.recurring].find((p) => productKey(p.name) === productKey(title));
   const optimisticItem = {
@@ -528,6 +534,10 @@ async function createQuickShopItem({ title, quantity, aisle, aisleHint, barcode,
     price,
     position: 0,
     labels: [],
+    // The scores it's added with, else the catalog's (the server inherits
+    // them the same way, see resolveItemNutrition).
+    nutri_score: (nutrition && nutrition.nutri_score) || (known && known.nutri_score) || null,
+    yuka_score: nutrition && nutrition.yuka_score !== undefined ? nutrition.yuka_score : (known && known.yuka_score) ?? null,
   };
   list.items = [...(list.items || []), optimisticItem];
   renderItems();
@@ -539,9 +549,11 @@ async function createQuickShopItem({ title, quantity, aisle, aisleHint, barcode,
   if (aisleHint) payload.aisle_hint = aisleHint;
   if (barcode) payload.barcode = barcode;
   if (urgent) payload.is_urgent = true;
+  if (nutrition) Object.assign(payload, nutrition);
   let outcome = 'created';
   try {
     const created = await apiRequest('/items', { method: 'POST', body: JSON.stringify(payload) });
+    let row = optimisticItem;
     if (created && created.merged) {
       outcome = 'merged';
       // The server found the product already on the list (another device
@@ -549,13 +561,16 @@ async function createQuickShopItem({ title, quantity, aisle, aisleHint, barcode,
       const twin = (list.items || []).find((it) => it !== optimisticItem && it.id === created.id);
       if (twin) {
         list.items = list.items.filter((it) => it !== optimisticItem);
-        mergeServerItem(twin, created);
-      } else {
-        mergeServerItem(optimisticItem, created);
+        row = twin;
       }
+      mergeServerItem(row, created);
       if (!quiet) TrakkaToast.success(t('quickShop.quantityUpdated', { name: created.title, count: created.quantity }));
     } else {
       mergeServerItem(optimisticItem, created);
+    }
+    if (created && created.enrichment_status === 'pending') {
+      delete row.enrichment_status;
+      scheduleEnrichmentRefresh(row);
     }
   } catch (err) {
     list.items = list.items.filter((it) => it !== optimisticItem);
@@ -567,6 +582,40 @@ async function createQuickShopItem({ title, quantity, aisle, aisleHint, barcode,
   return outcome;
 }
 
+// A product typed by hand that the server is looking up in Open Food Facts'
+// text search (enrichment_status "pending", internal/handlers/
+// product_enrichment.go — its aisle when neither the House catalog nor the
+// keyword guess knew it, its Nutri-Score for a user who shows the scores):
+// the item is read again a little later, at most twice (the search takes
+// 2 to 15 s), and only the fields the search fills — aisle, nutri_score,
+// image_url — are taken, where the row still has none, so nothing typed
+// meanwhile is lost. Never blocks anything: the row is already on screen.
+const ENRICHMENT_REFRESH_DELAYS = [5000, 12000];
+function scheduleEnrichmentRefresh(item, attempt = 0) {
+  if (attempt >= ENRICHMENT_REFRESH_DELAYS.length) return;
+  setTimeout(async () => {
+    const onScreen = () => typeof item.id === 'number' && state.currentList && (state.currentList.items || []).includes(item);
+    if (!onScreen()) return;
+    let fresh;
+    try {
+      fresh = await apiRequest(`/items/${item.id}`);
+    } catch {
+      return; // best effort: deleted meanwhile, or offline
+    }
+    if (!onScreen() || !fresh) return;
+    let changed = false;
+    for (const field of ['aisle', 'nutri_score', 'image_url']) {
+      if (fresh[field] && !item[field]) {
+        item[field] = fresh[field];
+        changed = true;
+      }
+    }
+    if (changed) renderItems();
+    // nutritionScoresEnabledAnywhere is defined in nutrition.js.
+    if (!item.aisle || (nutritionScoresEnabledAnywhere() && !item.nutri_score)) scheduleEnrichmentRefresh(item, attempt + 1);
+  }, ENRICHMENT_REFRESH_DELAYS[attempt]);
+}
+
 // ---------------------------------------------------------------------------
 // The quick-add field: submit, autocomplete, scanned barcode
 // ---------------------------------------------------------------------------
@@ -576,7 +625,7 @@ async function createQuickShopItem({ title, quantity, aisle, aisleHint, barcode,
 function takePendingScan() {
   const pending = quickShop.pendingScan;
   clearPendingScan();
-  return pending || { barcode: '', aisleHint: '' };
+  return pending || { barcode: '', aisleHint: '', nutrition: null };
 }
 
 function clearPendingScan() {
@@ -584,8 +633,8 @@ function clearPendingScan() {
   quickShopEls.scanChip.hidden = true;
 }
 
-function prefillFromScan(barcode, name, aisleHint) {
-  quickShop.pendingScan = { barcode, aisleHint: aisleHint || '' };
+function prefillFromScan(barcode, name, aisleHint, nutrition = null) {
+  quickShop.pendingScan = { barcode, aisleHint: aisleHint || '', nutrition };
   quickShopEls.scanChipLabel.textContent = t('scanner.pendingChip', { code: barcode });
   quickShopEls.scanChip.hidden = false;
   listEls.itemTitle.value = name || '';
@@ -730,7 +779,7 @@ function pickAutocompleteOption(index) {
   listEls.createItemForm.reset();
   listEls.itemQuantity.value = '1';
   listEls.itemTitle.focus();
-  addQuickShopItem({ title: option.name, quantity, urgent, aisle, aisleHint: option.aisle || scan.aisleHint, barcode: scan.barcode })
+  addQuickShopItem({ title: option.name, quantity, urgent, aisle, aisleHint: option.aisle || scan.aisleHint, barcode: scan.barcode, nutrition: scan.nutrition })
     .then(() => refreshPendingBadge());
 }
 
@@ -928,13 +977,13 @@ async function scanAndAdd() {
   }
   if (state.currentList !== list) return;
   if (found && found.source === 'house') {
-    const outcome = await addQuickShopItem({ title: found.name, aisleHint: found.aisle || '', barcode: code });
+    const outcome = await addQuickShopItem({ title: found.name, aisleHint: found.aisle || '', barcode: code, nutrition: nutritionFromLookup(found) });
     if (outcome === 'created') TrakkaToast.success(t('quickShop.added', { name: found.name }));
     await refreshPendingBadge();
     return;
   }
   if (found) {
-    prefillFromScan(code, found.name, found.aisle);
+    prefillFromScan(code, found.name, found.aisle, nutritionFromLookup(found));
     TrakkaToast.success(t('scanner.foundExternal'), 4000);
     return;
   }

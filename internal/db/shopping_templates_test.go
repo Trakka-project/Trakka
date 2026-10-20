@@ -11,7 +11,8 @@ import (
 
 // undoMigrationsSince32 drops what migrations 32 to 36 added (33's column
 // goes with 32's shopping_template_items table), for the tests that rewind
-// user_version below them and replay every later migration.
+// user_version below them and replay every later migration — after
+// undoMigration39, which they call first.
 func undoMigrationsSince32(t *testing.T, conn *sql.DB) {
 	t.Helper()
 	for _, stmt := range []string{

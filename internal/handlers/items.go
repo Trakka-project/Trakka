@@ -170,6 +170,8 @@ func (app *Application) handleItemsCreate(w http.ResponseWriter, r *http.Request
 		Aisle                 string   `json:"aisle"`
 		AisleHint             string   `json:"aisle_hint"`
 		Barcode               string   `json:"barcode"`
+		NutriScore            string   `json:"nutri_score"`
+		YukaScore             *int     `json:"yuka_score"`
 		PurchaseStatus        string   `json:"purchase_status"`
 		AssigneeIDs           []int64  `json:"assignee_ids"`
 	}
@@ -268,6 +270,11 @@ func (app *Application) handleItemsCreate(w http.ResponseWriter, r *http.Request
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
+	cleanScores, err := cleanNutritionScores(in.NutriScore, in.YukaScore)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
 	// A new item is planned or to buy (the default); "bought" is reached by
 	// checking it off, which is what runs the check-off side effects.
 	createPlanned := false
@@ -318,15 +325,20 @@ func (app *Application) handleItemsCreate(w http.ResponseWriter, r *http.Request
 		// true, its other fields (labels, reminder, url...) left as they
 		// were, since the request didn't create anything.
 		aisle := app.resolveItemAisle(r.Context(), list, in.Title, cleanAisle, cleanAisleHint)
+		scores := app.resolveItemNutrition(r.Context(), list, in.Title, cleanScores)
 		var merged bool
 		item, merged, err = app.addToQuickShoppingList(r.Context(), list, in.Title, in.Quantity, aisle, cleanAisle != "", in.IsUrgent, create)
+		if err == nil {
+			item, err = app.fillItemNutrition(r.Context(), item, scores)
+		}
 		if err != nil {
 			app.serverError(w, r, err)
 			return
 		}
-		app.recordProductAdded(r.Context(), list, item, cleanAisle != "", cleanBarcode)
+		app.recordProductAdded(r.Context(), list, item, cleanAisle != "", cleanBarcode, cleanScores)
 		if merged {
 			item.Merged = true
+			item.EnrichmentStatus = app.maybeEnrichProduct(r.Context(), list, item, cleanBarcode, userFromContext(r))
 			app.notifyListChange(list, userFromContext(r), item.Title, itemAdded)
 			writeJSON(w, http.StatusOK, item)
 			return
@@ -335,6 +347,9 @@ func (app *Application) handleItemsCreate(w http.ResponseWriter, r *http.Request
 		item, err = create()
 		if err == nil && cleanAisle != "" {
 			item, err = app.DB.SetItemAisle(r.Context(), item.ID, &cleanAisle)
+		}
+		if err == nil {
+			item, err = app.saveItemNutrition(r.Context(), item, cleanScores)
 		}
 		if err != nil {
 			app.serverError(w, r, err)
@@ -406,6 +421,11 @@ func (app *Application) handleItemsCreate(w http.ResponseWriter, r *http.Request
 		// notification (see scrapeProductInfo), this just carries the
 		// toast signal through to this specific response.
 		item.PriceAlertTriggered = true
+	}
+	// Last, once every other write is done: the search runs in the
+	// background and only fills the gaps it finds (see maybeEnrichProduct).
+	if isQuickShoppingList(list) {
+		item.EnrichmentStatus = app.maybeEnrichProduct(r.Context(), list, item, cleanBarcode, userFromContext(r))
 	}
 	app.notifyListChange(list, userFromContext(r), item.Title, itemAdded)
 	writeJSON(w, http.StatusCreated, item)
@@ -491,6 +511,10 @@ func (app *Application) handleItemsUpdate(w http.ResponseWriter, r *http.Request
 		Aisle                 string   `json:"aisle"`
 		PurchaseStatus        string   `json:"purchase_status"`
 		ActualPrice           *float64 `json:"actual_price"`
+		// Left as they are when absent, unlike the other fields: see
+		// applyNutritionInput.
+		NutriScore *string         `json:"nutri_score"`
+		YukaScore  json.RawMessage `json:"yuka_score"`
 		// The one field a PUT leaves as is when absent: not everyone who
 		// may edit the item may set it (in SaaS mode, only House members —
 		// see assignees.go), and a list-share recipient's full replace of an
@@ -610,6 +634,11 @@ func (app *Application) handleItemsUpdate(w http.ResponseWriter, r *http.Request
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
+	scores, err := applyNutritionInput(itemNutrition(existing), in.NutriScore, in.YukaScore)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
 	// Last check before the first write, so a refused assignment leaves
 	// the item untouched.
 	if writeAssignees && !app.authorizeItemAssignees(w, r, existing, cleanAssignees) {
@@ -692,12 +721,20 @@ func (app *Application) handleItemsUpdate(w http.ResponseWriter, r *http.Request
 			return
 		}
 	}
+	nutritionChanged := !sameNutrition(scores, itemNutrition(existing))
+	if nutritionChanged {
+		item, err = app.saveItemNutrition(r.Context(), item, scores)
+		if err != nil {
+			app.serverError(w, r, err)
+			return
+		}
+	}
 	if writeAssignees {
 		if item = app.saveAssignees(w, r, item.ID, cleanAssignees); item == nil {
 			return
 		}
 	}
-	app.updateProductCatalog(r.Context(), item, aisleChanged, justCompleted)
+	app.updateProductCatalog(r.Context(), item, aisleChanged, nutritionChanged, justCompleted)
 	// Checked against the manually-supplied price only, before
 	// scrapeProductInfo runs — see the identical reasoning in
 	// handleItemsCreate for why a scraper-filled price is checked
@@ -753,6 +790,8 @@ func (app *Application) handleItemsPatch(w http.ResponseWriter, r *http.Request)
 		PurchaseStatus        *string         `json:"purchase_status"`
 		ActualPrice           json.RawMessage `json:"actual_price"`
 		AssigneeIDs           *[]int64        `json:"assignee_ids"`
+		NutriScore            *string         `json:"nutri_score"`
+		YukaScore             json.RawMessage `json:"yuka_score"`
 	}
 	if !decodeJSON(w, r, &in) {
 		return
@@ -1071,6 +1110,14 @@ func (app *Application) handleItemsPatch(w http.ResponseWriter, r *http.Request)
 		item.Aisle = nullableString(cleanAisle)
 	}
 
+	// Absent leaves a score as it is, nutri_score "" / yuka_score null
+	// clears it (see applyNutritionInput).
+	scores, err := applyNutritionInput(itemNutrition(item), in.NutriScore, in.YukaScore)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
 	// Same absent/present convention as labels: absent leaves the assignees
 	// as they are, a present array (even empty) replaces them. Authorized
 	// here, after every other field is validated and before the first
@@ -1154,12 +1201,20 @@ func (app *Application) handleItemsPatch(w http.ResponseWriter, r *http.Request)
 			return
 		}
 	}
+	nutritionChanged := !sameNutrition(scores, itemNutrition(&before))
+	if nutritionChanged {
+		updated, err = app.saveItemNutrition(r.Context(), updated, scores)
+		if err != nil {
+			app.serverError(w, r, err)
+			return
+		}
+	}
 	if writeAssignees {
 		if updated = app.saveAssignees(w, r, updated.ID, cleanAssignees); updated == nil {
 			return
 		}
 	}
-	app.updateProductCatalog(r.Context(), updated, aisleChanged, justCompleted)
+	app.updateProductCatalog(r.Context(), updated, aisleChanged, nutritionChanged, justCompleted)
 	// Checked against the manually-supplied price only, before
 	// scrapeProductInfo runs — see the identical reasoning in
 	// handleItemsCreate for why a scraper-filled price is checked

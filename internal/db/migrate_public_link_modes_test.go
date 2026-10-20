@@ -47,6 +47,7 @@ func publicLinksDraftFixture(t *testing.T, createOld, insertOld string, rows [][
 			t.Fatalf("inserting a migration 36 row: %v", err)
 		}
 	}
+	undoMigration39(t, d.conn)
 	if _, err := d.conn.Exec(`PRAGMA user_version = 36`); err != nil {
 		t.Fatal(err)
 	}

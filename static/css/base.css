@@ -1224,3 +1224,78 @@ html > body.overflow-hidden {
     animation: none;
   }
 }
+
+/* Nutrition scores before an item's title (static/js/nutrition.js's
+   buildNutritionBadge). A fixed 24px-high block that never shrinks: the
+   row centres it vertically like the 44px checkbox and kebab, and a long
+   title elides instead of squeezing it. The Nutri-Score is a neutral
+   rendition of the A-E scale, not the official logo; each letter's colour is
+   picked for ≥ 4.5:1 on its grade (measured: A 4.98, B 7.62, C 11.46,
+   D 6.48, E 4.89 — E darkened from the logo's #e63e11, 4.15 with white).
+   The inset ring keeps the light grades (C on a white card) distinct from
+   the card itself. */
+.nutrition-badges {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+.nutri-score-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.5rem;
+  height: 1.5rem;
+  border-radius: 0.375rem;
+  box-shadow: inset 0 0 0 1px rgb(0 0 0 / 0.12);
+  font-size: 0.875rem;
+  font-weight: 800;
+  line-height: 1;
+}
+
+.nutri-score-badge--a { background-color: #038141; color: #ffffff; }
+.nutri-score-badge--b { background-color: #85bb2f; color: #1c1917; }
+.nutri-score-badge--c { background-color: #fecb02; color: #1c1917; }
+.nutri-score-badge--d { background-color: #ee8100; color: #1c1917; }
+.nutri-score-badge--e { background-color: #d03a10; color: #ffffff; }
+
+/* The Yuka score: a dot in Yuka's band colour (decorative, aria-hidden)
+   and the number in slate on a slate pill (measured 8.4:1 light, 9.2:1 dark). */
+.yuka-score-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  height: 1.5rem;
+  padding: 0 0.375rem;
+  border-radius: 9999px;
+  background-color: rgb(226 232 240 / 0.8);
+  color: #334155;
+  font-size: 0.75rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .yuka-score-badge {
+    background-color: rgb(51 65 85 / 0.8);
+    color: #e2e8f0;
+  }
+}
+
+:root[data-theme="dark"] .yuka-score-badge {
+  background-color: rgb(51 65 85 / 0.8);
+  color: #e2e8f0;
+}
+
+.yuka-score-badge__dot {
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: 9999px;
+}
+
+.yuka-score-badge__dot--excellent { background-color: #038141; }
+.yuka-score-badge__dot--good { background-color: #85bb2f; }
+.yuka-score-badge__dot--mediocre { background-color: #ee8100; }
+.yuka-score-badge__dot--poor { background-color: #d03a10; }
