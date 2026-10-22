@@ -10,9 +10,11 @@
     "test:budget-templates": "node test-budget-templates.js",
     "test:assignees": "node test-assignees.js",
     "test:price-alert-links": "node test-price-alert-links.js",
-    "test:nutrition-scores": "node test-nutrition-scores.js"
+    "test:nutrition-scores": "node test-nutrition-scores.js",
+    "test:qr-encoder": "node test-qr-encoder.js"
   },
   "devDependencies": {
+    "jsqr": "1.4.0",
     "playwright": "1.62.1"
   }
 }

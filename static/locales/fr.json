@@ -835,6 +835,11 @@
       "androidAppHint": "L'application Android est connectée à ce serveur Trakka.",
       "androidAppVersion": "Application Android {version}",
       "androidAppChangeServer": "Changer de serveur",
+      "qrLogin": {
+        "title": "Application mobile",
+        "hint": "Connectez l'application Android Trakka à votre compte sans saisir de mot de passe : scannez un QR code avec votre téléphone.",
+        "open": "Connecter l'application mobile via QR Code"
+      },
       "calendarFeed": {
         "title": "Export de calendrier (CalDAV / WebCAL)",
         "hint": "Abonnez-vous à vos tâches avec échéance depuis Nextcloud, Google Agenda, Apple Calendrier ou Thunderbird. Votre agenda se met à jour tout seul.",
@@ -911,6 +916,18 @@
         "step3": "Sélectionnez « Installer l'application » ou « Ajouter à l'écran d'accueil ».",
         "step4": "Confirmez l'installation."
       }
+    },
+    "qrLogin": {
+      "title": "Connecter l'application mobile",
+      "intro": "Dans l'application Android Trakka, touchez « Se connecter avec un QR code » (ou « Scanner un QR code »), puis visez ce code.",
+      "codeLabel": "QR code de connexion de l'application mobile",
+      "loading": "Génération du QR code…",
+      "expiresIn": "Ce code expire dans {time}",
+      "expired": "Ce code a expiré : générez-en un nouveau.",
+      "expiredOverlay": "Ce code a expiré",
+      "warning": "Ne montrez ce code à personne d'autre : il ouvre une session sur votre compte. Il ne sert qu'une fois.",
+      "regenerate": "Générer un nouveau QR code",
+      "networkRequired": "Cette action nécessite une connexion réseau."
     },
     "userSearch": {
       "suggestionsLabel": "Suggestions de personnes"

@@ -24,6 +24,7 @@ This page covers what the app does, building it, and installing it, including on
 | File downloads | No: the WebView ignores them. The admin console's "Télécharger la clé" (backups) has to be done from a browser |
 | Barcode scanning on a "Courses" list (📷) | Yes, with the app's own scanner (`TrakkaApp.scanBarcode`: CameraX + ZXing, on the phone, no Google services): EAN-13, EAN-8, UPC-A, UPC-E. Needs an app built from this version: an older one says it needs updating and offers typing the digits (it can't fall back on the browser camera, which the app refuses to pages) |
 | Camera, microphone, location for web pages | Never: the app refuses them; the camera is only for its own scanner (server QR codes, product barcodes), which hands pages a code's digits, never the camera |
+| Signing in with a QR code | Yes: scan the code shown by Trakka in a browser, see [Signing in with a QR code](#signing-in-with-a-qr-code). Needs an app and a server built from this version |
 | SSO (OIDC) with passkeys or security keys | Yes, through the browser: see [SSO](#sso-oidc-passkeys-and-security-keys). Needs a Trakka server at least as recent as the app |
 | WebAuthn on an authentication proxy's portal | No: the portal shows in the app's WebView, where WebAuthn is unavailable. See [SSO](#sso-oidc-passkeys-and-security-keys) |
 
@@ -184,7 +185,17 @@ Any QR code containing the server's address works, for instance printed for the 
 qrencode -t ansiutf8 'https://trakka.example.com'
 ```
 
-or any QR code generator. The app reads the address only, so a code containing the address of any Trakka page works too.
+or any QR code generator. The app reads the address only, so a code containing the address of any Trakka page works too. (A sign-in QR code, below, also carries a code the app reads.)
+
+### Signing in with a QR code
+
+In Trakka, in a browser where you are signed in (a computer, typically): **Paramètres → Intégrations → « Connecter l'application mobile via QR Code »**. The modal shows a QR code valid for 3 minutes, with a countdown and a button for a new one. In the app, tap **« Se connecter avec un QR code »** on its sign-in screen, or **« Scanner un QR code »** on its connect screen: the app opens that server and is signed in to the same account.
+
+The QR code holds `https://<server>/#trakka-qr-login=<code>`. The app (`android/www/connect.js`) keeps the code out of the address field and hands it to `TrakkaApp.connect({url, qrLoginCode})`; once the server is opened, `MainActivity` posts it from the WebView to `/auth/qr-code/login`, so the session cookie lands in the WebView like any sign-in. A code works once and is refused (`401`) when expired or already used: the app then shows its sign-in screen with « Ce QR code de connexion a expiré ou a déjà servi ». Endpoints: [API.md](API.md#signing-the-android-app-in-by-qr-code).
+
+An app older than this version reads such a code as a plain server address: it opens the server and asks you to sign in as usual. A phone's camera app opens the PWA's address in the browser, without sending the code to the server (it is in the URL's fragment) and without signing in.
+
+Anyone who scans the code within those 3 minutes gets a session on your account: show it to no one else.
 
 ### A server with a private certificate authority
 

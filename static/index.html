@@ -1811,6 +1811,20 @@
           </div>
 
           <div id="user-settings-panel-integrations" role="tabpanel" aria-labelledby="user-settings-tab-integrations" hidden class="space-y-4">
+            <!-- "Application mobile": signs the Android app in by QR code (qr-login.js,
+                 internal/handlers/qr_login.go). Hidden inside the app itself. -->
+            <section id="qr-login-section" aria-labelledby="qr-login-title" class="space-y-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-4 py-3">
+              <div>
+                <h3 id="qr-login-title" class="flex items-center gap-2 text-sm font-semibold text-slate-700 dark:text-slate-200">
+                  <span aria-hidden="true">📱</span>
+                  <span data-i18n="modals.userSettings.qrLogin.title">Application mobile</span>
+                </h3>
+                <p class="mt-0.5 text-xs font-normal text-slate-500 dark:text-slate-400" data-i18n="modals.userSettings.qrLogin.hint">Connectez l'application Android Trakka à votre compte sans saisir de mot de passe : scannez un QR code avec votre téléphone.</p>
+              </div>
+              <button type="button" id="qr-login-open-button" data-i18n="modals.userSettings.qrLogin.open"
+                      class="min-h-[44px] w-full rounded-xl bg-sky-500 px-4 py-2.5 text-sm font-semibold text-white hover:bg-sky-400">Connecter l'application mobile via QR Code</button>
+            </section>
+
             <!-- "Export de calendrier": the personal iCalendar feed link (calendar-feed.js,
                  internal/handlers/calendar_feed.go). Outside the form: its buttons act at once. -->
             <section aria-labelledby="calendar-feed-title" class="space-y-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-4 py-3">
@@ -2063,6 +2077,44 @@
           <span class="pt-1.5 text-sm text-slate-700 dark:text-slate-200" data-i18n="modals.installHelp.android.step4">Confirmez l'installation.</span>
         </li>
       </ol>
+    </div>
+  </div>
+
+  <!-- "Connecter l'application mobile": a single-use sign-in QR code for the Android app, opened
+       from the settings' Intégrations tab, on top of them (qr-login.js, qrcode.js). -->
+  <div id="qr-login-modal" hidden class="fixed inset-0 z-50 flex items-end justify-center bg-slate-950/30 dark:bg-slate-950/70 p-0 sm:items-center sm:p-4">
+    <div role="dialog" aria-modal="true" aria-labelledby="qr-login-modal-title" class="max-h-[90vh] w-full max-w-md overflow-y-auto rounded-t-2xl bg-slate-100 dark:bg-slate-800 p-5 shadow-xl sm:rounded-2xl">
+      <div class="mb-4 flex items-center justify-between">
+        <h2 id="qr-login-modal-title" data-i18n="modals.qrLogin.title" class="text-lg font-semibold">Connecter l'application mobile</h2>
+        <button type="button" id="close-qr-login-modal-button" data-i18n-aria-label="modals.close" aria-label="Fermer"
+                class="flex h-9 w-9 items-center justify-center rounded-lg text-slate-500 dark:text-slate-400 hover:bg-slate-300 dark:hover:bg-slate-700 hover:text-slate-900 dark:hover:text-slate-200">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" class="h-5 w-5" aria-hidden="true"><path d="M18 6L6 18M6 6l12 12"/></svg>
+        </button>
+      </div>
+
+      <p data-i18n="modals.qrLogin.intro" class="mb-4 text-sm text-slate-600 dark:text-slate-300">Dans l'application Android Trakka, touchez « Se connecter avec un QR code » (ou « Scanner un QR code »), puis visez ce code.</p>
+
+      <!-- Always dark on white, in both themes: the SVG carries its own quiet zone. -->
+      <div class="flex justify-center">
+        <div class="relative aspect-square w-full max-w-[16rem] overflow-hidden rounded-xl bg-white shadow-sm ring-1 ring-slate-200 dark:ring-slate-700">
+          <div id="qr-login-code" class="h-full w-full"></div>
+          <div id="qr-login-expired" hidden class="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-white p-4 text-center">
+            <span aria-hidden="true" class="text-3xl">⏱️</span>
+            <p class="text-sm font-medium text-slate-700" data-i18n="modals.qrLogin.expiredOverlay">Ce code a expiré</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- The countdown updates every second: not announced (aria-live off); the status line
+           below says when the code expires. -->
+      <p id="qr-login-countdown" role="timer" aria-live="off" class="mt-3 text-center text-sm font-medium tabular-nums text-slate-700 dark:text-slate-200"></p>
+      <p id="qr-login-status" role="status" class="sr-only"></p>
+
+      <p class="mt-4 rounded-lg border border-amber-300 dark:border-amber-700 bg-amber-50 dark:bg-amber-950/30 p-3 text-xs font-medium text-amber-800 dark:text-amber-300" data-i18n="modals.qrLogin.warning">Ne montrez ce code à personne d'autre : il ouvre une session sur votre compte. Il ne sert qu'une fois.</p>
+      <p id="qr-login-error" hidden class="mt-3 text-xs text-rose-600 dark:text-rose-400" role="alert"></p>
+
+      <button type="button" id="qr-login-regenerate-button" data-i18n="modals.qrLogin.regenerate"
+              class="mt-4 min-h-[44px] w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-4 py-2.5 text-sm font-semibold text-slate-700 dark:text-slate-200 hover:bg-slate-200 dark:hover:bg-slate-800 disabled:opacity-60">Générer un nouveau QR code</button>
     </div>
   </div>
 
@@ -3047,6 +3099,8 @@
   <script src="/js/local-reminders.js" defer></script>
   <script src="/js/calendar-feed.js" defer></script>
   <script src="/js/api-tokens.js" defer></script>
+  <script src="/js/qrcode.js" defer></script>
+  <script src="/js/qr-login.js" defer></script>
   <script src="/js/install-help.js" defer></script>
   <script src="/js/admin.js" defer></script>
 </body>

@@ -118,7 +118,7 @@ Calendar sync needs no extra service: each user subscribes their calendar app to
 
 ### Local (no container)
 
-Requires Go 1.27.2+.
+Requires Go 1.27.3+.
 
 ```bash
 go build -o trakka ./cmd/server
@@ -147,7 +147,7 @@ Browser / installed PWA ──► net/http (stdlib) ──► internal/handlers 
 | Database | [`modernc.org/sqlite`](https://pkg.go.dev/modernc.org/sqlite) | Pure-Go SQLite driver, so the binary stays static and portable; versioned migrations |
 | Logging | `log/slog` (stdlib) | Structured JSON logs with no dependency |
 | Frontend | Vanilla JavaScript + Tailwind CSS 3 (vendored Play runtime) | No framework and no build step; served straight from `static/` |
-| Container | `golang:1.27.2-alpine` build → distroless runtime | Minimal image, fixed non-root UID, read-only root filesystem |
+| Container | `golang:1.27.3-alpine` build → distroless runtime | Minimal image, fixed non-root UID, read-only root filesystem |
 
 ```
 cmd/server/          entry point: config, wiring, graceful shutdown

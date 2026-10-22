@@ -17,6 +17,7 @@ import com.getcapacitor.annotation.CapacitorPlugin;
 import java.util.Collections;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.regex.Pattern;
 
 /**
  * The app's own native API, which pages reach as {@code window.Capacitor.Plugins.TrakkaApp}: the
@@ -62,6 +63,9 @@ public class TrakkaAppPlugin extends Plugin {
           sync();
         })();
         """;
+
+    // A sign-in QR code's single-use code (static/js/qr-login.js): base64url, 43 characters.
+    private static final Pattern QR_SIGN_IN_CODE = Pattern.compile("[A-Za-z0-9_-]{20,128}");
 
     private final ExecutorService network = Executors.newSingleThreadExecutor();
     private ServerStore store;
@@ -220,16 +224,25 @@ public class TrakkaAppPlugin extends Plugin {
         }
     }
 
-    /** Makes the app open this server from now on. */
+    /**
+     * Makes the app open this server from now on. With {qrLoginCode}, from a sign-in QR code, the
+     * server is then asked to open a session with it (MainActivity#redeemQrSignIn).
+     */
     @PluginMethod
     public void connect(PluginCall call) {
         if (!onConnectScreen(call)) {
+            return;
+        }
+        String code = call.getString("qrLoginCode");
+        if (code != null && !QR_SIGN_IN_CODE.matcher(code).matches()) {
+            call.reject("Invalid sign-in code", "invalid");
             return;
         }
         String origin = normalizedUrl(call);
         if (origin != null) {
             MainActivity.pendingError = null;
             MainActivity.pendingSignIn = null;
+            MainActivity.pendingQrSignIn = code == null ? null : new MainActivity.QrSignIn(origin, code);
             store.connect(origin);
             call.resolve();
             activity().restart();

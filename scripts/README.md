@@ -6,7 +6,7 @@ Tooling for maintaining the repository. Nothing here is part of the shipped app,
 
 Regenerates the screenshots used in the root [README.md](../README.md), writing them to [`docs/assets/`](../docs/assets/).
 
-Requirements: Go 1.27.2+ and Node.js 20+.
+Requirements: Go 1.27.3+ and Node.js 20+.
 
 ```bash
 cd scripts
@@ -34,6 +34,16 @@ What it does:
 To capture from an instance that is already running, set `TRAKKA_URL` (for example `TRAKKA_URL=http://localhost:8080 npm run showcase`). That instance must be empty and have registration open, because the script creates the demo account and its data from scratch.
 
 The demo content lives in `demoLists()` in the script. When the UI changes (renamed buttons, new element IDs), update the selectors in `captureMobile()`.
+
+## `test-qr-encoder.js`
+
+Headless check of `static/js/qrcode.js`, the QR code encoder of Paramètres → Intégrations → "Connecter l'application mobile via QR Code": it encodes the app's sign-in URL, UTF-8 text and texts of every length from version 1 to 40, and reads each symbol back with [jsQR](https://github.com/cozmo/jsQR), an independent decoder (a devDependency of this directory only, never shipped). No browser needed.
+
+```bash
+cd scripts
+npm install
+npm run test:qr-encoder   # prints ok/FAIL per check, exits 1 on any failure
+```
 
 ## `test-quick-shopping.js`
 

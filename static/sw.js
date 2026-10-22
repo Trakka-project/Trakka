@@ -8,8 +8,8 @@ importScripts('/js/db.js', '/js/recurrence.js');
 
 // Bump both on any change to APP_SHELL's contents so activate()
 // evicts the old cache instead of serving stale assets forever.
-const SHELL_CACHE = 'trakka-shell-v150';
-const RUNTIME_CACHE = 'trakka-runtime-v137';
+const SHELL_CACHE = 'trakka-shell-v151';
+const RUNTIME_CACHE = 'trakka-runtime-v138';
 const KNOWN_CACHES = [SHELL_CACHE, RUNTIME_CACHE];
 
 const APP_SHELL = [
@@ -50,6 +50,8 @@ const APP_SHELL = [
   '/js/local-reminders.js',
   '/js/calendar-feed.js',
   '/js/api-tokens.js',
+  '/js/qrcode.js',
+  '/js/qr-login.js',
   '/js/install-help.js',
   '/css/base.css',
   '/css/tokens.css',
@@ -303,6 +305,13 @@ self.addEventListener('fetch', (event) => {
   // is only ever shown in the live POST response, so creating one must never
   // be queued and replayed, nor revoking one deferred.
   if (url.pathname === API_PREFIX + '/api-tokens' || url.pathname.startsWith(API_PREFIX + '/api-tokens/')) {
+    return;
+  }
+
+  // QR codes signing the Android app in (qr-login.js) likewise: a code is
+  // only ever shown from the live POST response and expires in minutes, so
+  // asking for one must never be queued and replayed.
+  if (url.pathname.startsWith(API_PREFIX + '/auth/')) {
     return;
   }
 

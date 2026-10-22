@@ -2,7 +2,7 @@
 
 // The app's connect screen: enter or scan the address of a Trakka server, or pick a recent one.
 // It is also the app's sign-in screen (MainActivity shows it when the server asks to sign in):
-// the server's SSO in the phone's browser, its password form, or another server. Talks to the app's native TrakkaApp plugin
+// the server's SSO in the phone's browser, its password form, a sign-in QR code, or another server. Talks to the app's native TrakkaApp plugin
 // (native/app/src/main/java/io/github/trakka_project/app/TrakkaAppPlugin.java) through the bridge
 // Capacitor injects into this page. The DOM is only built with textContent, as in Trakka itself.
 
@@ -27,6 +27,7 @@ const STRINGS = {
     errorEmpty: "Saisissez l'adresse de votre serveur.",
     errorInvalid: "Cette adresse n'est pas valide.",
     errorQrInvalid: "Ce QR code ne contient pas d'adresse de serveur.",
+    errorQrNoSignIn: "Ce QR code ne contient pas de code de connexion. Dans Trakka, sur un ordinateur : Paramètres → Intégrations → « Connecter l'application mobile via QR Code ».",
     errorHttps: "L'application ne se connecte qu'en HTTPS : utilisez une adresse en https://.",
     errorUnknownHost: "Serveur introuvable : {host} n'existe pas, ou le téléphone n'a pas accès au réseau.",
     errorTls: "Le certificat HTTPS de {host} n'est pas reconnu par ce téléphone.",
@@ -44,6 +45,7 @@ const STRINGS = {
     signInLoading: 'Recherche des méthodes de connexion…',
     sso: 'Se connecter avec {provider}',
     passwordSignIn: 'Se connecter avec un e-mail et un mot de passe',
+    qrSignIn: 'Se connecter avec un QR code',
     openServerPage: 'Ouvrir la page de connexion du serveur',
     register: 'Créer un compte',
     changeServer: 'Changer de serveur',
@@ -56,6 +58,7 @@ const STRINGS = {
     signInError_oidc_failed: 'La connexion via le fournisseur externe a échoué.',
     signInError_oidc_unavailable: "Le fournisseur d'identité ne répond pas pour le moment. Réessayez dans quelques instants.",
     signInError_rate_limited: 'Trop de tentatives. Réessayez dans quelques minutes.',
+    signInError_qr_login_failed: 'Ce QR code de connexion a expiré ou a déjà servi : générez-en un nouveau dans Trakka.',
     signInError: 'La connexion a échoué ({code}).',
   },
   en: {
@@ -78,6 +81,7 @@ const STRINGS = {
     errorEmpty: "Enter your server's address.",
     errorInvalid: 'This address is not valid.',
     errorQrInvalid: 'This QR code does not contain a server address.',
+    errorQrNoSignIn: 'This QR code holds no sign-in code. In Trakka, on a computer: Settings → Integrations → “Connect the mobile app with a QR code”.',
     errorHttps: 'The app only connects over HTTPS: use an https:// address.',
     errorUnknownHost: 'Server not found: {host} does not exist, or the phone has no network access.',
     errorTls: 'This phone does not trust the HTTPS certificate of {host}.',
@@ -95,6 +99,7 @@ const STRINGS = {
     signInLoading: 'Looking up the sign-in methods…',
     sso: 'Sign in with {provider}',
     passwordSignIn: 'Sign in with an email and a password',
+    qrSignIn: 'Sign in with a QR code',
     openServerPage: "Open the server's sign-in page",
     register: 'Create an account',
     changeServer: 'Change server',
@@ -107,6 +112,7 @@ const STRINGS = {
     signInError_oidc_failed: 'Signing in with the external provider failed.',
     signInError_oidc_unavailable: 'The identity provider does not respond right now. Try again in a moment.',
     signInError_rate_limited: 'Too many attempts. Try again in a few minutes.',
+    signInError_qr_login_failed: 'This sign-in QR code has expired or was already used: generate a new one in Trakka.',
     signInError: 'Signing in failed ({code}).',
   },
 };
@@ -133,6 +139,27 @@ function t(key, params = {}) {
     text = text.replaceAll(`{${name}}`, String(value));
   }
   return text;
+}
+
+// A sign-in QR code from Trakka's settings (static/js/qr-login.js): the server's address, with a
+// single-use code in its fragment, "https://trakka.example.com/#trakka-qr-login=<code>". The
+// server redeems the code once the app has opened it (MainActivity, internal/handlers/qr_login.go).
+const QR_LOGIN_FRAGMENT = 'trakka-qr-login';
+const QR_LOGIN_CODE = /^[A-Za-z0-9_-]{20,128}$/;
+
+// {url, signInCode}: what a scanned QR code holds, signInCode null for a plain server address.
+function parseScan(text) {
+  const value = String(text || '').trim();
+  try {
+    const url = new URL(value);
+    const code = new URLSearchParams(url.hash.slice(1)).get(QR_LOGIN_FRAGMENT);
+    if (code && QR_LOGIN_CODE.test(code)) {
+      return { url: url.origin, signInCode: code };
+    }
+  } catch {
+    // Not a full URL: an address such as "trakka.example.com", which the app completes.
+  }
+  return { url: value, signInCode: null };
 }
 
 function hostOf(server) {
@@ -165,6 +192,7 @@ const els = {
   sso: document.getElementById('sso-button'),
   signInSeparator: document.getElementById('signin-separator'),
   password: document.getElementById('password-button'),
+  qrSignIn: document.getElementById('qr-signin-button'),
   serverPage: document.getElementById('server-page-button'),
   signInRetry: document.getElementById('signin-retry-button'),
   register: document.getElementById('register-button'),
@@ -172,8 +200,10 @@ const els = {
   backToSignIn: document.getElementById('back-to-signin-button'),
 };
 
-// A server that answers but is not recognizably Trakka, waiting for "Se connecter quand même".
+// A server that answers but is not recognizably Trakka, waiting for "Se connecter quand même",
+// with the sign-in code of the QR code it came from, if any.
 let unconfirmedServer = null;
+let unconfirmedSignInCode = null;
 // Set once the app is switching to a server: the page is about to go away.
 let leaving = false;
 // {server, error?} when the server asked to sign in: the screen then starts as a sign-in screen.
@@ -196,21 +226,23 @@ function reasonText(reason, params) {
   return t(REASON_KEYS[reason] || 'errorInvalid', params);
 }
 
-async function connect(server) {
+// signInCode, from a sign-in QR code, is redeemed by the server once the app has opened it.
+async function connect(server, { signInCode = null, show = showMessage } = {}) {
   leaving = true;
   setBusy(true, t('connecting'));
   try {
     // The app then restarts on that server.
-    await app.connect({ url: server });
+    await app.connect(signInCode ? { url: server, qrLoginCode: signInCode } : { url: server });
   } catch (err) {
     leaving = false;
     setBusy(false);
-    showMessage(reasonText(err.code, { host: hostOf(server) }), 'error');
+    show(reasonText(err.code, { host: hostOf(server) }), 'error');
   }
 }
 
-async function checkAndConnect(url, { scanned = false } = {}) {
+async function checkAndConnect(url, { scanned = false, signInCode = null } = {}) {
   unconfirmedServer = null;
+  unconfirmedSignInCode = null;
   els.connectAnyway.hidden = true;
   showMessage('');
   setBusy(true, t('checking'));
@@ -219,9 +251,10 @@ async function checkAndConnect(url, { scanned = false } = {}) {
     if (!result.reachable) {
       showMessage(reasonText(result.reason, { host: hostOf(result.server) }), 'error');
     } else if (result.trakka) {
-      await connect(result.server);
+      await connect(result.server, { signInCode });
     } else {
       unconfirmedServer = result.server;
+      unconfirmedSignInCode = signInCode;
       showMessage(
         result.redirectHost
           ? t('notTrakkaRedirect', { host: result.redirectHost })
@@ -299,6 +332,25 @@ async function loadSignInMethods() {
     }
   }
   showSignInMessage(notices.join(' '), notices.length ? 'error' : '');
+}
+
+// "Se connecter avec un QR code" on the sign-in screen: only a sign-in QR code makes sense there.
+async function signInWithQrCode() {
+  let scan;
+  try {
+    scan = parseScan((await app.scanQrCode()).text);
+  } catch (err) {
+    if (err.code === 'camera_denied') {
+      showSignInMessage(t('cameraDenied'), 'error');
+    }
+    return;
+  }
+  if (!scan.signInCode) {
+    showSignInMessage(t('errorQrNoSignIn'), 'error');
+    return;
+  }
+  // Usually this server's code; another server's opens that server instead.
+  await connect(scan.url, { signInCode: scan.signInCode, show: showSignInMessage });
 }
 
 async function signInWithSso() {
@@ -414,14 +466,15 @@ if (!app) {
   });
   els.connectAnyway.addEventListener('click', () => {
     if (unconfirmedServer) {
-      connect(unconfirmedServer);
+      connect(unconfirmedServer, { signInCode: unconfirmedSignInCode });
     }
   });
   els.scan.addEventListener('click', async () => {
     try {
-      const { text } = await app.scanQrCode();
-      els.url.value = text.trim();
-      await checkAndConnect(els.url.value, { scanned: true });
+      const scan = parseScan((await app.scanQrCode()).text);
+      // The address only: the sign-in code stays out of the field.
+      els.url.value = scan.url;
+      await checkAndConnect(scan.url, { scanned: true, signInCode: scan.signInCode });
     } catch (err) {
       if (err.code === 'camera_denied') {
         showMessage(t('cameraDenied'), 'error');
@@ -432,6 +485,7 @@ if (!app) {
   els.cancel.addEventListener('click', () => app.reopenServer());
   els.sso.addEventListener('click', signInWithSso);
   els.password.addEventListener('click', () => openServerSignIn('password'));
+  els.qrSignIn.addEventListener('click', signInWithQrCode);
   els.serverPage.addEventListener('click', () => openServerSignIn('password'));
   els.register.addEventListener('click', () => openServerSignIn('register'));
   els.signInRetry.addEventListener('click', () => {

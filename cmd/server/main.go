@@ -228,6 +228,10 @@ func main() {
 	// the life of the instance (see db.DeleteExpiredSessions).
 	go runSessionCleanupLoop(priceScanCtx, database, logger)
 
+	// QR codes for signing the Android app in that expired unscanned are
+	// swept the same way (see handlers.Application.RunQRLoginCleanup).
+	go runQRLoginCleanupLoop(priceScanCtx, app, logger)
+
 	// The backup scheduler always runs, on the same detached context: it
 	// is a cheap once-a-minute settings read that does nothing until an
 	// admin switches automatic backups on from the console.
@@ -426,6 +430,28 @@ func runSessionCleanupLoop(ctx context.Context, database *db.DB, logger *slog.Lo
 			return
 		case <-ticker.C:
 			sweep()
+		}
+	}
+}
+
+// qrLoginCleanupInterval is how often expired QR sign-in codes are swept.
+// A code lives three minutes and a user holds one at most, so this only
+// keeps the in-memory store to the codes still waiting to be scanned.
+const qrLoginCleanupInterval = time.Minute
+
+// runQRLoginCleanupLoop periodically drops expired QR sign-in codes,
+// stopping once ctx is canceled during shutdown.
+func runQRLoginCleanupLoop(ctx context.Context, app *handlers.Application, logger *slog.Logger) {
+	ticker := time.NewTicker(qrLoginCleanupInterval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			if n := app.RunQRLoginCleanup(); n > 0 {
+				logger.Debug("cleaned up expired QR sign-in codes", "deleted", n)
+			}
 		}
 	}
 }
