@@ -63,6 +63,28 @@ The app starts this flow from its own native sign-in screen, shown instead of `G
 
 Another app registering the same URL scheme can receive the code but cannot redeem it without the verifier. `/auth/oidc/app-session` goes through the same cross-site write check (`Origin`/`Sec-Fetch-Site`) as every other `POST`, so a site cannot make a visitor's browser redeem a code and verifier it obtained for its own account.
 
+### Signing the Android app in by QR code
+
+Someone signed in to the PWA signs the Android app in without typing a password ([MOBILE_BUILD.md](MOBILE_BUILD.md#signing-in-with-a-qr-code)). Code: `internal/handlers/qr_login.go`.
+
+#### `POST /api/v1/auth/qr-code/generate`
+
+Session only: an [API token](#api-tokens) gets `403`. No body. `201`:
+
+```json
+{ "token": "<43 base64url characters>", "expires_at": "2026-10-22T10:03:00Z", "expires_in": 180 }
+```
+
+The token is 32 `crypto/rand` bytes, valid 3 minutes (`expires_in`, in seconds), single-use, kept in the server's memory as a SHA-256 hash only (a restart drops it). A user holds one at most: a new one cancels the previous one. The PWA shows it as a QR code of `<origin>/#trakka-qr-login=<token>` — in the fragment, which browsers never send to a server. Expired tokens are swept every minute.
+
+#### `POST /auth/qr-code/login`
+
+Form body (`application/x-www-form-urlencoded`) `token=<token>`, posted by the app's WebView. Outside `/api/v1/` on purpose: it opens the session every `/api/v1/` route requires.
+
+- Valid: `302` to `/` with the session cookie (`HttpOnly`, `SameSite=Lax`), like a password sign-in.
+- Unknown, expired, already used, or its account deleted: `401 {"error": "invalid, expired or already used QR code"}`. The token is consumed by the first attempt, valid or not.
+- `429` past the per-IP sign-in rate limit (the one `/auth/login` uses); `403` for a cross-site post (the `Origin`/`Sec-Fetch-Site` check every `POST` goes through), so a site cannot sign a visitor's browser into an account of its own (login CSRF).
+
 ### `GET /api/v1/me`
 
 Returns the authenticated user. `401 {"error": "authentication required"}` if the session cookie is missing, invalid, or expired (`401 {"error": "invalid API token"}` for an unknown or revoked [API token](#api-tokens)).

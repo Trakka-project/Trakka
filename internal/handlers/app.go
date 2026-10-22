@@ -105,6 +105,11 @@ type Application struct {
 	appHandoffsOnce sync.Once
 	appHandoffsVal  *appHandoffStore
 
+	// QR codes signing the Android app in (see qr_login.go), lazily built
+	// for the same reason.
+	qrLoginsOnce sync.Once
+	qrLoginsVal  *qrLoginStore
+
 	// Pending server-restart challenges (see admin_restart.go), lazily built
 	// for the same reason, and whether a restart is already under way.
 	restartChallengesOnce sync.Once
@@ -200,11 +205,15 @@ func (app *Application) Routes() http.Handler {
 	mux.HandleFunc("GET /auth/oidc/login", app.handleOIDCLogin)
 	mux.HandleFunc("GET /auth/oidc/callback", app.handleOIDCCallback)
 	mux.HandleFunc("POST /auth/oidc/app-session", app.handleOIDCAppSession)
+	// The Android app's half of signing in by QR code (qr_login.go): under
+	// /auth/ because it opens the session the /api/v1/ routes require.
+	mux.HandleFunc("POST /auth/qr-code/login", app.handleQRLoginRedeem)
 
 	apiMux := http.NewServeMux()
 	apiMux.HandleFunc("GET /api/v1/me", app.handleMe)
 	apiMux.HandleFunc("PATCH /api/v1/me", app.handleMeUpdate)
 	apiMux.HandleFunc("GET /api/v1/config", app.handleConfig)
+	apiMux.HandleFunc("POST /api/v1/auth/qr-code/generate", app.handleQRLoginGenerate)
 	apiMux.HandleFunc("GET /api/v1/users/search", app.handleUsersSearch)
 
 	apiMux.HandleFunc("GET /api/v1/houses", app.handleHousesIndex)

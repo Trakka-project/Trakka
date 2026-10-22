@@ -5,9 +5,9 @@
 # ---------------------------------------------------------------------------
 # NOTE on the Go version: keep this in lockstep with go.mod's `go` directive
 # and the modernc.org/sqlite version (see CLAUDE.md, "Go version pinning is
-# intentional and fragile"). go.mod currently declares `go 1.27.2`, so the
+# intentional and fragile"). go.mod currently declares `go 1.27.3`, so the
 # builder image cannot be downgraded below that — Go's own toolchain
-# resolution would refuse to build. 1.27.2-alpine is already the most recent
+# resolution would refuse to build. 1.27.3-alpine is already the most recent
 # compatible patch release; bump this (and go.mod, and the sqlite driver
 # version) together if a newer one ships.
 # ---------------------------------------------------------------------------
@@ -24,7 +24,7 @@
 # ---------------------------------------------------------------------------
 FROM scratch AS vendor
 
-FROM golang:1.27.2-alpine AS build
+FROM golang:1.27.3-alpine AS build
 
 # Module proxy used by `go mod download` below. On a network that blocks or
 # can't resolve proxy.golang.org, point it at a reachable mirror, e.g.

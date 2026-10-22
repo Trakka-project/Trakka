@@ -77,6 +77,16 @@ public class MainActivity extends BridgeActivity {
     @Nullable
     static volatile Uri pendingSignInReturn;
 
+    /**
+     * A sign-in QR code scanned on the connect screen (TrakkaAppPlugin#connect), for its server to
+     * redeem once opened. In memory only, like {@link #pendingSignIn}: the code expires in minutes.
+     */
+    @Nullable
+    static volatile QrSignIn pendingQrSignIn;
+
+    /** Where the server redeems a sign-in QR code (internal/handlers/qr_login.go). */
+    private static final String QR_SIGN_IN_PATH = "/auth/qr-code/login";
+
     private static final Pattern ERROR_CODE = Pattern.compile("[a-z_]{1,64}");
 
     // Past this, a slow server shows its own loading state rather than the splash screen.
@@ -146,6 +156,11 @@ public class MainActivity extends BridgeActivity {
             pendingSignInReturn = null;
             if (signInReturn != null) {
                 finishSignIn(signInReturn);
+            }
+            QrSignIn qrSignIn = pendingQrSignIn;
+            pendingQrSignIn = null;
+            if (qrSignIn != null && qrSignIn.server.equals(server)) {
+                redeemQrSignIn(qrSignIn);
             }
         }
         // Android may have stopped the app while an SSO sign-in went on in the browser.
@@ -248,6 +263,17 @@ public class MainActivity extends BridgeActivity {
         } else {
             webView.loadUrl(next.url);
         }
+    }
+
+    /**
+     * Opens a session with a sign-in QR code's code: a form POST from the WebView, as for an SSO
+     * sign-in, so the session cookie lands where Trakka's pages will use it. The server answers
+     * with a redirect to Trakka, or a 401 for a code expired or already used, which
+     * {@link TrakkaWebViewClient#onReceivedHttpError} turns into the sign-in screen.
+     */
+    private void redeemQrSignIn(QrSignIn qrSignIn) {
+        byte[] form = ("token=" + Uri.encode(qrSignIn.code)).getBytes(StandardCharsets.UTF_8);
+        bridge.getWebView().postUrl(server + QR_SIGN_IN_PATH, form);
     }
 
     /**
@@ -364,6 +390,18 @@ public class MainActivity extends BridgeActivity {
         }
     }
 
+    /** A sign-in QR code's code, and the server it is for. */
+    static final class QrSignIn {
+
+        final String server;
+        final String code;
+
+        QrSignIn(String server, String code) {
+            this.server = server;
+            this.code = code;
+        }
+    }
+
     /** The server whose sign-in page was asked for, and the error it came with, if any. */
     static final class SignInRequest {
 
@@ -428,9 +466,24 @@ public class MainActivity extends BridgeActivity {
         @Override
         public void onReceivedHttpError(WebView view, WebResourceRequest request, WebResourceResponse response) {
             super.onReceivedHttpError(view, request, response);
+            int status = response.getStatusCode();
+            // A sign-in QR code refused (expired, already used, or too many attempts): back to the
+            // sign-in screen, which says why.
+            if (
+                server != null &&
+                request.isForMainFrame() &&
+                sameOrigin(request.getUrl(), server) &&
+                QR_SIGN_IN_PATH.equals(request.getUrl().getPath()) &&
+                status < 500 &&
+                !restarting
+            ) {
+                pendingSignIn = new SignInRequest(server, status == 429 ? "rate_limited" : "qr_login_failed");
+                restart();
+                return;
+            }
             // A 5xx for Trakka's own page means it is down behind its proxy. Any other status is a
             // page to show (a 404 for a stale link, an authentication portal's 401...).
-            if (server != null && request.isForMainFrame() && response.getStatusCode() >= 500 && sameOrigin(request.getUrl(), server)) {
+            if (server != null && request.isForMainFrame() && status >= 500 && sameOrigin(request.getUrl(), server)) {
                 showLoadError(request.getUrl(), "http", response.getStatusCode());
             }
         }

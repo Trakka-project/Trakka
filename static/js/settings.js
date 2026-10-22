@@ -237,6 +237,8 @@ function openUserSettingsModal() {
   refreshCalendarFeedSection();
   // Same for api-tokens.js: the account's API tokens.
   refreshApiTokensSection();
+  // And qr-login.js: its section is hidden inside the Android app.
+  refreshQrLoginSection();
   userSettingsEls.modal.hidden = false;
   // setUserSettingsTab's own reset above ran while the modal was still
   // display:none, where scrollTop can't be set: redo it now it's shown.
@@ -363,12 +365,12 @@ userSettingsEls.modal.addEventListener('click', (event) => {
   if (event.target === userSettingsEls.modal) closeUserSettingsModal();
 });
 document.addEventListener('keydown', (event) => {
-  // install-help.js's and admin.js's modals can each open on top of this
-  // one (from buttons added to the form below) — when either is the one
-  // currently visible, let its own Escape handler close just that one
-  // instead of both at once (same pattern as app.js/spaces.js's new-list/
-  // category modal pair).
-  if (event.key === 'Escape' && !userSettingsEls.modal.hidden && installHelpEls.modal.hidden && adminConsoleEls.modal.hidden) {
+  // install-help.js's, admin.js's and qr-login.js's modals can each open on
+  // top of this one (from buttons added to the form below) — when one of
+  // them is the one currently visible, let its own Escape handler close
+  // just that one instead of both at once (same pattern as app.js/
+  // spaces.js's new-list/category modal pair).
+  if (event.key === 'Escape' && !userSettingsEls.modal.hidden && installHelpEls.modal.hidden && adminConsoleEls.modal.hidden && qrLoginEls.modal.hidden) {
     closeUserSettingsModal();
   }
 });
