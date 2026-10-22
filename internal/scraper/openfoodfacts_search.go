@@ -17,7 +17,7 @@ var openFoodFactsSearchBaseURL = "https://search.openfoodfacts.org"
 
 // openFoodFactsSearchFields is everything SearchProducts reads from each
 // result, which keeps the answer to a few kilobytes.
-const openFoodFactsSearchFields = "code,product_name,product_name_fr,product_name_en,brands,categories_tags,nutriscore_grade,image_front_small_url"
+const openFoodFactsSearchFields = "code,product_name,product_name_fr,product_name_en,brands,categories_tags,nutriscore_grade,nova_group,image_front_small_url"
 
 // openFoodFactsSearchPageSize is how many results SearchProducts asks for:
 // the caller picks the first relevant one, and checks a brand's results
@@ -37,6 +37,8 @@ type SearchProduct struct {
 	Categories []string
 	// NutriScore is "A" to "E", or "" when Open Food Facts has none.
 	NutriScore string
+	// NovaGroup is 1 to 4, or 0 when Open Food Facts has none.
+	NovaGroup int
 	// ImageURL is a small front picture of the product, "" when none. Not
 	// validated here: the caller passes it through internal/validate.URL.
 	ImageURL string
@@ -54,6 +56,7 @@ type openFoodFactsSearchHit struct {
 	Brands          json.RawMessage `json:"brands"`
 	CategoriesTags  []string        `json:"categories_tags"`
 	NutriscoreGrade string          `json:"nutriscore_grade"`
+	NovaGroup       json.RawMessage `json:"nova_group"`
 	ImageFrontSmall string          `json:"image_front_small_url"`
 }
 
@@ -153,6 +156,7 @@ func parseOpenFoodFactsSearch(body []byte, lang string) ([]SearchProduct, error)
 			Brands:     searchBrands(p.Brands),
 			Categories: p.CategoriesTags,
 			NutriScore: nutriScoreGrade(p.NutriscoreGrade),
+			NovaGroup:  novaGroup(p.NovaGroup),
 			ImageURL:   strings.TrimSpace(p.ImageFrontSmall),
 		})
 	}

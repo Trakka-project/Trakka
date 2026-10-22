@@ -17,14 +17,14 @@ import (
 // the comments of pickSearchMatch).
 var (
 	offWater = []scraper.SearchProduct{
-		{Barcode: "6111035000058", Name: "Eau minérale naturelle", Brands: "Sidi Ali", NutriScore: "A",
+		{Barcode: "6111035000058", Name: "Eau minérale naturelle", Brands: "Sidi Ali", NutriScore: "A", NovaGroup: 1,
 			Categories: []string{"en:beverages", "en:waters", "en:mineral-waters"}, ImageURL: "https://images.openfoodfacts.org/sidi.jpg"},
 		{Barcode: "3274080005003", Name: "isabelle", Brands: "Cristaline", NutriScore: "A", Categories: []string{"en:beverages", "en:waters"}},
 	}
 	offKerCadelac = []scraper.SearchProduct{
-		{Name: "Le Moelleux", Brands: "Ker Cadélac", NutriScore: "D", Categories: []string{"en:snacks", "en:sweet-snacks", "en:biscuits-and-cakes"}},
-		{Name: "Madeleines extra moelleuses nature", Brands: "Ker Cadélac", NutriScore: "D", Categories: []string{"en:biscuits-and-cakes"}},
-		{Name: "Cake Marbré", Brands: "Ker Cadélac", NutriScore: "E", Categories: []string{"en:biscuits-and-cakes"}},
+		{Name: "Le Moelleux", Brands: "Ker Cadélac", NutriScore: "D", NovaGroup: 4, Categories: []string{"en:snacks", "en:sweet-snacks", "en:biscuits-and-cakes"}},
+		{Name: "Madeleines extra moelleuses nature", Brands: "Ker Cadélac", NutriScore: "D", NovaGroup: 4, Categories: []string{"en:biscuits-and-cakes"}},
+		{Name: "Cake Marbré", Brands: "Ker Cadélac", NutriScore: "E", NovaGroup: 4, Categories: []string{"en:biscuits-and-cakes"}},
 	}
 )
 
@@ -42,14 +42,15 @@ func TestPickSearchMatch(t *testing.T) {
 		want    productEnrichment
 	}{
 		// A generic name: aisle and grade, but no picture of one brand's bottle.
-		{"Eau", offWater, productEnrichment{Aisle: catalog.AisleDrinks, NutriScore: "A"}},
-		// A brand: its aisle; its products disagree on the grade.
-		{"ker-cadelac", offKerCadelac, productEnrichment{Aisle: catalog.AisleBreakfast}},
+		{"Eau", offWater, productEnrichment{Aisle: catalog.AisleDrinks, NutriScore: "A", NovaGroup: 1, MatchedName: "Eau minérale naturelle"}},
+		// A brand: its aisle; its products disagree on the grade, but agree
+		// on the NOVA group.
+		{"ker-cadelac", offKerCadelac, productEnrichment{Aisle: catalog.AisleBreakfast, NovaGroup: 4}},
 		// A brand whose products agree.
 		{"Cristaline", cristaline, productEnrichment{Aisle: catalog.AisleDrinks, NutriScore: "A"}},
 		// A word starting a name's word matches; a close name gets the image.
-		{"madeleine", offKerCadelac, productEnrichment{Aisle: catalog.AisleBreakfast, NutriScore: "D"}},
-		{"nutella", nutella, productEnrichment{Aisle: catalog.AisleBreakfast, NutriScore: "E", ImageURL: "https://images.openfoodfacts.org/nutella.jpg"}},
+		{"madeleine", offKerCadelac, productEnrichment{Aisle: catalog.AisleBreakfast, NutriScore: "D", NovaGroup: 4, MatchedName: "Madeleines extra moelleuses nature"}},
+		{"nutella", nutella, productEnrichment{Aisle: catalog.AisleBreakfast, NutriScore: "E", ImageURL: "https://images.openfoodfacts.org/nutella.jpg", MatchedName: "Nutella"}},
 		// Nothing relevant: Open Food Facts' ranking alone isn't trusted.
 		{"Prince", offWater, productEnrichment{}},
 		{"eau", nil, productEnrichment{}},
@@ -157,11 +158,14 @@ func TestManualAddEauGetsDrinksAndNutriScore(t *testing.T) {
 	}
 	item := waitForItem(t, app, created.ID, func(it *models.Item) bool { return it.NutriScore != nil })
 	wantScores(t, item, "A", -1)
+	if item.NovaGroup == nil || *item.NovaGroup != 1 {
+		t.Fatalf("nova_group = %v, want 1 from the search", item.NovaGroup)
+	}
 	if stringValue(item.Aisle) != catalog.AisleDrinks || item.ImageURL != nil {
 		t.Fatalf("aisle %q, image %v: the search must not change a known aisle, nor picture one brand for a generic name", stringValue(item.Aisle), item.ImageURL)
 	}
 	product := waitForProduct(t, app, list.HouseID, "eau", func(p *models.Product) bool { return p.NutriScore != "" })
-	if product.NutriScore != "A" || product.Aisle != catalog.AisleDrinks {
+	if product.NutriScore != "A" || product.Aisle != catalog.AisleDrinks || product.NovaGroup == nil || *product.NovaGroup != 1 {
 		t.Fatalf("catalog product = %+v", product)
 	}
 
@@ -169,6 +173,9 @@ func TestManualAddEauGetsDrinksAndNutriScore(t *testing.T) {
 	other, _ := app.DB.CreateList(context.Background(), "Courses 2", "groceries", list.HouseID, nil, "")
 	again := decodeItemResponse(t, postItem(app, owner, itemBody(other.ID, `"title":"eau"`)))
 	wantScores(t, again, "A", -1)
+	if again.NovaGroup == nil || *again.NovaGroup != 1 {
+		t.Fatalf("inherited nova_group = %v, want 1", again.NovaGroup)
+	}
 	if again.EnrichmentStatus != "" || search.count() != 1 {
 		t.Fatalf("enrichment_status %q after %d searches: the catalog comes first", again.EnrichmentStatus, search.count())
 	}

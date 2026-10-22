@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"trakka/internal/catalog"
+	"trakka/internal/db"
 	"trakka/internal/models"
 	"trakka/internal/scraper"
 	"trakka/internal/validate"
@@ -19,9 +20,10 @@ import (
 // The order of trust, for the aisle: the household's catalog, then the
 // keyword dictionary (catalog.GuessAisle) — both already applied by
 // resolveItemAisle when the item is created —, and only then Open Food
-// Facts, when neither knew. For the Nutri-Score: the catalog
-// (resolveItemNutrition), then Open Food Facts, only for a user who shows
-// the scores. A search is made only when one of those is still missing.
+// Facts, when neither knew. For the Nutri-Score and the NOVA group: the
+// catalog (resolveItemNutrition), then Open Food Facts, only for a user who
+// shows the scores. A search is made only when one of those is still
+// missing.
 //
 // It never holds up the request: Open Food Facts' search answers in 2 to
 // 15 s and sheds load with 503s, so it runs in the background and the
@@ -47,11 +49,15 @@ const (
 )
 
 // productEnrichment is what a search found for a product name; "" for
-// what it didn't.
+// what it didn't. MatchedName is the name of the result it was read from,
+// when one matched by name (shown by the edit form's on-demand lookup,
+// never stored).
 type productEnrichment struct {
-	Aisle      string
-	NutriScore string
-	ImageURL   string
+	Aisle       string
+	NutriScore  string
+	NovaGroup   int
+	ImageURL    string
+	MatchedName string
 }
 
 type cachedProductSearch struct {
@@ -103,7 +109,8 @@ func (app *Application) searchProducts(ctx context.Context, terms, lang string) 
 // maybeEnrichProduct starts the background search for an item just added
 // to a Courses list when it's worth one — PRODUCT_LOOKUP_ENABLED, typed
 // rather than scanned (a scan already asked Open Food Facts), and still
-// missing its aisle, or its Nutri-Score for a user who shows the scores —
+// missing its aisle, or its Nutri-Score or NOVA group for a user who shows
+// the scores —
 // and returns the response's enrichment_status: "pending" when started,
 // "" otherwise.
 func (app *Application) maybeEnrichProduct(ctx context.Context, list *models.List, item *models.Item, barcode string, user *models.User) string {
@@ -111,9 +118,11 @@ func (app *Application) maybeEnrichProduct(ctx context.Context, list *models.Lis
 		return ""
 	}
 	needAisle := item.Aisle == nil
-	needNutri := item.NutriScore == nil && wantsNutritionScores(user)
+	wantScores := wantsNutritionScores(user)
+	needGrade := item.NutriScore == nil && wantScores
+	needNova := item.NovaGroup == nil && wantScores
 	key := catalog.Key(item.Title)
-	if (!needAisle && !needNutri) || key == "" {
+	if (!needAisle && !needGrade && !needNova) || key == "" {
 		return ""
 	}
 	app.resolveUserLanguage(user)
@@ -128,17 +137,21 @@ func (app *Application) maybeEnrichProduct(ctx context.Context, list *models.Lis
 		if !needAisle {
 			found.Aisle = ""
 		}
-		if !needNutri {
+		if !needGrade {
 			found.NutriScore = ""
 		}
-		if found == (productEnrichment{}) {
+		if !needNova {
+			found.NovaGroup = 0
+		}
+		if found.Aisle == "" && found.NutriScore == "" && found.NovaGroup == 0 && found.ImageURL == "" {
 			return
 		}
-		if err := app.DB.FillItemEnrichment(ctx, itemID, found.Aisle, found.NutriScore, found.ImageURL); err != nil {
+		fill := db.Enrichment{Aisle: found.Aisle, NutriScore: found.NutriScore, NovaGroup: novaGroupPtr(found.NovaGroup), ImageURL: found.ImageURL}
+		if err := app.DB.FillItemEnrichment(ctx, itemID, fill); err != nil {
 			app.Logger.Warn("saving product search enrichment", "item_id", itemID, "error", err)
 			return
 		}
-		if err := app.DB.FillProductEnrichment(ctx, houseID, key, found.Aisle, found.NutriScore); err != nil {
+		if err := app.DB.FillProductEnrichment(ctx, houseID, key, fill); err != nil {
 			app.Logger.Warn("saving product search enrichment to the catalog", "house_id", houseID, "error", err)
 		}
 	}()
@@ -176,10 +189,11 @@ func (app *Application) productSearch(ctx context.Context, key, lang string) (pr
 // such result wins.
 //
 //   - Aisle: from that result's categories (catalog.AisleFromCategories).
-//   - Nutri-Score: that result's when its name matched. When only the
-//     brand did, the query names a brand, not a product, so a grade is
-//     taken only if every result of that brand that has one agrees (all
-//     Cristaline waters are A; Ker Cadélac's cakes are D or E: none).
+//   - Nutri-Score and NOVA group: that result's when its name matched. When
+//     only the brand did, the query names a brand, not a product, so each
+//     is taken only if every result of that brand that has one agrees, and
+//     at least two do (all Cristaline waters are A; Ker Cadélac's cakes are
+//     D or E: no grade).
 //   - Image: only for a name matching closely (query words at least half
 //     of the name's), since a picture of one particular product would
 //     mislead on a generic name ("Eau").
@@ -190,6 +204,7 @@ func pickSearchMatch(query string, results []scraper.SearchProduct) productEnric
 	}
 	var byName, byBrand *scraper.SearchProduct
 	var brandGrades []string
+	var brandNovas []int
 	for i := range results {
 		r := &results[i]
 		nameWords := strings.Fields(catalog.Key(r.Name))
@@ -203,6 +218,9 @@ func pickSearchMatch(query string, results []scraper.SearchProduct) productEnric
 			if r.NutriScore != "" {
 				brandGrades = append(brandGrades, r.NutriScore)
 			}
+			if r.NovaGroup != 0 {
+				brandNovas = append(brandNovas, r.NovaGroup)
+			}
 		}
 	}
 
@@ -211,6 +229,8 @@ func pickSearchMatch(query string, results []scraper.SearchProduct) productEnric
 	case byName != nil:
 		found.Aisle = catalog.AisleFromCategories(byName.Categories)
 		found.NutriScore = byName.NutriScore
+		found.NovaGroup = byName.NovaGroup
+		found.MatchedName = cleanExternalProductName(byName.Name)
 		if 2*len(words) >= len(strings.Fields(catalog.Key(byName.Name))) {
 			if clean, err := validate.URL(byName.ImageURL); err == nil {
 				found.ImageURL = clean
@@ -220,6 +240,9 @@ func pickSearchMatch(query string, results []scraper.SearchProduct) productEnric
 		found.Aisle = catalog.AisleFromCategories(byBrand.Categories)
 		if len(brandGrades) >= 2 && allSame(brandGrades) {
 			found.NutriScore = brandGrades[0]
+		}
+		if len(brandNovas) >= 2 && allSame(brandNovas) {
+			found.NovaGroup = brandNovas[0]
 		}
 	}
 	return found
@@ -242,7 +265,7 @@ func containsAllWords(have, want []string) bool {
 	return true
 }
 
-func allSame(values []string) bool {
+func allSame[T comparable](values []T) bool {
 	for _, v := range values[1:] {
 		if v != values[0] {
 			return false

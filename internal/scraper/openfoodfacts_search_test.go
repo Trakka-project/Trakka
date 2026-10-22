@@ -11,7 +11,7 @@ import (
 // search-a-licious answers {"hits": [...]}, brands as an array.
 const searchALiciousAnswer = `{"hits":[
 	{"code":"3274080005003","product_name":" Eau  de source ","brands":["Cristaline"],
-	 "categories_tags":["en:beverages","en:waters"],"nutriscore_grade":"a","image_front_small_url":"https://images.openfoodfacts.org/x.jpg"},
+	 "categories_tags":["en:beverages","en:waters"],"nutriscore_grade":"a","nova_group":1,"image_front_small_url":"https://images.openfoodfacts.org/x.jpg"},
 	{"code":"1","brands":["Sans nom"]},
 	{"code":"2","product_name":"Water","product_name_en":"Spring water","brands":["Volvic","Danone"],"nutriscore_grade":"unknown"}],
 	"page":1,"page_size":5,"count":3}`
@@ -19,7 +19,7 @@ const searchALiciousAnswer = `{"hits":[
 // The legacy /cgi/search.pl answers {"products": [...]}, brands as a string.
 const legacySearchAnswer = `{"count":1,"products":[
 	{"code":"3259421340012","product_name":"Madeleines","product_name_fr":"Madeleines extra moelleuses","brands":" Ker Cadélac ",
-	 "categories_tags":["en:biscuits-and-cakes"],"nutriscore_grade":"d"}]}`
+	 "categories_tags":["en:biscuits-and-cakes"],"nutriscore_grade":"d","nova_group":"4"}]}`
 
 func TestSearchProducts(t *testing.T) {
 	var gotPath, gotAgent string
@@ -41,11 +41,11 @@ func TestSearchProducts(t *testing.T) {
 	if len(results) != 2 {
 		t.Fatalf("got %d results, want 2: %+v", len(results), results)
 	}
-	if r := results[0]; r.Name != "Eau de source" || r.Brands != "Cristaline" || r.NutriScore != "A" || r.Barcode != "3274080005003" ||
+	if r := results[0]; r.Name != "Eau de source" || r.Brands != "Cristaline" || r.NutriScore != "A" || r.NovaGroup != 1 || r.Barcode != "3274080005003" ||
 		r.ImageURL != "https://images.openfoodfacts.org/x.jpg" || len(r.Categories) != 2 {
 		t.Fatalf("first result %+v", r)
 	}
-	if r := results[1]; r.NutriScore != "" || r.Name != "Water" || r.Brands != "Volvic, Danone" {
+	if r := results[1]; r.NutriScore != "" || r.NovaGroup != 0 || r.Name != "Water" || r.Brands != "Volvic, Danone" {
 		t.Fatalf("second result %+v", r)
 	}
 	// English prefers the English name.
@@ -75,7 +75,7 @@ func TestSearchProductsFallsBackToLegacySearch(t *testing.T) {
 	if err != nil || len(results) != 1 {
 		t.Fatalf("SearchProducts: %+v, %v", results, err)
 	}
-	if r := results[0]; r.Name != "Madeleines extra moelleuses" || r.Brands != "Ker Cadélac" || r.NutriScore != "D" {
+	if r := results[0]; r.Name != "Madeleines extra moelleuses" || r.Brands != "Ker Cadélac" || r.NutriScore != "D" || r.NovaGroup != 4 {
 		t.Fatalf("legacy result %+v", r)
 	}
 	if strings.Join(paths, ",") != "/search,/cgi/search.pl" {

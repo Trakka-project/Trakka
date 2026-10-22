@@ -1519,7 +1519,7 @@
               </span>
             </label>
 
-            <!-- "Scores nutritionnels": where the Nutri-Score/Yuka badge shows before a "Courses"
+            <!-- "Scores nutritionnels": where the Nutri-Score/NOVA badge shows before a "Courses"
                  item's title (users.nutrition_scores_mobile/_web, PATCH /api/v1/me, saved with the
                  form — settings.js; applied by nutrition.js). Both off by default. -->
             <section aria-labelledby="user-settings-nutrition-title" class="space-y-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-4 py-3">
@@ -1528,7 +1528,7 @@
                   <span aria-hidden="true">🥗</span>
                   <span data-i18n="modals.userSettings.nutritionTitle">Scores nutritionnels</span>
                 </h3>
-                <p class="mt-0.5 text-xs font-normal text-slate-500 dark:text-slate-400" data-i18n="modals.userSettings.nutritionHint">Affiche le Nutri-Score (et le score Yuka s'il est renseigné) devant le nom des articles de vos listes de courses. Le Nutri-Score vient d'Open Food Facts lors d'un scan.</p>
+                <p class="mt-0.5 text-xs font-normal text-slate-500 dark:text-slate-400" data-i18n="modals.userSettings.nutritionHint">Affiche le Nutri-Score et le groupe NOVA (degré de transformation) devant le nom des articles de vos listes de courses. Ils viennent d'Open Food Facts lors d'un scan ou d'un ajout par nom.</p>
               </div>
               <div role="group" aria-labelledby="user-settings-nutrition-title"
                    class="divide-y divide-slate-200 dark:divide-slate-700 rounded-xl border border-slate-200 dark:border-slate-700 px-3">
@@ -2393,26 +2393,108 @@
         </div>
 
         <!-- Nutrition scores (nutrition.js's fillEditItemNutrition): a "Courses" list, for a user
-             who shows the scores somewhere (Paramètres → Scores nutritionnels). -->
-        <div id="edit-item-nutrition" hidden class="grid grid-cols-2 gap-2">
-          <div>
-            <label for="edit-item-nutri-score" data-i18n="nutrition.nutriScoreField" class="mb-1 block text-sm font-medium text-slate-600 dark:text-slate-300">Nutri-Score</label>
-            <select id="edit-item-nutri-score"
-                    class="w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-4 py-3 text-base text-slate-900 dark:text-slate-100 focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500/30">
-              <option value="" data-i18n="nutrition.none">Aucun</option>
-              <option value="A">A</option>
-              <option value="B">B</option>
-              <option value="C">C</option>
-              <option value="D">D</option>
-              <option value="E">E</option>
-            </select>
+             who shows the scores somewhere (Paramètres → Scores nutritionnels). A collapsed
+             <details> whose summary carries the item's badges, so the form stays short; opened,
+             the A-E scale, the NOVA 1-4 scale, what each means with links to official
+             explanations, and — while either is unknown — an Open Food Facts lookup. -->
+        <details id="edit-item-nutrition" hidden class="nutrition-panel rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900">
+          <summary class="nutrition-panel__summary flex min-h-[44px] cursor-pointer select-none items-center gap-2 rounded-xl px-4 py-2.5 text-sm font-medium text-slate-600 dark:text-slate-300 hover:bg-slate-200/60 dark:hover:bg-slate-800">
+            <span aria-hidden="true">🥗</span>
+            <span class="min-w-0 flex-1 leading-snug" data-i18n="nutrition.panelTitle">Scores nutritionnels &amp; détails</span>
+            <span id="edit-item-nutrition-summary" class="inline-flex shrink-0 items-center gap-1"></span>
+            <svg class="nutrition-panel__chevron h-4 w-4 shrink-0 text-slate-500" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path fill-rule="evenodd" d="M5.23 7.21a.75.75 0 0 1 1.06.02L10 11.06l3.71-3.83a.75.75 0 1 1 1.08 1.04l-4.25 4.39a.75.75 0 0 1-1.08 0L5.21 8.27a.75.75 0 0 1 .02-1.06Z" clip-rule="evenodd"/></svg>
+          </summary>
+          <div class="nutrition-panel__body space-y-4 border-t border-slate-200 dark:border-slate-700 px-4 pb-4 pt-3">
+            <fieldset>
+              <legend data-i18n="nutrition.nutriScoreField" class="mb-2 block text-sm font-medium text-slate-600 dark:text-slate-300">Nutri-Score</legend>
+              <div class="nutri-score-scale">
+              <label class="nutri-score-option">
+                <input type="radio" name="edit-item-nutri-score" value="A" class="nutri-score-option__input">
+                <span class="nutri-score-option__tile nutri-score-badge--a" aria-hidden="true">A</span>
+                <span class="sr-only">Nutri-Score A</span>
+              </label>
+              <label class="nutri-score-option">
+                <input type="radio" name="edit-item-nutri-score" value="B" class="nutri-score-option__input">
+                <span class="nutri-score-option__tile nutri-score-badge--b" aria-hidden="true">B</span>
+                <span class="sr-only">Nutri-Score B</span>
+              </label>
+              <label class="nutri-score-option">
+                <input type="radio" name="edit-item-nutri-score" value="C" class="nutri-score-option__input">
+                <span class="nutri-score-option__tile nutri-score-badge--c" aria-hidden="true">C</span>
+                <span class="sr-only">Nutri-Score C</span>
+              </label>
+              <label class="nutri-score-option">
+                <input type="radio" name="edit-item-nutri-score" value="D" class="nutri-score-option__input">
+                <span class="nutri-score-option__tile nutri-score-badge--d" aria-hidden="true">D</span>
+                <span class="sr-only">Nutri-Score D</span>
+              </label>
+              <label class="nutri-score-option">
+                <input type="radio" name="edit-item-nutri-score" value="E" class="nutri-score-option__input">
+                <span class="nutri-score-option__tile nutri-score-badge--e" aria-hidden="true">E</span>
+                <span class="sr-only">Nutri-Score E</span>
+              </label>
+              <label class="nutri-score-option">
+                  <input type="radio" name="edit-item-nutri-score" value="" class="nutri-score-option__input">
+                  <span class="nutri-score-option__tile nutri-score-option__tile--none" data-i18n="nutrition.none">Aucun</span>
+                </label>
+              </div>
+              <p id="edit-item-nutri-score-description" class="mt-2 text-sm text-slate-600 dark:text-slate-300"></p>
+              <!-- Explanations, opened in a new tab (hrefs per language: nutrition.js's
+                   NUTRITION_HELP_LINKS). -->
+              <p class="mt-1 text-sm text-slate-500 dark:text-slate-400">
+                <span data-i18n="nutrition.helpLearnMore">En savoir plus :</span>
+                <a id="edit-item-nutri-score-help-official" href="#" target="_blank" rel="noopener noreferrer" class="nutrition-help-link inline-block py-1 font-medium text-sky-700 underline decoration-sky-700/30 underline-offset-2 hover:decoration-sky-700 dark:text-sky-300 dark:decoration-sky-300/40"><span class="sr-only" data-i18n="nutrition.helpNutriScoreContext">Nutri-Score :</span><span data-i18n="nutrition.helpOfficialSource">Santé publique France</span><svg class="ml-0.5 inline h-3.5 w-3.5 align-[-2px]" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path d="M11 3a1 1 0 1 0 0 2h2.59l-6.3 6.29a1 1 0 1 0 1.42 1.42L15 6.41V9a1 1 0 1 0 2 0V4a1 1 0 0 0-1-1h-5Z"/><path d="M5 5a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2v-3a1 1 0 1 0-2 0v3H5V7h3a1 1 0 0 0 0-2H5Z"/></svg><span class="sr-only" data-i18n="nutrition.helpNewTab">(s'ouvre dans un nouvel onglet)</span></a> <span aria-hidden="true" class="text-slate-400">·</span>
+                <a id="edit-item-nutri-score-help-off" href="#" target="_blank" rel="noopener noreferrer" class="nutrition-help-link inline-block py-1 font-medium text-sky-700 underline decoration-sky-700/30 underline-offset-2 hover:decoration-sky-700 dark:text-sky-300 dark:decoration-sky-300/40"><span class="sr-only" data-i18n="nutrition.helpNutriScoreContext">Nutri-Score :</span><span data-i18n="nutrition.helpOpenFoodFacts">Open Food Facts</span><svg class="ml-0.5 inline h-3.5 w-3.5 align-[-2px]" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path d="M11 3a1 1 0 1 0 0 2h2.59l-6.3 6.29a1 1 0 1 0 1.42 1.42L15 6.41V9a1 1 0 1 0 2 0V4a1 1 0 0 0-1-1h-5Z"/><path d="M5 5a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2v-3a1 1 0 1 0-2 0v3H5V7h3a1 1 0 0 0 0-2H5Z"/></svg><span class="sr-only" data-i18n="nutrition.helpNewTab">(s'ouvre dans un nouvel onglet)</span></a>
+              </p>
+            </fieldset>
+
+            <fieldset>
+              <legend data-i18n="nutrition.novaGroupField" class="mb-2 block text-sm font-medium text-slate-600 dark:text-slate-300">Groupe NOVA (transformation)</legend>
+              <div class="nutri-score-scale nutri-score-scale--nova">
+                <label class="nutri-score-option">
+                  <input type="radio" name="edit-item-nova-group" value="1" class="nutri-score-option__input">
+                  <span class="nutri-score-option__tile nova-group-tile nova-group-badge--1" aria-hidden="true">1</span>
+                  <span class="sr-only">NOVA 1</span>
+                </label>
+                <label class="nutri-score-option">
+                  <input type="radio" name="edit-item-nova-group" value="2" class="nutri-score-option__input">
+                  <span class="nutri-score-option__tile nova-group-tile nova-group-badge--2" aria-hidden="true">2</span>
+                  <span class="sr-only">NOVA 2</span>
+                </label>
+                <label class="nutri-score-option">
+                  <input type="radio" name="edit-item-nova-group" value="3" class="nutri-score-option__input">
+                  <span class="nutri-score-option__tile nova-group-tile nova-group-badge--3" aria-hidden="true">3</span>
+                  <span class="sr-only">NOVA 3</span>
+                </label>
+                <label class="nutri-score-option">
+                  <input type="radio" name="edit-item-nova-group" value="4" class="nutri-score-option__input">
+                  <span class="nutri-score-option__tile nova-group-tile nova-group-badge--4" aria-hidden="true">4</span>
+                  <span class="sr-only">NOVA 4</span>
+                </label>
+                <label class="nutri-score-option">
+                  <input type="radio" name="edit-item-nova-group" value="" class="nutri-score-option__input">
+                  <span class="nutri-score-option__tile nutri-score-option__tile--none" data-i18n="nutrition.none">Aucun</span>
+                </label>
+              </div>
+              <p id="edit-item-nova-group-description" class="mt-2 text-sm text-slate-600 dark:text-slate-300"></p>
+              <p class="mt-1 text-sm text-slate-500 dark:text-slate-400">
+                <span data-i18n="nutrition.helpLearnMore">En savoir plus :</span>
+                <a id="edit-item-nova-help-off" href="#" target="_blank" rel="noopener noreferrer" class="nutrition-help-link inline-block py-1 font-medium text-sky-700 underline decoration-sky-700/30 underline-offset-2 hover:decoration-sky-700 dark:text-sky-300 dark:decoration-sky-300/40"><span class="sr-only" data-i18n="nutrition.helpNovaContext">Groupes NOVA :</span><span data-i18n="nutrition.helpOpenFoodFacts">Open Food Facts</span><svg class="ml-0.5 inline h-3.5 w-3.5 align-[-2px]" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path d="M11 3a1 1 0 1 0 0 2h2.59l-6.3 6.29a1 1 0 1 0 1.42 1.42L15 6.41V9a1 1 0 1 0 2 0V4a1 1 0 0 0-1-1h-5Z"/><path d="M5 5a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2v-3a1 1 0 1 0-2 0v3H5V7h3a1 1 0 0 0 0-2H5Z"/></svg><span class="sr-only" data-i18n="nutrition.helpNewTab">(s'ouvre dans un nouvel onglet)</span></a>
+              </p>
+            </fieldset>
+
+            <!-- Shown while the grade or the NOVA group is unknown (nutrition.js's
+                 renderEditItemNutrition). -->
+            <div id="edit-item-nutrition-lookup" hidden class="rounded-xl bg-slate-100 dark:bg-slate-800 p-3">
+              <button type="button" id="edit-item-nutrition-lookup-button"
+                      class="flex min-h-[44px] w-full items-center justify-center gap-2 rounded-xl bg-emerald-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-emerald-500 active:scale-[0.98] disabled:cursor-wait disabled:opacity-70">
+                <span aria-hidden="true">🔎</span>
+                <span id="edit-item-nutrition-lookup-label" data-i18n="nutrition.lookupButton">Rechercher sur Open Food Facts</span>
+              </button>
+              <p id="edit-item-nutrition-lookup-status" role="status" aria-live="polite" class="mt-2 text-sm text-slate-600 dark:text-slate-300"></p>
+            </div>
           </div>
-          <div>
-            <label for="edit-item-yuka-score" data-i18n="nutrition.yukaScoreField" class="mb-1 block text-sm font-medium text-slate-600 dark:text-slate-300">Score Yuka (0-100)</label>
-            <input type="number" id="edit-item-yuka-score" min="0" max="100" step="1" inputmode="numeric" placeholder="—"
-                   class="w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-4 py-3 text-base text-slate-900 dark:text-slate-100 placeholder:text-slate-500 focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500/30">
-          </div>
-        </div>
+        </details>
 
         <div data-item-field="urgent">
           <label class="flex cursor-pointer items-center gap-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-4 py-3 text-sm font-medium text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-800">
@@ -2598,6 +2680,15 @@
           <span id="item-actions-aisle-icon" aria-hidden="true">🛒</span>
           <span data-i18n="quickShop.changeAisle">Rayon</span>
           <span id="item-actions-aisle-value" class="ml-auto min-w-0 truncate text-sm font-normal text-slate-500 dark:text-slate-400"></span>
+        </button>
+        <!-- A "Courses" list, for a user who shows the scores somewhere: the item's
+             nutrition badges, opening the edit modal on its nutrition panel, unfolded
+             (nutrition.js's updateItemActionsNutritionButton). -->
+        <button type="button" id="item-actions-nutrition-button" hidden aria-haspopup="dialog" aria-controls="edit-item-modal"
+                class="flex items-center gap-3 rounded-xl px-3 py-3 text-left text-base font-medium text-slate-900 dark:text-slate-100 hover:bg-slate-200 dark:hover:bg-slate-700">
+          <span aria-hidden="true">🥗</span>
+          <span data-i18n="nutrition.actionsButton" class="shrink-0">Scores nutritionnels</span>
+          <span id="item-actions-nutrition-value" class="ml-auto inline-flex min-w-0 items-center gap-1 text-sm font-normal text-slate-500 dark:text-slate-400"></span>
         </button>
         <!-- Task lists, for whoever may assign: who the task is assigned to,
              opening #assignee-picker-sheet (assignees.js). -->

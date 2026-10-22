@@ -274,14 +274,19 @@ type Item struct {
 	// internal/handlers.resolveItemAisle); the list view can group by it.
 	Aisle *string `json:"aisle,omitempty"`
 	// NutriScore is the product's Nutri-Score grade ("A" to "E"), nil when
-	// unknown; YukaScore a 0-100 score, nil when unknown (migration 39).
-	// Both optional on POST/PUT/PATCH /api/v1/items; on a "Courses" list a
-	// new item sent without them inherits the House catalog product's (see
-	// internal/handlers.resolveItemNutrition). Nothing fills YukaScore in
-	// by itself: Yuka has no public API, so it only holds what a client
-	// sent. Whether the list view shows them is the user's
-	// NutritionScoresMobile/NutritionScoresWeb.
+	// unknown; NovaGroup its NOVA group, how processed it is, 1
+	// (unprocessed) to 4 (ultra-processed), nil when unknown (migration 40);
+	// YukaScore a 0-100 score, nil when unknown (migration 39). All optional
+	// on POST/PUT/PATCH /api/v1/items; on a "Courses" list a new item sent
+	// without them inherits the House catalog product's (see
+	// internal/handlers.resolveItemNutrition). Open Food Facts fills in the
+	// first two; nothing fills YukaScore in by itself — Yuka has no public
+	// API —, and the PWA no longer shows it (NOVA replaced it there), but
+	// the API keeps it so nothing a client stored is lost. Whether the list
+	// view shows the scores is the user's NutritionScoresMobile/
+	// NutritionScoresWeb.
 	NutriScore *string `json:"nutri_score,omitempty"`
+	NovaGroup  *int    `json:"nova_group,omitempty"`
 	YukaScore  *int    `json:"yuka_score,omitempty"`
 	// IsPlanned is the items.is_planned flag: a not-yet-bought item added
 	// while estimating (a list created from a template, or "Prévu" chosen
@@ -441,9 +446,10 @@ type Product struct {
 	// Aisle is the household's aisle for it, "" when unknown.
 	Aisle      string `json:"aisle,omitempty"`
 	IsFavorite bool   `json:"is_favorite"`
-	// NutriScore/YukaScore are the last scores known for it (see
-	// Item.NutriScore/YukaScore), ""/nil when unknown.
+	// NutriScore/NovaGroup/YukaScore are the last scores known for it (see
+	// Item.NutriScore), ""/nil when unknown.
 	NutriScore string `json:"nutri_score,omitempty"`
+	NovaGroup  *int   `json:"nova_group,omitempty"`
 	YukaScore  *int   `json:"yuka_score,omitempty"`
 	// AddCount/PurchaseCount count how many times it was added to a list,
 	// and checked off one.
@@ -479,9 +485,32 @@ type BarcodeLookup struct {
 	Name       string   `json:"name"`
 	Aisle      string   `json:"aisle,omitempty"`
 	NutriScore string   `json:"nutri_score,omitempty"`
+	NovaGroup  *int     `json:"nova_group,omitempty"`
 	YukaScore  *int     `json:"yuka_score,omitempty"`
 	Source     string   `json:"source"`
 	Product    *Product `json:"product,omitempty"`
+}
+
+// NutritionLookup is the answer of
+// GET /api/v1/houses/{id}/products/nutrition: the scores known for a
+// product name, for the client to put in an edit form (nothing is stored).
+// NutriScore/NovaGroup/YukaScore are ""/nil when unknown. Source says
+// where what Open Food Facts can tell (the Nutri-Score, the NOVA group)
+// came from — "house" (the household's catalog knew both), "openfoodfacts"
+// (the search gave at least one) —, "" when nothing was found; MatchedName
+// is the Open Food Facts product it was read from, when the search matched
+// one by name. Search reports Open Food Facts' part: "not_needed" (the
+// catalog knew both), "done" (asked, or answered from the cache),
+// "disabled" (PRODUCT_LOOKUP_ENABLED off) or "unavailable" (the search
+// couldn't be made right now: limit reached, Open Food Facts unreachable).
+type NutritionLookup struct {
+	Name        string `json:"name"`
+	NutriScore  string `json:"nutri_score,omitempty"`
+	NovaGroup   *int   `json:"nova_group,omitempty"`
+	YukaScore   *int   `json:"yuka_score,omitempty"`
+	Source      string `json:"source,omitempty"`
+	MatchedName string `json:"matched_name,omitempty"`
+	Search      string `json:"search"`
 }
 
 // ValidListTypes enumerates the allowed values for List.Type. `shopping`

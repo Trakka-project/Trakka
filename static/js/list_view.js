@@ -1714,7 +1714,7 @@ function buildNextDueBadge(item, { interactive = true } = {}) {
 const CLEARABLE_ITEM_FIELDS = [
   'due_date', 'due_time', 'next_due_date', 'notification_sent_at',
   'recurrence_rule', 'recurrence_end_date', 'reminder_offset_days', 'reminder_time', 'aisle',
-  'actual_price', 'nutri_score', 'yuka_score',
+  'actual_price', 'nutri_score', 'nova_group', 'yuka_score',
 ];
 function mergeServerItem(item, updated) {
   if (updated && updated.id !== undefined) {
@@ -2641,7 +2641,7 @@ function buildItemRow(item, { showCheckbox = true, index, showQuantity = true, s
     rowTop.appendChild(buildItemThumbnail(item));
   }
 
-  // The Nutri-Score/Yuka badge (buildNutritionBadge, nutrition.js), right
+  // The Nutri-Score/NOVA badge (buildNutritionBadge, nutrition.js), right
   // before the title: only when the user shows the scores on this kind of
   // screen and the item has one. A fixed-size `shrink-0` block that rowTop's
   // `items-center` centres like the checkbox and the kebab, so neither
@@ -3976,7 +3976,8 @@ function renderEditItemLabelsPreview(item) {
 
 // opts.focus = 'due-date' opens the modal on the due date instead of the
 // title — the shortcut a recurring item's "Échéance suivante" badge takes
-// (see buildNextDueBadge).
+// (see buildNextDueBadge); 'nutrition' on the nutrition panel, unfolded
+// (the item actions sheet's "🥗 Scores nutritionnels").
 function openEditItemModal(item, { focus } = {}) {
   editingItem = item;
   listEls.editItemTitle.value = item.title;
@@ -4006,6 +4007,9 @@ function openEditItemModal(item, { focus } = {}) {
   renderEditItemAssignees(item);
   listEls.editItemModal.hidden = false;
   TrakkaScrollLock.lock();
+  // openEditItemNutritionPanel (nutrition.js) unfolds the panel and
+  // focuses its summary — no keyboard popping up for the title.
+  if (focus === 'nutrition' && openEditItemNutritionPanel()) return;
   if (focus === 'due-date' && !listEls.editItemDueDate.closest('[data-item-field]').hidden) {
     listEls.editItemDueDate.focus();
     listEls.editItemDueDate.scrollIntoView({ block: 'center' });
@@ -4042,6 +4046,8 @@ listEls.editItemPurchaseStatus.addEventListener('change', syncEditItemActualPric
 
 function closeEditItemModal() {
   editingItem = null;
+  // cancelNutritionLookup is defined in nutrition.js.
+  cancelNutritionLookup();
   listEls.editItemModal.hidden = true;
   TrakkaScrollLock.unlock();
 }
@@ -4084,6 +4090,8 @@ function openItemActionsSheet(item, { focusLink = false } = {}) {
   // Courses list, for House members).
   updateItemActionsFavoriteButton(item);
   updateItemActionsAisleButton(item);
+  // "🥗 Scores nutritionnels" (nutrition.js), on a Courses list.
+  updateItemActionsNutritionButton(item);
   // "👤 Assigner" (assignees.js), on a task list for House members.
   updateItemActionsAssigneesButton(item);
   // The purchase status picker and "Prix payé" row (budget.js).
@@ -4517,14 +4525,10 @@ listEls.editItemForm.addEventListener('submit', async (event) => {
   // "" clears it. On a Courses list the server also makes this the
   // household's usual aisle for the product.
   if (visibility.aisle) payload.aisle = listEls.editItemAisle.value;
-  // The scores ("" / null clear them), when the fields are shown — see
-  // editItemNutritionPayload in nutrition.js.
-  const nutrition = editItemNutritionPayload();
-  if (!nutrition) {
-    showError(t('nutrition.yukaValidationError'));
-    return;
-  }
-  Object.assign(payload, nutrition);
+  // The scores ("" / null clear them), when the panel is shown — see
+  // editItemNutritionPayload in nutrition.js. A legacy yuka_score isn't
+  // sent, so the server leaves it as it is.
+  Object.assign(payload, editItemNutritionPayload());
 
   const item = editingItem;
   // Only sent when the assignees changed (editItemAssigneeIds, assignees.js)
@@ -4550,7 +4554,7 @@ listEls.editItemForm.addEventListener('submit', async (event) => {
     is_urgent: item.is_urgent,
     aisle: item.aisle,
     nutri_score: item.nutri_score,
-    yuka_score: item.yuka_score,
+    nova_group: item.nova_group,
     done: item.done,
     purchase_status: item.purchase_status,
     actual_price: item.actual_price,
@@ -4576,7 +4580,7 @@ listEls.editItemForm.addEventListener('submit', async (event) => {
   if ('reminder_time' in payload) item.reminder_time = payload.reminder_time || null;
   if ('aisle' in payload) item.aisle = payload.aisle || null;
   if ('nutri_score' in payload) item.nutri_score = payload.nutri_score || null;
-  if ('yuka_score' in payload) item.yuka_score = payload.yuka_score;
+  if ('nova_group' in payload) item.nova_group = payload.nova_group;
   if (assigneeIds) item.assignees = resolveAssignees(assigneeIds, state.currentList, item.assignees || []);
   item.is_urgent = payload.is_urgent;
   renderItems();

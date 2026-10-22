@@ -1,9 +1,11 @@
-// End-to-end check of the nutrition scores (Nutri-Score / Yuka) on a
+// End-to-end check of the nutrition scores (Nutri-Score / NOVA) on a
 // "Courses" list, in a real browser: hidden by default, shown per kind of
 // screen (Paramètres → Scores nutritionnels: mobile and web on their own),
 // the badge sitting right before the title without moving the checkbox or
-// the kebab, nothing overflowing a 320px phone, and the scores editable in
-// the edit modal.
+// the kebab, nothing overflowing a 320px phone, and the edit modal's
+// collapsible nutrition panel (opened by a tap on the row): badges in its
+// summary, the A-E and NOVA scales, the help links, the empty state's
+// lookup, and a legacy Yuka score neither shown nor lost.
 //
 // Usage (see README.md): cd scripts && npm run test:nutrition-scores
 // Builds ./cmd/server and runs it on a throwaway database, like the other
@@ -160,17 +162,18 @@ async function main() {
     const [house] = (await api(page, 'GET', '/api/v1/houses')).body;
     const list = (await api(page, 'POST', '/api/v1/lists', { name: 'Courses de la semaine', type: 'groceries', house_id: house.id })).body;
     const products = [
-      { title: 'Nutella', nutri_score: 'E', yuka_score: 12 },
-      { title: 'Pommes Golden', nutri_score: 'A', yuka_score: 95 },
+      // Nutella also carries a legacy Yuka score: never shown, kept by edits.
+      { title: 'Nutella', nutri_score: 'E', nova_group: 4, yuka_score: 12 },
+      { title: 'Pommes Golden', nutri_score: 'A', nova_group: 1 },
       { title: 'Yaourt nature', nutri_score: 'B' },
-      { title: 'Céréales au chocolat', nutri_score: 'D', yuka_score: 38 },
-      { title: 'Biscuits fourrés à la confiture de framboise extra-longs', nutri_score: 'C', yuka_score: 61 },
+      { title: 'Céréales au chocolat', nutri_score: 'D', nova_group: 4 },
+      { title: 'Biscuits fourrés à la confiture de framboise extra-longs', nutri_score: 'C', nova_group: 3 },
       { title: 'Eau minérale' },
     ];
     for (const p of products) {
       const res = await api(page, 'POST', '/api/v1/items', { list_id: list.id, ...p });
-      check(`POST ${p.title} answers its scores`, res.body.nutri_score === p.nutri_score && res.body.yuka_score === p.yuka_score,
-        JSON.stringify([res.body.nutri_score, res.body.yuka_score]));
+      check(`POST ${p.title} answers its scores`, res.body.nutri_score === p.nutri_score && res.body.nova_group === p.nova_group,
+        JSON.stringify([res.body.nutri_score, res.body.nova_group]));
     }
     await page.reload();
     await page.locator('#dashboard-view').getByText('Courses de la semaine', { exact: true }).first().click();
@@ -185,10 +188,10 @@ async function main() {
     let rows = await badgeRows(page);
     check('mobile on: a badge on each scored item', rows.length === 5, rows.map((r) => r.title).join(' | '));
     check('…none on the item without scores', !rows.some((r) => r.title === 'Eau minérale'));
-    check('…accessible labels', rows.some((r) => r.labels.includes('Nutri-Score E') && r.labels.includes('Score Yuka : 12/100')),
+    check('…accessible labels, no Yuka badge', rows.some((r) => r.labels.join('|') === 'Nutri-Score E|NOVA 4 : aliment ultra-transformé'),
       JSON.stringify(rows.map((r) => r.labels)));
     const yaourt = rows.find((r) => r.title === 'Yaourt nature');
-    check('…a Nutri-Score alone when no Yuka score', yaourt && yaourt.labels.length === 1 && yaourt.labels[0] === 'Nutri-Score B');
+    check('…a Nutri-Score alone when no NOVA group', yaourt && yaourt.labels.length === 1 && yaourt.labels[0] === 'Nutri-Score B');
     for (const r of rows) {
       const before = r.badge.right <= r.titleBox.x + 0.5 && r.badge.x > r.checkbox.right;
       const aligned = Math.abs(r.badge.cy - r.checkbox.cy) <= 2 && (!r.kebab || Math.abs(r.kebab.cy - r.checkbox.cy) <= 2);
@@ -255,31 +258,127 @@ async function main() {
     await page.click('#close-edit-item-modal-button').catch(() => page.keyboard.press('Escape'));
     await page.waitForTimeout(200);
 
-    // 6. Edit modal: set, then clear, a product's scores.
+    // 6. A tap on the row opens the item actions sheet, which shows the
+    // scores; "Modifier l'article" opens the edit modal, its nutrition panel
+    // collapsed on the badges.
     await setDisplay(page, { mobile: true, web: false });
-    await page.evaluate((id) => openEditItemModal(state.currentList.items.find((it) => it.id === id)), water.id);
-    check('edit modal shows the score fields', await page.isVisible('#edit-item-nutrition'));
-    await shot(page, '6-edit-modal');
-    await page.selectOption('#edit-item-nutri-score', 'A');
-    await page.fill('#edit-item-yuka-score', '100');
+    const nutella = (await api(page, 'GET', `/api/v1/items?list_id=${list.id}&title=Nutella`)).body[0];
+    const sheetLabels = () => page.$$eval('#item-actions-nutrition-value [role=img]', (els) => els.map((el) => el.getAttribute('aria-label')).join('|'));
+    await page.locator(`li[data-item-id="${nutella.id}"]`).getByText('Nutella', { exact: true }).tap();
+    await page.locator('#item-actions-sheet').waitFor({ state: 'visible' });
+    check('a tap on the row shows the scores in the actions sheet', await page.isVisible('#item-actions-nutrition-button')
+      && (await sheetLabels()) === 'Nutri-Score E|NOVA 4 : aliment ultra-transformé', await sheetLabels());
+    await shot(page, '6-actions-sheet');
+    await page.tap('#item-actions-edit-button');
+    await page.locator('#edit-item-modal').waitFor({ state: 'visible' });
+    check('the nutrition panel is shown, collapsed', await page.isVisible('#edit-item-nutrition')
+      && !(await page.$eval('#edit-item-nutrition', (d) => d.open)));
+    const summaryLabels = await page.$$eval('#edit-item-nutrition-summary [role=img]', (els) => els.map((el) => el.getAttribute('aria-label')));
+    check('…its summary carries the item\'s badges', summaryLabels.join('|') === 'Nutri-Score E|NOVA 4 : aliment ultra-transformé', summaryLabels.join('|'));
+    check('…the details stay folded away', await page.isHidden('#edit-item-nutri-score-description'));
+    await shot(page, '6-edit-modal-collapsed');
+    await page.tap('#edit-item-nutrition > summary');
+    await page.waitForTimeout(350);
+    check('a tap on the summary opens it', await page.$eval('#edit-item-nutrition', (d) => d.open));
+    const panelInView = await page.$eval('#edit-item-nutrition', (d) => {
+      const box = d.getBoundingClientRect();
+      const form = document.getElementById('edit-item-form').getBoundingClientRect();
+      return box.top >= form.top - 1 && Math.min(box.bottom, form.bottom) - box.top > 150;
+    });
+    check('…and scrolls it into view inside the sheet', panelInView);
+    check('…the chosen grade is checked', await page.isChecked('input[name="edit-item-nutri-score"][value="E"]'));
+    check('…with what it means', (await page.textContent('#edit-item-nutri-score-description')).startsWith('E :'));
+    check('…the NOVA group is checked', await page.isChecked('input[name="edit-item-nova-group"][value="4"]'));
+    check('…with what it means', (await page.textContent('#edit-item-nova-group-description')).startsWith('NOVA 4 : aliment ultra-transformé'));
+    check('…no Yuka field left', (await page.locator('#edit-item-nutrition').getByText('Yuka').count()) === 0);
+    check('…no lookup offered when both are known', await page.isHidden('#edit-item-nutrition-lookup'));
+    const tiles = await page.$$eval('.nutri-score-option__tile', (els) => els.map((el) => Math.round(el.getBoundingClientRect().height)));
+    check('…eleven tap targets at least 44px high (A-E, 1-4, two "Aucun")', tiles.length === 11 && tiles.every((h) => h >= 44), tiles.join(','));
+    const links = await page.$$eval('#edit-item-nutrition a.nutrition-help-link', (as) => as.map((a) => ({
+      href: a.href, target: a.target, rel: a.rel, visible: a.getBoundingClientRect().height > 0, name: a.textContent.trim(),
+    })));
+    const hrefs = links.map((l) => l.href);
+    check('…help links to the official pages', hrefs.includes('https://www.santepubliquefrance.fr/nutrition-et-activite-physique/nutri-score')
+      && hrefs.includes('https://fr.openfoodfacts.org/nutriscore') && hrefs.includes('https://fr.openfoodfacts.org/nova'), JSON.stringify(hrefs));
+    check('…opening in a new tab, without opener or referrer', links.length === 3 && links.every((l) => l.visible && l.target === '_blank' && l.rel === 'noopener noreferrer'), JSON.stringify(links));
+    check('…saying where they lead and that they open a tab, to screen readers', links.every((l) => l.name.includes('nouvel onglet'))
+      && links.filter((l) => l.name.startsWith('Nutri-Score')).length === 2 && links.filter((l) => l.name.startsWith('Groupes NOVA')).length === 1,
+      JSON.stringify(links.map((l) => l.name)));
+    const helpLines = await page.$$eval('#edit-item-nutrition a.nutrition-help-link', (as) => as.map((a) => Math.round(a.getBoundingClientRect().height)));
+    check('…each on one line at 390px', helpLines.every((h) => h <= 32), helpLines.join(','));
+    const [popup] = await Promise.all([
+      page.context().waitForEvent('page'),
+      page.locator('#edit-item-nova-help-off').click({ modifiers: [] }),
+    ]);
+    check('…a tap opens the NOVA page in a new tab', popup.url().startsWith('https://fr.openfoodfacts.org/nova') || popup.url() === 'about:blank', popup.url());
+    await popup.close();
+    check('…and leaves the modal open', await page.isVisible('#edit-item-modal'));
+    await page.check('input[name="edit-item-nova-group"][value="2"]');
+    check('picking a NOVA group updates the summary live', (await page.$$eval('#edit-item-nutrition-summary [role=img]', (els) => els.map((el) => el.getAttribute('aria-label')))).includes('NOVA 2 : ingrédient culinaire transformé'));
+    await shot(page, '7-edit-modal-open-light');
+    await setTheme(page, 'dark');
+    await shot(page, '8-edit-modal-open-dark');
+    await setTheme(page, 'light');
+    await page.click('#edit-item-form [type=submit]');
+    await page.waitForTimeout(500);
+    const nutellaSaved = (await api(page, 'GET', `/api/v1/items/${nutella.id}`)).body;
+    check('saving keeps the legacy Yuka score it never showed', nutellaSaved.nova_group === 2 && nutellaSaved.nutri_score === 'E' && nutellaSaved.yuka_score === 12,
+      JSON.stringify([nutellaSaved.nutri_score, nutellaSaved.nova_group, nutellaSaved.yuka_score]));
+
+    // 7. An item without scores: an empty state with the lookup — here
+    // PRODUCT_LOOKUP_ENABLED=false, so the server says so and the form
+    // falls back on picking the letter.
+    // Through the actions sheet's row: straight onto the panel, unfolded.
+    await page.locator(`li[data-item-id="${water.id}"]`).getByText('Eau minérale', { exact: true }).tap();
+    await page.locator('#item-actions-sheet').waitFor({ state: 'visible' });
+    check('no scores: the actions sheet says so', (await page.textContent('#item-actions-nutrition-value')).trim() === 'Aucun score');
+    await page.tap('#item-actions-nutrition-button');
+    await page.locator('#edit-item-modal').waitFor({ state: 'visible' });
+    await page.waitForTimeout(400);
+    check('…its row opens the edit modal on the panel, unfolded', await page.$eval('#edit-item-nutrition', (d) => d.open));
+    check('…focused on the panel, not the title (no keyboard)', await page.evaluate(() => document.activeElement === document.querySelector('#edit-item-nutrition > summary')));
+    check('…the panel in view', await page.$eval('#edit-item-nutrition', (d) => {
+      const box = d.getBoundingClientRect();
+      return box.top >= 0 && box.top < window.innerHeight - 120;
+    }));
+    check('no scores: the summary says so', (await page.textContent('#edit-item-nutrition-summary')).trim() === 'Aucun score');
+    check('…"none" is checked', await page.isChecked('input[name="edit-item-nutri-score"][value=""]'));
+    check('…the lookup button is offered', await page.isVisible('#edit-item-nutrition-lookup-button'));
+    check('…the NOVA group "none" too, explained', await page.isChecked('input[name="edit-item-nova-group"][value=""]')
+      && (await page.textContent('#edit-item-nova-group-description')).includes('degré de transformation'));
+    await page.setViewportSize({ width: 320, height: 640 });
+    await page.waitForTimeout(200);
+    const panelOverflow = await page.$eval('#edit-item-nutrition', (d) => d.scrollWidth - d.clientWidth);
+    check('320px: the open panel doesn\'t overflow', panelOverflow <= 0, `${panelOverflow}px`);
+    await shot(page, '9-edit-modal-empty-320');
+    await page.tap('#edit-item-nutrition-lookup-button');
+    await page.waitForFunction(() => !document.getElementById('edit-item-nutrition-lookup-button').disabled);
+    check('lookup with lookups disabled: said so', (await page.textContent('#edit-item-nutrition-lookup-status')).includes('désactivée'));
+    check('…and the button goes', await page.isHidden('#edit-item-nutrition-lookup-button'));
+    await shot(page, '10-edit-modal-lookup-disabled');
+    await page.setViewportSize({ width: 390, height: 844 });
+
+    // 8. Set, then clear, a product's scores through the panel.
+    await page.check('input[name="edit-item-nutri-score"][value="A"]');
+    // Lookups are off on this server (said once): the block goes with the message.
+    check('picking a grade replaces the lookup\'s message', await page.isHidden('#edit-item-nutrition-lookup'));
+    await page.check('input[name="edit-item-nova-group"][value="1"]');
+    check('…both known: no lookup left', await page.isHidden('#edit-item-nutrition-lookup'));
     await page.click('#edit-item-form [type=submit]');
     await page.waitForTimeout(500);
     let saved = (await api(page, 'GET', `/api/v1/items/${water.id}`)).body;
-    check('edit saves both scores', saved.nutri_score === 'A' && saved.yuka_score === 100, JSON.stringify([saved.nutri_score, saved.yuka_score]));
-    check('…and the row shows them at once', (await page.locator(`li[data-item-id="${water.id}"] .nutri-score-badge--a`).count()) === 1);
+    check('edit saves both scores', saved.nutri_score === 'A' && saved.nova_group === 1, JSON.stringify([saved.nutri_score, saved.nova_group]));
+    check('…and the row shows them at once', (await page.locator(`li[data-item-id="${water.id}"] .nutri-score-badge--a`).count()) === 1
+      && (await page.locator(`li[data-item-id="${water.id}"] .nova-group-badge--1`).count()) === 1);
 
     await page.evaluate((id) => openEditItemModal(state.currentList.items.find((it) => it.id === id)), water.id);
-    await page.fill('#edit-item-yuka-score', '150');
-    await page.click('#edit-item-form [type=submit]');
-    await page.waitForTimeout(300);
-    check('a Yuka score over 100 is refused before sending', await page.isVisible('#edit-item-modal') || await page.isVisible('#error-banner'));
-    await page.evaluate((id) => openEditItemModal(state.currentList.items.find((it) => it.id === id)), water.id);
-    await page.selectOption('#edit-item-nutri-score', '');
-    await page.fill('#edit-item-yuka-score', '');
+    await page.tap('#edit-item-nutrition > summary');
+    await page.check('input[name="edit-item-nutri-score"][value=""]');
+    await page.check('input[name="edit-item-nova-group"][value=""]');
     await page.click('#edit-item-form [type=submit]');
     await page.waitForTimeout(500);
     saved = (await api(page, 'GET', `/api/v1/items/${water.id}`)).body;
-    check('emptying the fields clears the scores', saved.nutri_score === undefined && saved.yuka_score === undefined, JSON.stringify(saved));
+    check('emptying the fields clears the scores', saved.nutri_score === undefined && saved.nova_group === undefined, JSON.stringify(saved));
     check('…and the badge goes', (await page.locator(`li[data-item-id="${water.id}"] .nutrition-badges`).count()) === 0);
 
     check('no page errors', errors.length === 0, errors.join(' | '));

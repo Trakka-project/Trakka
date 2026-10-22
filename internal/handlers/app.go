@@ -228,6 +228,7 @@ func (app *Application) Routes() http.Handler {
 	apiMux.HandleFunc("POST /api/v1/houses/{id}/products", app.handleProductsUpsert)
 	apiMux.HandleFunc("GET /api/v1/houses/{id}/products/suggestions", app.handleProductSuggestions)
 	apiMux.HandleFunc("GET /api/v1/houses/{id}/products/barcode/{code}", app.handleProductBarcodeLookup)
+	apiMux.HandleFunc("GET /api/v1/houses/{id}/products/nutrition", app.handleProductNutritionLookup)
 	apiMux.HandleFunc("PATCH /api/v1/houses/{id}/products/{productId}", app.handleProductsUpdate)
 	apiMux.HandleFunc("DELETE /api/v1/houses/{id}/products/{productId}", app.handleProductsDelete)
 	// Withdrawing an invitation that has not been accepted yet. Keyed by
