@@ -602,6 +602,13 @@
     });
   }, { passive: true });
 
+  // Same reasoning as #item-title in quick-shop.js: "on" in index.html keeps
+  // Android's keyboard suggestions, "off" only where there's no on-screen
+  // keyboard, so the browser's form history can't cover the results grid.
+  if (window.matchMedia('(hover: hover) and (pointer: fine)').matches) {
+    els.search.setAttribute('autocomplete', 'off');
+  }
+
   els.search.addEventListener('input', renderSearch);
 
   els.search.addEventListener('keydown', (event) => {
