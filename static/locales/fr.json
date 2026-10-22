@@ -900,10 +900,32 @@
       }
     },
     "installHelp": {
-      "title": "Installer Trakka sur votre téléphone",
-      "intro": "Trakka s'installe comme une application, directement depuis votre navigateur — sans passer par un store.",
+      "title": "Installer Trakka",
+      "intro": "Utilisez Trakka sur votre téléphone avec l'application Android, ou installez-le depuis votre navigateur (PWA) — sans passer par un store.",
+      "tabsAriaLabel": "Façons d'installer Trakka",
+      "apkTab": "Application Android",
+      "pwaTab": "PWA (navigateur)",
+      "qrTab": "Connexion par QR code",
+      "pwaIntro": "La PWA s'installe directement depuis le navigateur, sur iPhone, iPad, Android ou ordinateur, et se met à jour toute seule.",
+      "platformTabsAriaLabel": "Appareil",
       "iosTab": "iOS (iPhone/iPad)",
       "androidTab": "Android",
+      "desktopTab": "Ordinateur",
+      "apk": {
+        "intro": "L'application Android officielle se connecte à n'importe quel serveur Trakka. Elle nécessite Android 7.0 ou plus récent.",
+        "httpsWarning": "Ce serveur n'est pas servi en HTTPS : l'application Android ne pourra pas s'y connecter. Utilisez la PWA, ou demandez à l'administrateur d'activer HTTPS.",
+        "step1": "Sur votre téléphone Android, téléchargez le fichier trakka.apk :",
+        "download": "Télécharger trakka.apk",
+        "downloadHint": "Ou utilisez l'APK fourni par l'administrateur de votre serveur Trakka.",
+        "step2": "Ouvrez le fichier téléchargé, depuis la notification du navigateur ou l'application Fichiers (dossier Téléchargements).",
+        "step3": "Si Android le demande, autorisez votre navigateur (ou l'application Fichiers) à installer des applications inconnues, revenez en arrière, puis touchez « Installer ».",
+        "step4": "Ouvrez Trakka, saisissez l'adresse de ce serveur, puis connectez-vous :",
+        "qrShortcut": "Ou connectez-vous sans mot de passe, avec un QR code →",
+        "securityTitle": "Sécurité",
+        "security1": "N'installez que l'APK officiel, publié avec chaque version de Trakka sur GitHub, ou celui fourni par votre administrateur.",
+        "security2": "Une fois l'application installée, vous pouvez retirer cette autorisation : Paramètres Android → Applications → Accès spécial des applications → Installer des applis inconnues.",
+        "security3": "Google Play Protect peut signaler une application qui ne vient pas du Play Store : c'est attendu pour un APK installé directement."
+      },
       "ios": {
         "step1": "Ouvrez ce lien dans Safari.",
         "step2": "Appuyez sur l'icône de partage (le carré avec une flèche vers le haut) dans la barre d'outils.",
@@ -915,6 +937,21 @@
         "step2": "Appuyez sur le menu à 3 points ⋮ en haut à droite.",
         "step3": "Sélectionnez « Installer l'application » ou « Ajouter à l'écran d'accueil ».",
         "step4": "Confirmez l'installation."
+      },
+      "desktop": {
+        "step1": "Ouvrez Trakka dans Chrome, Edge ou un autre navigateur basé sur Chromium.",
+        "step2": "Cliquez sur l'icône d'installation à droite de la barre d'adresse, ou ouvrez le menu du navigateur et choisissez « Installer Trakka ».",
+        "step3": "Confirmez avec « Installer » : Trakka s'ouvre dans sa propre fenêtre.",
+        "step4": "Sur Mac avec Safari : menu Fichier → « Ajouter au Dock »."
+      },
+      "qr": {
+        "intro": "Connectez l'application Android à votre compte sans saisir d'adresse ni de mot de passe.",
+        "step1": "Connectez-vous à Trakka depuis un navigateur web (ordinateur ou autre appareil), comme vous l'êtes en ce moment.",
+        "step2": "Allez dans Paramètres → Intégrations et cliquez sur « Connecter l'application mobile via QR Code ».",
+        "step3": "Ouvrez l'application Android Trakka, touchez « Se connecter avec un QR code » sur l'écran d'accueil (« Scanner un QR code » au premier lancement), puis scannez le code affiché à l'écran.",
+        "step4": "L'application s'ouvre sur ce serveur, connectée à votre compte.",
+        "warning": "Le QR code est valable 3 minutes et ne sert qu'une fois. Ne le montrez à personne d'autre : il ouvre une session sur votre compte.",
+        "showCode": "Afficher mon QR code de connexion"
       }
     },
     "qrLogin": {

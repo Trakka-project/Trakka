@@ -2,7 +2,7 @@
 
 Trakka is a Progressive Web App (PWA): there is no App Store or Play Store listing to install from. Instead, you open Trakka's URL once in your phone's browser and add it to your home screen from there — the icon that results behaves like any other installed app (its own icon, full-screen, no browser address bar) and keeps working offline, see [docs/PWA.md](PWA.md).
 
-The same steps are also available in-app: open **Settings → "How do I install the app on my phone?"** for a shorter version of this guide that automatically shows the right platform's steps.
+The same steps are also available in-app: open **Settings → "How do I install the app on my phone?"** for a shorter version of this guide, with three tabs (the Android app, the PWA on iOS / Android / a computer, and signing the Android app in with a QR code) that opens on the one matching your device.
 
 ## Before you start
 
@@ -31,7 +31,7 @@ Unlike iOS, Android/Chrome can also flush queued offline changes in the backgrou
 
 ### Android app (APK)
 
-There is also an Android app, for any Trakka server: [download `trakka.apk` from the latest release](https://github.com/Trakka-project/Trakka/releases/latest) (direct link: <https://github.com/Trakka-project/Trakka/releases/latest/download/trakka.apk>, available from the first release that includes the app), or use the one whoever runs your instance built (see [docs/MOBILE_BUILD.md](MOBILE_BUILD.md)). Open it on your phone and allow the installation. On first launch, enter your Trakka server's address, or scan its QR code, then sign in: the app shows Trakka full screen, as a real app with its own icon, and Paramètres → "Changer de serveur" switches it to another server. It is the better choice on browsers that can only add a home-screen shortcut, such as Vanadium on GrapheneOS. One thing it can't do yet is receive push notifications; see [Notifications](MOBILE_BUILD.md#notifications).
+There is also an Android app, for any Trakka server: [download `trakka.apk` from the latest release](https://github.com/Trakka-project/Trakka/releases/latest) (direct link: <https://github.com/Trakka-project/Trakka/releases/latest/download/trakka.apk>, available from the first release that includes the app), or use the one whoever runs your instance built (see [docs/MOBILE_BUILD.md](MOBILE_BUILD.md)). Open it on your phone and allow the installation. On first launch, enter your Trakka server's address, or scan its QR code, then sign in — or, from Trakka in a browser where you are signed in, open **Settings → Integrations → "Connect the mobile app with a QR code"** and tap "Sign in with a QR code" in the app to skip both steps ([details](MOBILE_BUILD.md#signing-in-with-a-qr-code)): the app shows Trakka full screen, as a real app with its own icon, and Paramètres → "Changer de serveur" switches it to another server. It is the better choice on browsers that can only add a home-screen shortcut, such as Vanadium on GrapheneOS. One thing it can't do yet is receive push notifications; see [Notifications](MOBILE_BUILD.md#notifications).
 
 ## Troubleshooting
 

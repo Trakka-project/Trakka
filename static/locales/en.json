@@ -900,10 +900,32 @@
       }
     },
     "installHelp": {
-      "title": "Install Trakka on your phone",
-      "intro": "Trakka installs like an app, straight from your browser — no app store needed.",
+      "title": "Install Trakka",
+      "intro": "Use Trakka on your phone with the Android app, or install it from your browser (PWA) — no app store needed.",
+      "tabsAriaLabel": "Ways to install Trakka",
+      "apkTab": "Android app",
+      "pwaTab": "PWA (browser)",
+      "qrTab": "QR code sign-in",
+      "pwaIntro": "The PWA installs straight from the browser, on iPhone, iPad, Android or a computer, and updates itself.",
+      "platformTabsAriaLabel": "Device",
       "iosTab": "iOS (iPhone/iPad)",
       "androidTab": "Android",
+      "desktopTab": "Computer",
+      "apk": {
+        "intro": "The official Android app connects to any Trakka server. It requires Android 7.0 or later.",
+        "httpsWarning": "This server isn't served over HTTPS: the Android app won't be able to connect to it. Use the PWA, or ask the administrator to enable HTTPS.",
+        "step1": "On your Android phone, download the trakka.apk file:",
+        "download": "Download trakka.apk",
+        "downloadHint": "Or use the APK provided by your Trakka server's administrator.",
+        "step2": "Open the downloaded file, from the browser's notification or the Files app (Downloads folder).",
+        "step3": "If Android asks, allow your browser (or the Files app) to install unknown apps, go back, then tap \"Install\".",
+        "step4": "Open Trakka, enter this server's address, then sign in:",
+        "qrShortcut": "Or sign in without a password, with a QR code →",
+        "securityTitle": "Security",
+        "security1": "Only install the official APK, published with each Trakka release on GitHub, or the one provided by your administrator.",
+        "security2": "Once the app is installed, you can revoke that permission: Android Settings → Apps → Special app access → Install unknown apps.",
+        "security3": "Google Play Protect may flag an app that doesn't come from the Play Store: that's expected for an APK installed directly."
+      },
       "ios": {
         "step1": "Open this link in Safari.",
         "step2": "Tap the Share icon (the square with an arrow pointing up) in the toolbar.",
@@ -915,6 +937,21 @@
         "step2": "Tap the ⋮ menu in the top-right corner.",
         "step3": "Select \"Install app\" or \"Add to Home screen\".",
         "step4": "Confirm the installation."
+      },
+      "desktop": {
+        "step1": "Open Trakka in Chrome, Edge or another Chromium-based browser.",
+        "step2": "Click the install icon at the right of the address bar, or open the browser menu and choose \"Install Trakka\".",
+        "step3": "Confirm with \"Install\": Trakka opens in its own window.",
+        "step4": "On a Mac with Safari: File menu → \"Add to Dock\"."
+      },
+      "qr": {
+        "intro": "Sign the Android app in to your account without typing an address or a password.",
+        "step1": "Sign in to Trakka from a web browser (a computer or another device), as you are right now.",
+        "step2": "Go to Settings → Integrations and click \"Connect the mobile app with a QR code\".",
+        "step3": "Open the Trakka Android app, tap \"Sign in with a QR code\" on its home screen (\"Scan a QR code\" on first launch), then scan the code shown on screen.",
+        "step4": "The app opens this server, signed in to your account.",
+        "warning": "The QR code is valid for 3 minutes and works only once. Don't show it to anyone else: it opens a session on your account.",
+        "showCode": "Show my sign-in QR code"
       }
     },
     "qrLogin": {

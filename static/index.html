@@ -2004,79 +2004,223 @@
   <div id="install-help-modal" hidden class="fixed inset-0 z-50 flex items-end justify-center bg-slate-950/30 dark:bg-slate-950/70 p-0 sm:items-center sm:p-4">
     <div role="dialog" aria-modal="true" aria-labelledby="install-help-modal-title" class="max-h-[90vh] w-full max-w-md overflow-y-auto rounded-t-2xl bg-slate-100 dark:bg-slate-800 p-5 shadow-xl sm:rounded-2xl">
       <div class="mb-4 flex items-center justify-between">
-        <h2 id="install-help-modal-title" data-i18n="modals.installHelp.title" class="text-lg font-semibold">Installer Trakka sur votre téléphone</h2>
+        <h2 id="install-help-modal-title" data-i18n="modals.installHelp.title" class="text-lg font-semibold">Installer Trakka</h2>
         <button type="button" id="close-install-help-modal-button" data-i18n-aria-label="modals.close" aria-label="Fermer"
                 class="flex h-9 w-9 items-center justify-center rounded-lg text-slate-500 dark:text-slate-400 hover:bg-slate-300 dark:hover:bg-slate-700 hover:text-slate-900 dark:hover:text-slate-200">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" class="h-5 w-5" aria-hidden="true"><path d="M18 6L6 18M6 6l12 12"/></svg>
         </button>
       </div>
 
-      <p data-i18n="modals.installHelp.intro" class="mb-4 text-sm text-slate-600 dark:text-slate-300">Trakka s'installe comme une application, directement depuis votre navigateur — sans passer par un store.</p>
+      <p data-i18n="modals.installHelp.intro" class="mb-4 text-sm text-slate-600 dark:text-slate-300">Utilisez Trakka sur votre téléphone avec l'application Android, ou installez-le depuis votre navigateur (PWA) — sans passer par un store.</p>
 
-      <div id="install-help-tabs" class="mb-4 flex gap-2" role="tablist">
-        <button type="button" id="install-help-tab-ios" role="tab" aria-selected="true" data-i18n="modals.installHelp.iosTab"
-                class="min-h-[44px] flex-1 rounded-xl border border-sky-500 bg-sky-500/10 px-3 py-2 text-sm font-medium text-sky-600 dark:text-sky-300">
-          iOS (iPhone/iPad)
+      <!-- Three sections (install-help.js's setInstallHelpSection); the PWA one has its own
+           iOS / Android / desktop sub-tabs (setInstallHelpPlatform). -->
+      <div id="install-help-tabs" class="mb-4 grid grid-cols-3 gap-2" role="tablist" data-i18n-aria-label="modals.installHelp.tabsAriaLabel" aria-label="Façons d'installer Trakka">
+        <button type="button" id="install-help-tab-apk" role="tab" aria-selected="true" aria-controls="install-help-panel-apk" data-i18n="modals.installHelp.apkTab"
+                class="min-h-[44px] rounded-xl border border-sky-500 bg-sky-500/10 px-2 py-2 text-sm font-medium leading-tight text-sky-600 dark:text-sky-300">
+          Application Android
         </button>
-        <button type="button" id="install-help-tab-android" role="tab" aria-selected="false" data-i18n="modals.installHelp.androidTab"
-                class="min-h-[44px] flex-1 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 text-sm font-medium text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-800">
-          Android
+        <button type="button" id="install-help-tab-pwa" role="tab" aria-selected="false" aria-controls="install-help-panel-pwa" tabindex="-1" data-i18n="modals.installHelp.pwaTab"
+                class="min-h-[44px] rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-2 py-2 text-sm font-medium leading-tight text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-800">
+          PWA (navigateur)
+        </button>
+        <button type="button" id="install-help-tab-qr" role="tab" aria-selected="false" aria-controls="install-help-panel-qr" tabindex="-1" data-i18n="modals.installHelp.qrTab"
+                class="min-h-[44px] rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-2 py-2 text-sm font-medium leading-tight text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-800">
+          Connexion par QR code
         </button>
       </div>
 
-      <ol id="install-help-steps-ios" class="space-y-3">
-        <li class="flex items-start gap-3">
-          <span aria-hidden="true" class="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-sky-500/10 text-sky-600 dark:text-sky-400">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="h-5 w-5"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>
-          </span>
-          <span class="pt-1.5 text-sm text-slate-700 dark:text-slate-200" data-i18n="modals.installHelp.ios.step1">Ouvrez ce lien dans Safari.</span>
-        </li>
-        <li class="flex items-start gap-3">
-          <span aria-hidden="true" class="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-sky-500/10 text-sky-600 dark:text-sky-400">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="h-5 w-5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
-          </span>
-          <span class="pt-1.5 text-sm text-slate-700 dark:text-slate-200" data-i18n="modals.installHelp.ios.step2">Appuyez sur l'icône de partage (le carré avec une flèche vers le haut) dans la barre d'outils.</span>
-        </li>
-        <li class="flex items-start gap-3">
-          <span aria-hidden="true" class="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-sky-500/10 text-sky-600 dark:text-sky-400">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="h-5 w-5"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
-          </span>
-          <span class="pt-1.5 text-sm text-slate-700 dark:text-slate-200" data-i18n="modals.installHelp.ios.step3">Faites défiler les options et sélectionnez « Sur l'écran d'accueil ».</span>
-        </li>
-        <li class="flex items-start gap-3">
-          <span aria-hidden="true" class="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-sky-500/10 text-sky-600 dark:text-sky-400">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="h-5 w-5"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
-          </span>
-          <span class="pt-1.5 text-sm text-slate-700 dark:text-slate-200" data-i18n="modals.installHelp.ios.step4">Vérifiez le nom proposé, puis appuyez sur « Ajouter ».</span>
-        </li>
-      </ol>
+      <!-- Android app: the official, signed trakka.apk attached to every GitHub release
+           (.github/workflows/build-apk.yml, docs/MOBILE_BUILD.md). -->
+      <div id="install-help-panel-apk" role="tabpanel" aria-labelledby="install-help-tab-apk">
+        <p data-i18n="modals.installHelp.apk.intro" class="mb-3 text-sm text-slate-600 dark:text-slate-300">L'application Android officielle se connecte à n'importe quel serveur Trakka. Elle nécessite Android 7.0 ou plus récent.</p>
+        <!-- Shown by install-help.js when this page isn't served over HTTPS. -->
+        <p id="install-help-apk-https-warning" hidden data-i18n="modals.installHelp.apk.httpsWarning"
+           class="mb-3 rounded-lg border border-amber-300 dark:border-amber-700 bg-amber-50 dark:bg-amber-950/30 p-3 text-xs font-medium text-amber-800 dark:text-amber-300">Ce serveur n'est pas servi en HTTPS : l'application Android ne pourra pas s'y connecter. Utilisez la PWA, ou demandez à l'administrateur d'activer HTTPS.</p>
+        <ol class="space-y-3">
+          <li class="flex items-start gap-3">
+            <span aria-hidden="true" class="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-sky-500/10 text-sky-600 dark:text-sky-400">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="h-5 w-5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+            </span>
+            <div class="min-w-0 flex-1 pt-1.5 text-sm text-slate-700 dark:text-slate-200">
+              <p data-i18n="modals.installHelp.apk.step1">Sur votre téléphone Android, téléchargez le fichier trakka.apk :</p>
+              <a href="https://github.com/Trakka-project/Trakka/releases/latest/download/trakka.apk" rel="noopener noreferrer"
+                 class="mt-2 inline-flex min-h-[44px] items-center gap-2 rounded-xl bg-sky-500 px-4 py-2 text-sm font-semibold text-white hover:bg-sky-600">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="h-4 w-4" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                <span data-i18n="modals.installHelp.apk.download">Télécharger trakka.apk</span>
+              </a>
+              <p class="mt-2 text-xs text-slate-500 dark:text-slate-400" data-i18n="modals.installHelp.apk.downloadHint">Ou utilisez l'APK fourni par l'administrateur de votre serveur Trakka.</p>
+            </div>
+          </li>
+          <li class="flex items-start gap-3">
+            <span aria-hidden="true" class="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-sky-500/10 text-sky-600 dark:text-sky-400">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="h-5 w-5"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+            </span>
+            <span class="pt-1.5 text-sm text-slate-700 dark:text-slate-200" data-i18n="modals.installHelp.apk.step2">Ouvrez le fichier téléchargé, depuis la notification du navigateur ou l'application Fichiers (dossier Téléchargements).</span>
+          </li>
+          <li class="flex items-start gap-3">
+            <span aria-hidden="true" class="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-sky-500/10 text-sky-600 dark:text-sky-400">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="h-5 w-5"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+            </span>
+            <span class="pt-1.5 text-sm text-slate-700 dark:text-slate-200" data-i18n="modals.installHelp.apk.step3">Si Android le demande, autorisez votre navigateur (ou l'application Fichiers) à installer des applications inconnues, revenez en arrière, puis touchez « Installer ».</span>
+          </li>
+          <li class="flex items-start gap-3">
+            <span aria-hidden="true" class="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-sky-500/10 text-sky-600 dark:text-sky-400">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="h-5 w-5"><rect x="5" y="2" width="14" height="20" rx="2" ry="2"/><line x1="12" y1="18" x2="12.01" y2="18"/></svg>
+            </span>
+            <div class="min-w-0 flex-1 pt-1.5 text-sm text-slate-700 dark:text-slate-200">
+              <p data-i18n="modals.installHelp.apk.step4">Ouvrez Trakka, saisissez l'adresse de ce serveur, puis connectez-vous :</p>
+              <!-- Filled by install-help.js with this page's origin. -->
+              <p id="install-help-server-address" class="mt-1 break-all rounded-lg bg-white dark:bg-slate-900 px-3 py-2 font-mono text-xs text-slate-900 dark:text-slate-100 ring-1 ring-slate-200 dark:ring-slate-700"></p>
+              <button type="button" id="install-help-go-qr-button" data-i18n="modals.installHelp.apk.qrShortcut"
+                      class="mt-2 text-sm font-medium text-sky-600 dark:text-sky-400 hover:underline">Ou connectez-vous sans mot de passe, avec un QR code →</button>
+            </div>
+          </li>
+        </ol>
+        <div class="mt-4 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 p-3 text-xs text-slate-600 dark:text-slate-300">
+          <p class="mb-1 font-semibold text-slate-700 dark:text-slate-200" data-i18n="modals.installHelp.apk.securityTitle">Sécurité</p>
+          <ul class="list-disc space-y-1 pl-4">
+            <li data-i18n="modals.installHelp.apk.security1">N'installez que l'APK officiel, publié avec chaque version de Trakka sur GitHub, ou celui fourni par votre administrateur.</li>
+            <li data-i18n="modals.installHelp.apk.security2">Une fois l'application installée, vous pouvez retirer cette autorisation : Paramètres Android → Applications → Accès spécial des applications → Installer des applis inconnues.</li>
+            <li data-i18n="modals.installHelp.apk.security3">Google Play Protect peut signaler une application qui ne vient pas du Play Store : c'est attendu pour un APK installé directement.</li>
+          </ul>
+        </div>
+      </div>
 
-      <ol id="install-help-steps-android" hidden class="space-y-3">
-        <li class="flex items-start gap-3">
-          <span aria-hidden="true" class="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-sky-500/10 text-sky-600 dark:text-sky-400">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="h-5 w-5"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>
-          </span>
-          <span class="pt-1.5 text-sm text-slate-700 dark:text-slate-200" data-i18n="modals.installHelp.android.step1">Ouvrez ce lien dans Chrome (ou votre navigateur mobile).</span>
-        </li>
-        <li class="flex items-start gap-3">
-          <span aria-hidden="true" class="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-sky-500/10 text-sky-600 dark:text-sky-400">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="h-5 w-5"><circle cx="12" cy="12" r="1"/><circle cx="12" cy="5" r="1"/><circle cx="12" cy="19" r="1"/></svg>
-          </span>
-          <span class="pt-1.5 text-sm text-slate-700 dark:text-slate-200" data-i18n="modals.installHelp.android.step2">Appuyez sur le menu à 3 points en haut à droite.</span>
-        </li>
-        <li class="flex items-start gap-3">
-          <span aria-hidden="true" class="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-sky-500/10 text-sky-600 dark:text-sky-400">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="h-5 w-5"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
-          </span>
-          <span class="pt-1.5 text-sm text-slate-700 dark:text-slate-200" data-i18n="modals.installHelp.android.step3">Sélectionnez « Installer l'application » ou « Ajouter à l'écran d'accueil ».</span>
-        </li>
-        <li class="flex items-start gap-3">
-          <span aria-hidden="true" class="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-sky-500/10 text-sky-600 dark:text-sky-400">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="h-5 w-5"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
-          </span>
-          <span class="pt-1.5 text-sm text-slate-700 dark:text-slate-200" data-i18n="modals.installHelp.android.step4">Confirmez l'installation.</span>
-        </li>
-      </ol>
+      <div id="install-help-panel-pwa" role="tabpanel" aria-labelledby="install-help-tab-pwa" hidden>
+        <p data-i18n="modals.installHelp.pwaIntro" class="mb-3 text-sm text-slate-600 dark:text-slate-300">La PWA s'installe directement depuis le navigateur, sur iPhone, iPad, Android ou ordinateur, et se met à jour toute seule.</p>
+
+        <div id="install-help-platform-tabs" class="mb-4 flex gap-2" role="tablist" data-i18n-aria-label="modals.installHelp.platformTabsAriaLabel" aria-label="Appareil">
+          <button type="button" id="install-help-tab-ios" role="tab" aria-selected="true" aria-controls="install-help-steps-ios" data-i18n="modals.installHelp.iosTab"
+                  class="min-h-[44px] flex-1 rounded-xl border border-sky-500 bg-sky-500/10 px-2 py-2 text-xs font-medium text-sky-600 dark:text-sky-300">
+            iOS (iPhone/iPad)
+          </button>
+          <button type="button" id="install-help-tab-android" role="tab" aria-selected="false" aria-controls="install-help-steps-android" tabindex="-1" data-i18n="modals.installHelp.androidTab"
+                  class="min-h-[44px] flex-1 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-2 py-2 text-xs font-medium text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-800">
+            Android
+          </button>
+          <button type="button" id="install-help-tab-desktop" role="tab" aria-selected="false" aria-controls="install-help-steps-desktop" tabindex="-1" data-i18n="modals.installHelp.desktopTab"
+                  class="min-h-[44px] flex-1 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-2 py-2 text-xs font-medium text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-800">
+            Ordinateur
+          </button>
+        </div>
+
+        <ol id="install-help-steps-ios" role="tabpanel" aria-labelledby="install-help-tab-ios" class="space-y-3">
+          <li class="flex items-start gap-3">
+            <span aria-hidden="true" class="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-sky-500/10 text-sky-600 dark:text-sky-400">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="h-5 w-5"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>
+            </span>
+            <span class="pt-1.5 text-sm text-slate-700 dark:text-slate-200" data-i18n="modals.installHelp.ios.step1">Ouvrez ce lien dans Safari.</span>
+          </li>
+          <li class="flex items-start gap-3">
+            <span aria-hidden="true" class="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-sky-500/10 text-sky-600 dark:text-sky-400">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="h-5 w-5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+            </span>
+            <span class="pt-1.5 text-sm text-slate-700 dark:text-slate-200" data-i18n="modals.installHelp.ios.step2">Appuyez sur l'icône de partage (le carré avec une flèche vers le haut) dans la barre d'outils.</span>
+          </li>
+          <li class="flex items-start gap-3">
+            <span aria-hidden="true" class="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-sky-500/10 text-sky-600 dark:text-sky-400">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="h-5 w-5"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
+            </span>
+            <span class="pt-1.5 text-sm text-slate-700 dark:text-slate-200" data-i18n="modals.installHelp.ios.step3">Faites défiler les options et sélectionnez « Sur l'écran d'accueil ».</span>
+          </li>
+          <li class="flex items-start gap-3">
+            <span aria-hidden="true" class="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-sky-500/10 text-sky-600 dark:text-sky-400">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="h-5 w-5"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+            </span>
+            <span class="pt-1.5 text-sm text-slate-700 dark:text-slate-200" data-i18n="modals.installHelp.ios.step4">Vérifiez le nom proposé, puis appuyez sur « Ajouter ».</span>
+          </li>
+        </ol>
+
+        <ol id="install-help-steps-android" role="tabpanel" aria-labelledby="install-help-tab-android" hidden class="space-y-3">
+          <li class="flex items-start gap-3">
+            <span aria-hidden="true" class="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-sky-500/10 text-sky-600 dark:text-sky-400">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="h-5 w-5"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>
+            </span>
+            <span class="pt-1.5 text-sm text-slate-700 dark:text-slate-200" data-i18n="modals.installHelp.android.step1">Ouvrez ce lien dans Chrome (ou votre navigateur mobile).</span>
+          </li>
+          <li class="flex items-start gap-3">
+            <span aria-hidden="true" class="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-sky-500/10 text-sky-600 dark:text-sky-400">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="h-5 w-5"><circle cx="12" cy="12" r="1"/><circle cx="12" cy="5" r="1"/><circle cx="12" cy="19" r="1"/></svg>
+            </span>
+            <span class="pt-1.5 text-sm text-slate-700 dark:text-slate-200" data-i18n="modals.installHelp.android.step2">Appuyez sur le menu à 3 points en haut à droite.</span>
+          </li>
+          <li class="flex items-start gap-3">
+            <span aria-hidden="true" class="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-sky-500/10 text-sky-600 dark:text-sky-400">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="h-5 w-5"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
+            </span>
+            <span class="pt-1.5 text-sm text-slate-700 dark:text-slate-200" data-i18n="modals.installHelp.android.step3">Sélectionnez « Installer l'application » ou « Ajouter à l'écran d'accueil ».</span>
+          </li>
+          <li class="flex items-start gap-3">
+            <span aria-hidden="true" class="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-sky-500/10 text-sky-600 dark:text-sky-400">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="h-5 w-5"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+            </span>
+            <span class="pt-1.5 text-sm text-slate-700 dark:text-slate-200" data-i18n="modals.installHelp.android.step4">Confirmez l'installation.</span>
+          </li>
+        </ol>
+
+        <ol id="install-help-steps-desktop" role="tabpanel" aria-labelledby="install-help-tab-desktop" hidden class="space-y-3">
+          <li class="flex items-start gap-3">
+            <span aria-hidden="true" class="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-sky-500/10 text-sky-600 dark:text-sky-400">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="h-5 w-5"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
+            </span>
+            <span class="pt-1.5 text-sm text-slate-700 dark:text-slate-200" data-i18n="modals.installHelp.desktop.step1">Ouvrez Trakka dans Chrome, Edge ou un autre navigateur basé sur Chromium.</span>
+          </li>
+          <li class="flex items-start gap-3">
+            <span aria-hidden="true" class="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-sky-500/10 text-sky-600 dark:text-sky-400">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="h-5 w-5"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><line x1="12" y1="8" x2="12" y2="16"/><line x1="8" y1="12" x2="16" y2="12"/></svg>
+            </span>
+            <span class="pt-1.5 text-sm text-slate-700 dark:text-slate-200" data-i18n="modals.installHelp.desktop.step2">Cliquez sur l'icône d'installation à droite de la barre d'adresse, ou ouvrez le menu du navigateur et choisissez « Installer Trakka ».</span>
+          </li>
+          <li class="flex items-start gap-3">
+            <span aria-hidden="true" class="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-sky-500/10 text-sky-600 dark:text-sky-400">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="h-5 w-5"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+            </span>
+            <span class="pt-1.5 text-sm text-slate-700 dark:text-slate-200" data-i18n="modals.installHelp.desktop.step3">Confirmez avec « Installer » : Trakka s'ouvre dans sa propre fenêtre.</span>
+          </li>
+          <li class="flex items-start gap-3">
+            <span aria-hidden="true" class="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-sky-500/10 text-sky-600 dark:text-sky-400">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="h-5 w-5"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
+            </span>
+            <span class="pt-1.5 text-sm text-slate-700 dark:text-slate-200" data-i18n="modals.installHelp.desktop.step4">Sur Mac avec Safari : menu Fichier → « Ajouter au Dock ».</span>
+          </li>
+        </ol>
+      </div>
+
+      <!-- QR code sign-in for the Android app: the steps behind qr-login.js's modal, plus a
+           shortcut that opens it (openInstallHelpQrLogin). -->
+      <div id="install-help-panel-qr" role="tabpanel" aria-labelledby="install-help-tab-qr" hidden>
+        <p data-i18n="modals.installHelp.qr.intro" class="mb-3 text-sm text-slate-600 dark:text-slate-300">Connectez l'application Android à votre compte sans saisir d'adresse ni de mot de passe.</p>
+        <ol class="space-y-3">
+          <li class="flex items-start gap-3">
+            <span aria-hidden="true" class="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-sky-500/10 text-sky-600 dark:text-sky-400">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="h-5 w-5"><path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/><polyline points="10 17 15 12 10 7"/><line x1="15" y1="12" x2="3" y2="12"/></svg>
+            </span>
+            <span class="pt-1.5 text-sm text-slate-700 dark:text-slate-200" data-i18n="modals.installHelp.qr.step1">Connectez-vous à Trakka depuis un navigateur web (ordinateur ou autre appareil), comme vous l'êtes en ce moment.</span>
+          </li>
+          <li class="flex items-start gap-3">
+            <span aria-hidden="true" class="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-sky-500/10 text-sky-600 dark:text-sky-400">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="h-5 w-5"><line x1="4" y1="21" x2="4" y2="14"/><line x1="4" y1="10" x2="4" y2="3"/><line x1="12" y1="21" x2="12" y2="12"/><line x1="12" y1="8" x2="12" y2="3"/><line x1="20" y1="21" x2="20" y2="16"/><line x1="20" y1="12" x2="20" y2="3"/><line x1="1" y1="14" x2="7" y2="14"/><line x1="9" y1="8" x2="15" y2="8"/><line x1="17" y1="16" x2="23" y2="16"/></svg>
+            </span>
+            <span class="pt-1.5 text-sm text-slate-700 dark:text-slate-200" data-i18n="modals.installHelp.qr.step2">Allez dans Paramètres → Intégrations et cliquez sur « Connecter l'application mobile via QR Code ».</span>
+          </li>
+          <li class="flex items-start gap-3">
+            <span aria-hidden="true" class="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-sky-500/10 text-sky-600 dark:text-sky-400">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="h-5 w-5"><path d="M3 7V5a2 2 0 0 1 2-2h2"/><path d="M17 3h2a2 2 0 0 1 2 2v2"/><path d="M21 17v2a2 2 0 0 1-2 2h-2"/><path d="M7 21H5a2 2 0 0 1-2-2v-2"/><rect x="7" y="7" width="10" height="10" rx="1"/></svg>
+            </span>
+            <span class="pt-1.5 text-sm text-slate-700 dark:text-slate-200" data-i18n="modals.installHelp.qr.step3">Ouvrez l'application Android Trakka, touchez « Se connecter avec un QR code » sur l'écran d'accueil (« Scanner un QR code » au premier lancement), puis scannez le code affiché à l'écran.</span>
+          </li>
+          <li class="flex items-start gap-3">
+            <span aria-hidden="true" class="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-sky-500/10 text-sky-600 dark:text-sky-400">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="h-5 w-5"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+            </span>
+            <span class="pt-1.5 text-sm text-slate-700 dark:text-slate-200" data-i18n="modals.installHelp.qr.step4">L'application s'ouvre sur ce serveur, connectée à votre compte.</span>
+          </li>
+        </ol>
+        <p class="mt-4 rounded-lg border border-amber-300 dark:border-amber-700 bg-amber-50 dark:bg-amber-950/30 p-3 text-xs font-medium text-amber-800 dark:text-amber-300" data-i18n="modals.installHelp.qr.warning">Le QR code est valable 3 minutes et ne sert qu'une fois. Ne le montrez à personne d'autre : il ouvre une session sur votre compte.</p>
+        <button type="button" id="install-help-show-qr-button" data-i18n="modals.installHelp.qr.showCode"
+                class="mt-4 min-h-[44px] w-full rounded-xl bg-sky-500 px-4 py-2.5 text-sm font-semibold text-white hover:bg-sky-600">Afficher mon QR code de connexion</button>
+      </div>
     </div>
   </div>
 
