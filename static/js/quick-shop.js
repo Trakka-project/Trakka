@@ -787,6 +787,15 @@ listEls.itemTitle.setAttribute('role', 'combobox');
 listEls.itemTitle.setAttribute('aria-autocomplete', 'list');
 listEls.itemTitle.setAttribute('aria-controls', 'item-title-suggestions');
 listEls.itemTitle.setAttribute('aria-expanded', 'false');
+// index.html ships autocomplete="on": Android's Chromium (Chrome and the
+// Capacitor WebView) maps "off" to TYPE_TEXT_FLAG_NO_SUGGESTIONS, which hides
+// the keyboard's suggestion/autocorrect strip. Only a mouse-driven device — no
+// on-screen keyboard to lose — turns it off, so the browser's form-history
+// dropdown can't cover the suggestions above. Set once, before any focus: an
+// IME restart mid-typing would flicker the keyboard.
+if (window.matchMedia('(hover: hover) and (pointer: fine)').matches) {
+  listEls.itemTitle.setAttribute('autocomplete', 'off');
+}
 
 listEls.itemTitle.addEventListener('input', () => {
   clearTimeout(quickShop.autocompleteTimer);

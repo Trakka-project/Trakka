@@ -69,7 +69,7 @@
         <p data-i18n="publicList.depositHint" class="mt-1 text-sm text-slate-500 dark:text-slate-400">Le contenu de cette liste reste privé : vous pouvez y déposer des idées, sans voir ce qu'elle contient déjà.</p>
         <form id="public-deposit-form" class="mt-3 flex gap-2">
           <label for="public-deposit-title-input" class="sr-only" data-i18n="publicList.depositPlaceholder">Votre idée…</label>
-          <input type="text" id="public-deposit-title-input" required maxlength="500" autocomplete="off" enterkeyhint="send"
+          <input type="text" id="public-deposit-title-input" required maxlength="500" autocomplete="on" autocorrect="on" spellcheck="true" enterkeyhint="send"
                  data-i18n-placeholder="publicList.depositPlaceholder" placeholder="Votre idée…"
                  class="min-h-[44px] min-w-0 flex-1 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-4 py-2 text-base text-slate-900 dark:text-slate-100 placeholder:text-slate-500 focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500/30">
           <input type="number" id="public-deposit-quantity" min="1" max="100000" value="1" inputmode="numeric"
@@ -88,7 +88,7 @@
 
       <form id="public-add-form" hidden class="mt-4 flex gap-2">
         <label for="public-add-title" class="sr-only" data-i18n="publicList.addPlaceholder">Ajouter un élément…</label>
-        <input type="text" id="public-add-title" required maxlength="500" autocomplete="off" enterkeyhint="done"
+        <input type="text" id="public-add-title" required maxlength="500" autocomplete="on" autocorrect="on" spellcheck="true" enterkeyhint="done"
                data-i18n-placeholder="publicList.addPlaceholder" placeholder="Ajouter un élément…"
                class="min-h-[44px] min-w-0 flex-1 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-4 py-2 text-base text-slate-900 dark:text-slate-100 placeholder:text-slate-500 focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500/30">
         <input type="number" id="public-add-quantity" min="1" max="100000" value="1" inputmode="numeric"
