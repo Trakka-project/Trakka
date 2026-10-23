@@ -9,6 +9,9 @@ import (
 // to E.
 var ErrInvalidNutriScore = errors.New("nutri_score must be one of A, B, C, D, E")
 
+// ErrInvalidNovaGroup is returned when a NOVA group isn't 1 to 4.
+var ErrInvalidNovaGroup = errors.New("nova_group must be 1, 2, 3 or 4")
+
 // ErrInvalidYukaScore is returned when a Yuka score is outside 0-100.
 var ErrInvalidYukaScore = errors.New("yuka_score must be between 0 and 100")
 
@@ -29,6 +32,16 @@ func NutriScore(raw string) (string, error) {
 func YukaScore(score int) error {
 	if score < 0 || score > 100 {
 		return ErrInvalidYukaScore
+	}
+	return nil
+}
+
+// NovaGroup validates a NOVA group: 1 (unprocessed or minimally processed
+// foods), 2 (processed culinary ingredients), 3 (processed foods) or 4
+// (ultra-processed foods).
+func NovaGroup(group int) error {
+	if group < 1 || group > 4 {
+		return ErrInvalidNovaGroup
 	}
 	return nil
 }

@@ -171,6 +171,7 @@ func (app *Application) handleItemsCreate(w http.ResponseWriter, r *http.Request
 		AisleHint             string   `json:"aisle_hint"`
 		Barcode               string   `json:"barcode"`
 		NutriScore            string   `json:"nutri_score"`
+		NovaGroup             *int     `json:"nova_group"`
 		YukaScore             *int     `json:"yuka_score"`
 		PurchaseStatus        string   `json:"purchase_status"`
 		AssigneeIDs           []int64  `json:"assignee_ids"`
@@ -270,7 +271,7 @@ func (app *Application) handleItemsCreate(w http.ResponseWriter, r *http.Request
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	cleanScores, err := cleanNutritionScores(in.NutriScore, in.YukaScore)
+	cleanScores, err := cleanNutritionScores(in.NutriScore, in.NovaGroup, in.YukaScore)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
@@ -511,10 +512,9 @@ func (app *Application) handleItemsUpdate(w http.ResponseWriter, r *http.Request
 		Aisle                 string   `json:"aisle"`
 		PurchaseStatus        string   `json:"purchase_status"`
 		ActualPrice           *float64 `json:"actual_price"`
-		// Left as they are when absent, unlike the other fields: see
-		// applyNutritionInput.
-		NutriScore *string         `json:"nutri_score"`
-		YukaScore  json.RawMessage `json:"yuka_score"`
+		// nutri_score/nova_group/yuka_score: left as they are when absent,
+		// unlike the other fields — see applyNutritionInput.
+		nutritionInput
 		// The one field a PUT leaves as is when absent: not everyone who
 		// may edit the item may set it (in SaaS mode, only House members —
 		// see assignees.go), and a list-share recipient's full replace of an
@@ -634,7 +634,7 @@ func (app *Application) handleItemsUpdate(w http.ResponseWriter, r *http.Request
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	scores, err := applyNutritionInput(itemNutrition(existing), in.NutriScore, in.YukaScore)
+	scores, err := applyNutritionInput(itemNutrition(existing), in.nutritionInput)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
@@ -790,8 +790,7 @@ func (app *Application) handleItemsPatch(w http.ResponseWriter, r *http.Request)
 		PurchaseStatus        *string         `json:"purchase_status"`
 		ActualPrice           json.RawMessage `json:"actual_price"`
 		AssigneeIDs           *[]int64        `json:"assignee_ids"`
-		NutriScore            *string         `json:"nutri_score"`
-		YukaScore             json.RawMessage `json:"yuka_score"`
+		nutritionInput
 	}
 	if !decodeJSON(w, r, &in) {
 		return
@@ -1110,9 +1109,9 @@ func (app *Application) handleItemsPatch(w http.ResponseWriter, r *http.Request)
 		item.Aisle = nullableString(cleanAisle)
 	}
 
-	// Absent leaves a score as it is, nutri_score "" / yuka_score null
-	// clears it (see applyNutritionInput).
-	scores, err := applyNutritionInput(itemNutrition(item), in.NutriScore, in.YukaScore)
+	// Absent leaves a score as it is, nutri_score "" / nova_group null /
+	// yuka_score null clears it (see applyNutritionInput).
+	scores, err := applyNutritionInput(itemNutrition(item), in.nutritionInput)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return

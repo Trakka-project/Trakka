@@ -2,6 +2,7 @@ package scraper
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"net/http"
 	"net/http/httptest"
@@ -30,17 +31,17 @@ func TestLookupBarcodeFound(t *testing.T) {
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{"code":"3017620422003","status":1,"status_verbose":"product found",
 			"product":{"code":"3017620422003","product_name":"Nutella","product_name_fr":"  Nutella   pâte à tartiner ",
-			"brands":"Ferrero, Nutella","categories_tags":["en:breakfasts","en:sweet-spreads"],"nutriscore_grade":"e"}}`))
+			"brands":"Ferrero, Nutella","categories_tags":["en:breakfasts","en:sweet-spreads"],"nutriscore_grade":"e","nova_group":4}}`))
 	})
 
 	p, err := LookupBarcode(context.Background(), "3017620422003", "fr")
 	if err != nil {
 		t.Fatalf("LookupBarcode: %v", err)
 	}
-	if gotPath != "/api/v2/product/3017620422003" || !strings.HasPrefix(gotAgent, "Trakka/") || !strings.Contains(gotFields, "categories_tags") || !strings.Contains(gotFields, "nutriscore_grade") {
+	if gotPath != "/api/v2/product/3017620422003" || !strings.HasPrefix(gotAgent, "Trakka/") || !strings.Contains(gotFields, "categories_tags") || !strings.Contains(gotFields, "nutriscore_grade") || !strings.Contains(gotFields, "nova_group") {
 		t.Fatalf("request path %q, agent %q, fields %q", gotPath, gotAgent, gotFields)
 	}
-	if p.Name != "Nutella pâte à tartiner" || p.Brand != "Ferrero" || len(p.Categories) != 2 || p.Barcode != "3017620422003" || p.NutriScore != "E" {
+	if p.Name != "Nutella pâte à tartiner" || p.Brand != "Ferrero" || len(p.Categories) != 2 || p.Barcode != "3017620422003" || p.NutriScore != "E" || p.NovaGroup != 4 {
 		t.Fatalf("got %+v", p)
 	}
 
@@ -100,6 +101,17 @@ func TestLookupBarcodeFailures(t *testing.T) {
 	for _, code := range []string{"", "123", "../../x", "3017620422003?x=1", "301762042200a"} {
 		if _, err := LookupBarcode(context.Background(), code, "fr"); err == nil {
 			t.Fatalf("LookupBarcode(%q) accepted", code)
+		}
+	}
+}
+
+func TestNovaGroup(t *testing.T) {
+	for raw, want := range map[string]int{
+		`1`: 1, `4`: 4, `"3"`: 3, `" 2 "`: 2,
+		`0`: 0, `5`: 0, `null`: 0, `""`: 0, `"unknown"`: 0, `2.5`: 0, ``: 0,
+	} {
+		if got := novaGroup(json.RawMessage(raw)); got != want {
+			t.Errorf("novaGroup(%s) = %d, want %d", raw, got, want)
 		}
 	}
 }

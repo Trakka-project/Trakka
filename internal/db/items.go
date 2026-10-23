@@ -33,7 +33,7 @@ const itemSelectColumns = `items.id, items.list_id, items.title, items.url, item
 		 items.due_time, items.next_due_date, items.reminder_at_due_time,
 		 CASE WHEN items.due_reminder_sent_for = ` + dueReminderKeyExpr + ` THEN items.notification_sent_at END,
 		 items.previous_price, items.price_changed_at, items.aisle, items.is_planned, items.actual_price,
-		 items.nutri_score, items.yuka_score,
+		 items.nutri_score, items.yuka_score, items.nova_group,
 		 ` + itemAssigneesExpr
 
 // itemAssigneesExpr is an item's assignees (models.Item.Assignees,
@@ -74,7 +74,7 @@ func scanItem(row rowScanner) (*models.Item, error) {
 	var isPlanned int
 	var actualPrice sql.NullFloat64
 	var nutriScore sql.NullString
-	var yukaScore sql.NullInt64
+	var yukaScore, novaGroup sql.NullInt64
 	var assigneesJSON string
 	if err := row.Scan(&it.ID, &it.ListID, &it.Title, &it.URL, &it.Quantity, &done,
 		&it.Position, &it.CreatedAt, &it.UpdatedAt, &price, &priceAuto, &imageURL, &targetMonth,
@@ -82,7 +82,7 @@ func scanItem(row rowScanner) (*models.Item, error) {
 		&targetPrice, &alertOnPriceDrop, &labelsJSON, &reminderEnabled, &reminderOffsetDays, &reminderTime,
 		&dueTime, &nextDueDate, &reminderAtDueTime, &notificationSentAt,
 		&previousPrice, &priceChangedAt, &aisle, &isPlanned, &actualPrice,
-		&nutriScore, &yukaScore, &assigneesJSON); err != nil {
+		&nutriScore, &yukaScore, &novaGroup, &assigneesJSON); err != nil {
 		return nil, err
 	}
 	it.Assignees = []models.ItemAssignee{}
@@ -130,6 +130,7 @@ func scanItem(row rowScanner) (*models.Item, error) {
 	it.Aisle = nullStringPtr(aisle)
 	it.NutriScore = nullStringPtr(nutriScore)
 	it.YukaScore = nullIntPtr(yukaScore)
+	it.NovaGroup = nullIntPtr(novaGroup)
 	it.IsPlanned = isPlanned != 0
 	it.PurchaseStatus = models.PurchaseStatusOf(it.Done, it.IsPlanned)
 	if actualPrice.Valid {
@@ -465,16 +466,16 @@ func (d *DB) SetItemAisle(ctx context.Context, id int64, aisle *string) (*models
 	return d.GetItem(ctx, id)
 }
 
-// SetItemNutrition writes an item's two nutrition scores (see
-// models.Item.NutriScore/YukaScore; nil clears either) and returns the
-// updated row — a separate method for the same "too many positional
-// params" reason as SetItemLabels. Both must already be validated
-// (internal/validate.NutriScore/YukaScore). Returns ErrNotFound if no such
-// item exists.
-func (d *DB) SetItemNutrition(ctx context.Context, id int64, nutriScore *string, yukaScore *int) (*models.Item, error) {
+// SetItemNutrition writes an item's nutrition scores (see
+// models.Item.NutriScore/YukaScore/NovaGroup; nil clears any) and returns
+// the updated row — a separate method for the same "too many positional
+// params" reason as SetItemLabels. All must already be validated
+// (internal/validate.NutriScore/YukaScore/NovaGroup). Returns ErrNotFound if
+// no such item exists.
+func (d *DB) SetItemNutrition(ctx context.Context, id int64, nutriScore *string, yukaScore, novaGroup *int) (*models.Item, error) {
 	res, err := d.conn.ExecContext(ctx,
-		`UPDATE items SET nutri_score = ?, yuka_score = ?, updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE id = ?`,
-		nutriScore, yukaScore, id)
+		`UPDATE items SET nutri_score = ?, yuka_score = ?, nova_group = ?, updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE id = ?`,
+		nutriScore, yukaScore, novaGroup, id)
 	if err != nil {
 		return nil, fmt.Errorf("updating nutrition scores for item %d: %w", id, err)
 	}
@@ -488,19 +489,30 @@ func (d *DB) SetItemNutrition(ctx context.Context, id int64, nutriScore *string,
 	return d.GetItem(ctx, id)
 }
 
+// Enrichment is what an Open Food Facts lookup found for a product, for
+// FillItemEnrichment/FillProductEnrichment: "" / nil for what it didn't.
+// Every field must already be validated.
+type Enrichment struct {
+	Aisle      string
+	NutriScore string
+	NovaGroup  *int
+	ImageURL   string
+}
+
 // FillItemEnrichment fills in what an Open Food Facts text search found for
-// an item (internal/handlers.maybeEnrichProduct) — aisle, nutri-score,
-// image, each "" for nothing — only where the item still has none, so a
-// value someone set meanwhile always wins. updated_at moves only when
-// something was filled, which is what the PWA's offline mirror compares.
-// All three must already be validated. A missing item is not an error.
-func (d *DB) FillItemEnrichment(ctx context.Context, id int64, aisle, nutriScore, imageURL string) error {
-	a, n, img := nullIfEmpty(aisle), nullIfEmpty(nutriScore), nullIfEmpty(imageURL)
+// an item (internal/handlers.maybeEnrichProduct) — aisle, nutri-score, NOVA
+// group, image — only where the item still has none, so a value someone set
+// meanwhile always wins. updated_at moves only when something was filled,
+// which is what the PWA's offline mirror compares. A missing item is not an
+// error.
+func (d *DB) FillItemEnrichment(ctx context.Context, id int64, e Enrichment) error {
+	a, n, img := nullIfEmpty(e.Aisle), nullIfEmpty(e.NutriScore), nullIfEmpty(e.ImageURL)
 	if _, err := d.conn.ExecContext(ctx,
-		`UPDATE items SET aisle = COALESCE(aisle, ?), nutri_score = COALESCE(nutri_score, ?), image_url = COALESCE(image_url, ?),
-		   updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now')
-		 WHERE id = ? AND ((aisle IS NULL AND ? IS NOT NULL) OR (nutri_score IS NULL AND ? IS NOT NULL) OR (image_url IS NULL AND ? IS NOT NULL))`,
-		a, n, img, id, a, n, img); err != nil {
+		`UPDATE items SET aisle = COALESCE(aisle, ?), nutri_score = COALESCE(nutri_score, ?), nova_group = COALESCE(nova_group, ?),
+		   image_url = COALESCE(image_url, ?), updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now')
+		 WHERE id = ? AND ((aisle IS NULL AND ? IS NOT NULL) OR (nutri_score IS NULL AND ? IS NOT NULL)
+		   OR (nova_group IS NULL AND ? IS NOT NULL) OR (image_url IS NULL AND ? IS NOT NULL))`,
+		a, n, e.NovaGroup, img, id, a, n, e.NovaGroup, img); err != nil {
 		return fmt.Errorf("filling enrichment for item %d: %w", id, err)
 	}
 	return nil

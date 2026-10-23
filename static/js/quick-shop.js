@@ -433,7 +433,7 @@ function mergedQuantity(existing, requested) {
 // `price` (an estimate, or null) and `planned` come from the quick-add
 // form's advanced panel; a product already on the list only gets the price
 // when it has none, and always comes back "to buy". `nutrition` is the
-// {nutri_score?, yuka_score?} a barcode lookup answered (nutritionFromLookup
+// {nutri_score?, nova_group?} a barcode lookup answered (nutritionFromLookup
 // in nutrition.js), or null: sent with the item, replacing the item's own.
 async function addQuickShopItem({ title, quantity = 1, aisle = '', aisleHint = '', barcode = '', urgent = false, quiet = false, price = null, planned = false, nutrition = null }) {
   const list = state.currentList;
@@ -462,7 +462,7 @@ async function bringBackItem(item, quantity, { aisle, urgent, quiet, filing = nu
   const previous = {
     done: item.done, quantity: item.quantity, aisle: item.aisle, is_urgent: item.is_urgent, next_due_date: item.next_due_date,
     price: item.price, purchase_status: item.purchase_status, actual_price: item.actual_price,
-    nutri_score: item.nutri_score, yuka_score: item.yuka_score,
+    nutri_score: item.nutri_score, nova_group: item.nova_group,
   };
   // Adding a product is wanting it: back "to buy" (not planned), any price
   // paid for its previous purchase dropped — the server's POST merge does
@@ -537,7 +537,7 @@ async function createQuickShopItem({ title, quantity, aisle, aisleHint, barcode,
     // The scores it's added with, else the catalog's (the server inherits
     // them the same way, see resolveItemNutrition).
     nutri_score: (nutrition && nutrition.nutri_score) || (known && known.nutri_score) || null,
-    yuka_score: nutrition && nutrition.yuka_score !== undefined ? nutrition.yuka_score : (known && known.yuka_score) ?? null,
+    nova_group: (nutrition && nutrition.nova_group) || (known && known.nova_group) || null,
   };
   list.items = [...(list.items || []), optimisticItem];
   renderItems();
@@ -585,10 +585,10 @@ async function createQuickShopItem({ title, quantity, aisle, aisleHint, barcode,
 // A product typed by hand that the server is looking up in Open Food Facts'
 // text search (enrichment_status "pending", internal/handlers/
 // product_enrichment.go — its aisle when neither the House catalog nor the
-// keyword guess knew it, its Nutri-Score for a user who shows the scores):
-// the item is read again a little later, at most twice (the search takes
-// 2 to 15 s), and only the fields the search fills — aisle, nutri_score,
-// image_url — are taken, where the row still has none, so nothing typed
+// keyword guess knew it, its Nutri-Score and NOVA group for a user who
+// shows the scores): the item is read again a little later, at most twice
+// (the search takes 2 to 15 s), and only the fields the search fills —
+// aisle, nutri_score, nova_group, image_url — are taken, where the row still has none, so nothing typed
 // meanwhile is lost. Never blocks anything: the row is already on screen.
 const ENRICHMENT_REFRESH_DELAYS = [5000, 12000];
 function scheduleEnrichmentRefresh(item, attempt = 0) {
@@ -604,7 +604,7 @@ function scheduleEnrichmentRefresh(item, attempt = 0) {
     }
     if (!onScreen() || !fresh) return;
     let changed = false;
-    for (const field of ['aisle', 'nutri_score', 'image_url']) {
+    for (const field of ['aisle', 'nutri_score', 'nova_group', 'image_url']) {
       if (fresh[field] && !item[field]) {
         item[field] = fresh[field];
         changed = true;
@@ -612,7 +612,7 @@ function scheduleEnrichmentRefresh(item, attempt = 0) {
     }
     if (changed) renderItems();
     // nutritionScoresEnabledAnywhere is defined in nutrition.js.
-    if (!item.aisle || (nutritionScoresEnabledAnywhere() && !item.nutri_score)) scheduleEnrichmentRefresh(item, attempt + 1);
+    if (!item.aisle || (nutritionScoresEnabledAnywhere() && (!item.nutri_score || !item.nova_group))) scheduleEnrichmentRefresh(item, attempt + 1);
   }, ENRICHMENT_REFRESH_DELAYS[attempt]);
 }
 

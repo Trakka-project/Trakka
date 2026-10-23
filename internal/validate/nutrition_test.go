@@ -32,3 +32,16 @@ func TestYukaScore(t *testing.T) {
 		}
 	}
 }
+
+func TestNovaGroup(t *testing.T) {
+	for _, in := range []int{1, 2, 3, 4} {
+		if err := NovaGroup(in); err != nil {
+			t.Errorf("NovaGroup(%d) = %v, want nil", in, err)
+		}
+	}
+	for _, in := range []int{-1, 0, 5, 100} {
+		if err := NovaGroup(in); !errors.Is(err, ErrInvalidNovaGroup) {
+			t.Errorf("NovaGroup(%d) = %v, want ErrInvalidNovaGroup", in, err)
+		}
+	}
+}

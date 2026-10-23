@@ -169,6 +169,7 @@ func (app *Application) recordProductAdded(ctx context.Context, list *models.Lis
 		Barcode:       barcode,
 		NutriScore:    scores.NutriScore,
 		YukaScore:     scores.YukaScore,
+		NovaGroup:     scores.NovaGroup,
 	})
 	if err != nil {
 		app.Logger.Warn("recording product addition", "house_id", list.HouseID, "item_id", item.ID, "error", err)
@@ -462,6 +463,17 @@ func (app *Application) handleProductsDelete(w http.ResponseWriter, r *http.Requ
 	w.WriteHeader(http.StatusNoContent)
 }
 
+// cleanExternalProductName gives a name from a third-party database (Open
+// Food Facts) the same cleaning as one typed into the item form, cut to fit
+// in an item title.
+func cleanExternalProductName(raw string) string {
+	name := validate.Text(raw)
+	if !validate.MaxLen(name, validate.MaxTitleLen) {
+		name = strings.TrimSpace(string([]rune(name)[:validate.MaxTitleLen]))
+	}
+	return name
+}
+
 // handleProductBarcodeLookup answers GET /api/v1/houses/{id}/products/barcode/{code}:
 // the product a scanned barcode stands for — from the household's own
 // catalog first (codes are filed there when an item is added with one),
@@ -486,10 +498,10 @@ func (app *Application) handleProductBarcodeLookup(w http.ResponseWriter, r *htt
 	user := userFromContext(r)
 	product, err := app.DB.GetProductByBarcode(r.Context(), houseID, code)
 	if err == nil {
-		app.enrichProductNutriScore(r.Context(), user, product, code)
+		app.enrichProductNutrition(r.Context(), user, product, code)
 		writeJSON(w, http.StatusOK, models.BarcodeLookup{
 			Barcode: code, Name: product.Name, Aisle: product.Aisle,
-			NutriScore: product.NutriScore, YukaScore: product.YukaScore,
+			NutriScore: product.NutriScore, NovaGroup: product.NovaGroup, YukaScore: product.YukaScore,
 			Source: "house", Product: product,
 		})
 		return
@@ -520,17 +532,15 @@ func (app *Application) handleProductBarcodeLookup(w http.ResponseWriter, r *htt
 		writeCodedError(w, http.StatusNotFound, "lookup_failed", "barcode lookup failed")
 		return
 	}
-	// A name from a third-party database goes through the same cleaning as
-	// one typed into the item form, and fits in an item title.
-	name := validate.Text(found.Name)
-	if !validate.MaxLen(name, validate.MaxTitleLen) {
-		name = strings.TrimSpace(string([]rune(name)[:validate.MaxTitleLen]))
-	}
+	name := cleanExternalProductName(found.Name)
 	aisle := catalog.AisleFromCategories(found.Categories)
 	if aisle == "" {
 		aisle = catalog.GuessAisle(name)
 	}
-	writeJSON(w, http.StatusOK, models.BarcodeLookup{Barcode: code, Name: name, Aisle: aisle, NutriScore: found.NutriScore, Source: "openfoodfacts"})
+	writeJSON(w, http.StatusOK, models.BarcodeLookup{
+		Barcode: code, Name: name, Aisle: aisle,
+		NutriScore: found.NutriScore, NovaGroup: novaGroupPtr(found.NovaGroup), Source: "openfoodfacts",
+	})
 }
 
 // lookupBarcode asks Open Food Facts about a barcode:

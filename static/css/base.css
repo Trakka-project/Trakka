@@ -1260,42 +1260,159 @@ html > body.overflow-hidden {
 .nutri-score-badge--d { background-color: #ee8100; color: #1c1917; }
 .nutri-score-badge--e { background-color: #d03a10; color: #ffffff; }
 
-/* The Yuka score: a dot in Yuka's band colour (decorative, aria-hidden)
-   and the number in slate on a slate pill (measured 8.4:1 light, 9.2:1 dark). */
-.yuka-score-badge {
+/* The NOVA group (1 to 4, how processed a food is): a 24px disc holding
+   the digit — round where the Nutri-Score is square, a digit where it's a
+   letter, so the two never read alike. NOVA's own scale is green, yellow,
+   orange, red; its pure green (#00aa00, 3.11:1 with white) and red (#ff0000,
+   4.0:1) fail AA, so the shades are the Nutri-Score badge's measured ones:
+   1 #038141 / white 4.98, 2 #fecb02 / dark 11.46, 3 #ee8100 / dark 6.48,
+   4 #d03a10 / white 4.89. The same classes colour the edit form's tiles. */
+.nova-group-badge {
   display: inline-flex;
   align-items: center;
-  gap: 0.25rem;
+  justify-content: center;
+  width: 1.5rem;
   height: 1.5rem;
-  padding: 0 0.375rem;
   border-radius: 9999px;
-  background-color: rgb(226 232 240 / 0.8);
+  box-shadow: inset 0 0 0 1px rgb(0 0 0 / 0.12);
+  font-size: 0.8125rem;
+  font-weight: 800;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+
+.nova-group-badge--1 { background-color: #038141; color: #ffffff; }
+.nova-group-badge--2 { background-color: #fecb02; color: #1c1917; }
+.nova-group-badge--3 { background-color: #ee8100; color: #1c1917; }
+.nova-group-badge--4 { background-color: #d03a10; color: #ffffff; }
+
+/* The edit form's nutrition panel (static/index.html's #edit-item-nutrition,
+   static/js/nutrition.js): a native <details>, its own marker replaced by
+   the chevron, the body sliding in when it opens. */
+.nutrition-panel__summary {
+  list-style: none;
+}
+
+.nutrition-panel__summary::-webkit-details-marker {
+  display: none;
+}
+
+.nutrition-panel__summary:focus-visible {
+  outline: 2px solid #0ea5e9;
+  outline-offset: 2px;
+}
+
+.nutrition-panel__chevron {
+  transition: transform 150ms ease;
+}
+
+.nutrition-panel[open] > .nutrition-panel__summary .nutrition-panel__chevron {
+  transform: rotate(180deg);
+}
+
+.nutrition-panel[open] > .nutrition-panel__body {
+  animation: nutrition-panel-open 180ms ease-out;
+}
+
+@keyframes nutrition-panel-open {
+  from { opacity: 0; transform: translateY(-4px); }
+  to { opacity: 1; transform: none; }
+}
+
+/* The A-E scale: six 44px-high radio tiles (the five grades, then "none")
+   sharing the row, so it fits a 320px phone. The radio itself is visually
+   hidden but stays focusable; the chosen tile is full colour, raised and
+   ringed, the others desaturated — a luminance-preserving filter, so each
+   letter keeps the contrast measured above — and the letter, not the
+   colour, still carries the information. */
+.nutri-score-scale {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr)) minmax(0, 1.4fr);
+  gap: 0.375rem;
+}
+
+.nutri-score-option {
+  position: relative;
+  display: block;
+  cursor: pointer;
+}
+
+/* Above the tile, whose filter/transform give it a stacking context: the
+   tap lands on the radio itself. */
+.nutri-score-option__input {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  opacity: 0;
+  margin: 0;
+  cursor: pointer;
+}
+
+.nutri-score-option__tile {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 2.75rem;
+  border-radius: 0.625rem;
+  box-shadow: inset 0 0 0 1px rgb(0 0 0 / 0.12);
+  font-size: 1.125rem;
+  font-weight: 800;
+  line-height: 1;
+  filter: saturate(0.25);
+  transition: filter 120ms ease, transform 120ms ease, box-shadow 120ms ease;
+}
+
+.nutri-score-option__tile--none {
+  background-color: rgb(226 232 240);
   color: #334155;
   font-size: 0.75rem;
-  font-weight: 700;
-  font-variant-numeric: tabular-nums;
-  line-height: 1;
+  font-weight: 600;
+  filter: none;
+}
+
+.nutri-score-option__input:checked + .nutri-score-option__tile {
+  filter: none;
+  transform: scale(1.06);
+  box-shadow: inset 0 0 0 1px rgb(0 0 0 / 0.12), 0 0 0 2px #ffffff, 0 0 0 4px #0f172a;
+}
+
+.nutri-score-option__input:focus-visible + .nutri-score-option__tile {
+  outline: 2px solid #0ea5e9;
+  outline-offset: 3px;
+}
+
+/* The NOVA scale: four groups, then "none". */
+.nutri-score-scale--nova {
+  grid-template-columns: repeat(4, minmax(0, 1fr)) minmax(0, 1.4fr);
 }
 
 @media (prefers-color-scheme: dark) {
-  :root:not([data-theme="light"]) .yuka-score-badge {
-    background-color: rgb(51 65 85 / 0.8);
+  :root:not([data-theme="light"]) .nutri-score-option__tile--none {
+    background-color: rgb(51 65 85);
     color: #e2e8f0;
+  }
+
+  :root:not([data-theme="light"]) .nutri-score-option__input:checked + .nutri-score-option__tile {
+    box-shadow: inset 0 0 0 1px rgb(0 0 0 / 0.12), 0 0 0 2px #0f172a, 0 0 0 4px #f1f5f9;
   }
 }
 
-:root[data-theme="dark"] .yuka-score-badge {
-  background-color: rgb(51 65 85 / 0.8);
+:root[data-theme="dark"] .nutri-score-option__tile--none {
+  background-color: rgb(51 65 85);
   color: #e2e8f0;
 }
 
-.yuka-score-badge__dot {
-  width: 0.5rem;
-  height: 0.5rem;
-  border-radius: 9999px;
+:root[data-theme="dark"] .nutri-score-option__input:checked + .nutri-score-option__tile {
+  box-shadow: inset 0 0 0 1px rgb(0 0 0 / 0.12), 0 0 0 2px #0f172a, 0 0 0 4px #f1f5f9;
 }
 
-.yuka-score-badge__dot--excellent { background-color: #038141; }
-.yuka-score-badge__dot--good { background-color: #85bb2f; }
-.yuka-score-badge__dot--mediocre { background-color: #ee8100; }
-.yuka-score-badge__dot--poor { background-color: #d03a10; }
+@media (prefers-reduced-motion: reduce) {
+  .nutrition-panel__chevron,
+  .nutri-score-option__tile {
+    transition: none;
+  }
+
+  .nutrition-panel[open] > .nutrition-panel__body {
+    animation: none;
+  }
+}
