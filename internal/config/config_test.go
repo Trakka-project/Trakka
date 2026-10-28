@@ -84,3 +84,43 @@ func TestDefaultAppLanguage(t *testing.T) {
 		}
 	}
 }
+
+func TestFluvAllowedNetworks(t *testing.T) {
+	cases := []struct {
+		in      string
+		want    []string
+		wantErr bool
+	}{
+		{"", nil, false},
+		{"192.168.1.20", []string{"192.168.1.20/32"}, false},
+		{" 192.168.1.0/24 , 127.0.0.1, fd00::/8 ", []string{"192.168.1.0/24", "127.0.0.1/32", "fd00::/8"}, false},
+		{"10.1.2.3/8", []string{"10.0.0.0/8"}, false},
+		{"::ffff:10.0.0.5", []string{"10.0.0.5/32"}, false},
+		{"0.0.0.0/0", nil, true},
+		{"::/0", nil, true},
+		{"fluv.example.com", nil, true},
+		{"192.168.1.0/33", nil, true},
+		{"fe80::1%eth0", nil, true},
+	}
+	for _, tc := range cases {
+		got, err := Config{FluvIntegrationAllowedIPs: tc.in}.FluvAllowedNetworks()
+		if tc.wantErr {
+			if err == nil {
+				t.Errorf("FluvAllowedNetworks(%q) = %v, want an error", tc.in, got)
+			}
+			if verr := (Config{FluvIntegrationAllowedIPs: tc.in}).Validate(); verr == nil {
+				t.Errorf("Validate accepted FLUV_INTEGRATION_ALLOWED_IPS=%q", tc.in)
+			}
+			continue
+		}
+		if err != nil || len(got) != len(tc.want) {
+			t.Errorf("FluvAllowedNetworks(%q) = %v, %v; want %v", tc.in, got, err, tc.want)
+			continue
+		}
+		for i := range got {
+			if got[i].String() != tc.want[i] {
+				t.Errorf("FluvAllowedNetworks(%q)[%d] = %s, want %s", tc.in, i, got[i], tc.want[i])
+			}
+		}
+	}
+}

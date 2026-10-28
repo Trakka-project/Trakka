@@ -548,8 +548,9 @@ func (d *DB) SetItemPurchase(ctx context.Context, id int64, planned bool, actual
 // computed by the caller, aisle filled in only if it had none, and urgent
 // added (never removed) by the new request. Adding a product is wanting it:
 // the item comes back "to buy", not planned, and a paid price from its
-// previous purchase is cleared (see migration 32). Returns ErrNotFound if
-// no such item exists.
+// previous purchase is cleared (see migration 32), and the purchase sent to
+// Fluv for it detached from the item (detachFluvPurchases). Returns
+// ErrNotFound if no such item exists.
 func (d *DB) ReactivateItem(ctx context.Context, id int64, quantity int, aisle *string, urgent bool) (*models.Item, error) {
 	res, err := d.conn.ExecContext(ctx,
 		`UPDATE items SET done = 0, next_due_date = NULL, is_planned = 0, actual_price = NULL, quantity = ?, aisle = COALESCE(aisle, ?),
@@ -565,6 +566,9 @@ func (d *DB) ReactivateItem(ctx context.Context, id int64, quantity int, aisle *
 	}
 	if n == 0 {
 		return nil, ErrNotFound
+	}
+	if err := d.detachFluvPurchases(ctx, id); err != nil {
+		return nil, err
 	}
 	return d.GetItem(ctx, id)
 }

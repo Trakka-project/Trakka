@@ -6,6 +6,7 @@ package config
 import (
 	"errors"
 	"fmt"
+	"net/netip"
 	"os"
 	"strconv"
 	"strings"
@@ -140,6 +141,24 @@ type Config struct {
 	// stay blocked either way.
 	BackupWebDAVAllowPrivate bool
 
+	// FluvIntegrationEnabled offers each user to send what they buy to
+	// Fluv, their personal finance app (internal/fluv, docs/FLUV.md):
+	// Paramètres → Intégrations. FLUV_INTEGRATION_ENABLED, default true;
+	// false removes the routes and stops the sender (queued purchases wait).
+	FluvIntegrationEnabled bool
+
+	// FluvIntegrationAllowedIPs is the operator's side of the IP lock on
+	// purchases sent to Fluv: a comma-separated list of IP addresses or
+	// CIDR prefixes (FLUV_INTEGRATION_ALLOWED_IPS). Each user pins the
+	// address(es) of their Fluv in Paramètres; unset, a pinned address must
+	// be public (the same public-only policy as the scraper and Web Push),
+	// set, it must be inside one of these — which is how a Fluv on the LAN,
+	// on loopback or on a container network is allowed, without opening
+	// every private address. Link-local (cloud metadata), multicast and
+	// unspecified addresses stay refused either way. Parsed and checked at
+	// startup by Validate (FluvAllowedNetworks).
+	FluvIntegrationAllowedIPs string
+
 	// SaaSMode marks a multi-tenant deployment where accounts on the same
 	// instance don't know each other, as opposed to the default self-hosted
 	// household/group. It narrows two things:
@@ -196,6 +215,9 @@ func Load() Config {
 
 		BackupWebDAVAllowPrivate: envBool("BACKUP_WEBDAV_ALLOW_PRIVATE", false),
 
+		FluvIntegrationEnabled:    envBool("FLUV_INTEGRATION_ENABLED", true),
+		FluvIntegrationAllowedIPs: envOr("FLUV_INTEGRATION_ALLOWED_IPS", ""),
+
 		SaaSMode: envBool("SAAS_MODE", false),
 	}
 }
@@ -238,7 +260,46 @@ func (c Config) Validate() error {
 		return errors.New("VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY and VAPID_SUBJECT must all be set together, or none of them")
 	}
 
+	if _, err := c.FluvAllowedNetworks(); err != nil {
+		return err
+	}
+
 	return nil
+}
+
+// FluvAllowedNetworks parses FluvIntegrationAllowedIPs: nil when unset. A
+// bare address is its own /32 or /128. Unlike most settings here, a bad
+// value refuses to start rather than falling back, since it is a security
+// allowlist: an entry that can't be read, or a /0 that would let any
+// address in, is an error.
+func (c Config) FluvAllowedNetworks() ([]netip.Prefix, error) {
+	var prefixes []netip.Prefix
+	for _, field := range strings.Split(c.FluvIntegrationAllowedIPs, ",") {
+		field = strings.TrimSpace(field)
+		if field == "" {
+			continue
+		}
+		var prefix netip.Prefix
+		if strings.Contains(field, "/") {
+			p, err := netip.ParsePrefix(field)
+			if err != nil {
+				return nil, fmt.Errorf("FLUV_INTEGRATION_ALLOWED_IPS: %q is not an IP address or CIDR prefix", field)
+			}
+			prefix = p.Masked()
+		} else {
+			addr, err := netip.ParseAddr(field)
+			if err != nil || addr.Zone() != "" {
+				return nil, fmt.Errorf("FLUV_INTEGRATION_ALLOWED_IPS: %q is not an IP address or CIDR prefix", field)
+			}
+			addr = addr.Unmap()
+			prefix = netip.PrefixFrom(addr, addr.BitLen())
+		}
+		if prefix.Bits() == 0 {
+			return nil, fmt.Errorf("FLUV_INTEGRATION_ALLOWED_IPS: %s would allow every address; name Fluv's address or network", prefix)
+		}
+		prefixes = append(prefixes, prefix)
+	}
+	return prefixes, nil
 }
 
 func envOr(key, fallback string) string {

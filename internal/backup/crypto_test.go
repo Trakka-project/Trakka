@@ -183,6 +183,43 @@ func TestSealSecret(t *testing.T) {
 	}
 }
 
+// TestServiceSealSecret covers the instance-key sealing other features use
+// (the Fluv token): a subkey per purpose, the key file created on first
+// use, and unreadable once that key is gone.
+func TestServiceSealSecret(t *testing.T) {
+	dir := t.TempDir()
+	s := &Service{keys: &keyStore{path: dir + "/backup.key"}, now: time.Now}
+	if _, err := s.OpenSecret("fluv-token", "v1:AAAA"); !errors.Is(err, ErrSealedSecretUnreadable) {
+		t.Fatalf("open without a key: got %v", err)
+	}
+	sealed, err := s.SealSecret("fluv-token", "fluv_trk_secret")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(sealed, "fluv_trk_secret") {
+		t.Fatal("sealed secret contains the plaintext")
+	}
+	if _, err := os.Stat(dir + "/backup.key"); err != nil {
+		t.Fatalf("key file not created: %v", err)
+	}
+	if got, err := s.OpenSecret("fluv-token", sealed); err != nil || got != "fluv_trk_secret" {
+		t.Fatalf("OpenSecret = %q, %v", got, err)
+	}
+	if _, err := s.OpenSecret("other-purpose", sealed); !errors.Is(err, ErrSealedSecretUnreadable) {
+		t.Fatalf("other purpose: got %v, want ErrSealedSecretUnreadable", err)
+	}
+	key, _, _ := s.keys.load()
+	if _, err := openSecret(key, sealed); !errors.Is(err, ErrSecretUnreadable) {
+		t.Fatal("a purpose's secret opened as the WebDAV password")
+	}
+	if err := s.keys.replace(mustKey(t), time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.OpenSecret("fluv-token", sealed); !errors.Is(err, ErrSealedSecretUnreadable) {
+		t.Fatalf("after a key change: got %v", err)
+	}
+}
+
 // TestKeyStore covers first-use generation (with owner-only permissions),
 // stability across reloads, and replace keeping the previous key aside.
 func TestKeyStore(t *testing.T) {

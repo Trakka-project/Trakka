@@ -21,6 +21,7 @@ import (
 	"trakka/internal/backup"
 	"trakka/internal/config"
 	"trakka/internal/db"
+	"trakka/internal/fluv"
 	"trakka/internal/logbuffer"
 	"trakka/internal/scraper"
 )
@@ -62,6 +63,13 @@ type Application struct {
 	// endpoints answer 404.
 	Backups *backup.Service
 
+	// Fluv sends the users' purchases to Fluv, their personal finance app
+	// (see internal/fluv and fluv.go), behind /api/v1/integrations/fluv.
+	// Nil when the operator turned it off (FLUV_INTEGRATION_ENABLED=false)
+	// and in tests that build an Application by hand: those routes then
+	// answer 404 and checking items off sends nothing.
+	Fluv *fluv.Service
+
 	// RequestRestart asks cmd/server to shut down gracefully and exit for
 	// its supervisor to start it again — what POST /api/v1/admin/restart
 	// calls once every check has passed (see admin_restart.go). May be nil
@@ -87,6 +95,11 @@ type Application struct {
 	// built for the same reason.
 	barcodeLookupLimiterOnce sync.Once
 	barcodeLookupLimiterVal  *rateLimiter
+
+	// Per-account Fluv connection test bucket (see fluv.go), lazily built
+	// for the same reason.
+	fluvTestLimiterOnce sync.Once
+	fluvTestLimiterVal  *rateLimiter
 
 	// Per-link bucket of public link visitors' writes (see public_links.go),
 	// lazily built for the same reason.
@@ -324,6 +337,14 @@ func (app *Application) Routes() http.Handler {
 	apiMux.HandleFunc("GET /api/v1/api-tokens", app.handleAPITokensIndex)
 	apiMux.HandleFunc("POST /api/v1/api-tokens", app.handleAPITokensCreate)
 	apiMux.HandleFunc("DELETE /api/v1/api-tokens/{id}", app.handleAPITokensDelete)
+
+	// The caller's connection to Fluv (fluv.go): session only, like the
+	// token routes above — an API token can't redirect anyone's purchases.
+	apiMux.HandleFunc("GET /api/v1/integrations/fluv", app.handleFluvShow)
+	apiMux.HandleFunc("PUT /api/v1/integrations/fluv", app.handleFluvSave)
+	apiMux.HandleFunc("DELETE /api/v1/integrations/fluv", app.handleFluvDelete)
+	apiMux.HandleFunc("POST /api/v1/integrations/fluv/test", app.handleFluvTest)
+	apiMux.HandleFunc("POST /api/v1/integrations/fluv/retry", app.handleFluvRetry)
 
 	mux.Handle("/api/v1/", app.RequireSession(apiMux))
 	// The only /api/v1/... routes outside RequireSession, each authenticated

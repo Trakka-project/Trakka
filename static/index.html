@@ -1965,6 +1965,72 @@
                 </div>
               </details>
             </section>
+
+            <!-- "Fluv": sends what you buy to Fluv, the personal finance app (fluv.js,
+                 internal/handlers/fluv.go, internal/fluv, docs/FLUV.md). Hidden while the
+                 server has the integration off (GET answers 404). No required/type="url"
+                 here: an invalid field would block the "Enregistrer" of the other tabs. -->
+            <section id="fluv-section" hidden aria-labelledby="fluv-title" class="space-y-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-4 py-3">
+              <div>
+                <h3 id="fluv-title" class="flex items-center gap-2 text-sm font-semibold text-slate-700 dark:text-slate-200">
+                  <span aria-hidden="true">💸</span>
+                  <span data-i18n="modals.userSettings.fluv.title">Fluv (finances personnelles)</span>
+                </h3>
+                <p class="mt-0.5 text-xs font-normal text-slate-500 dark:text-slate-400" data-i18n="modals.userSettings.fluv.hint">Chaque article que vous cochez dans une liste d'achats, avec son prix, devient une dépense dans Fluv. Le décocher la retire.</p>
+              </div>
+
+              <p id="fluv-status" class="text-xs text-slate-600 dark:text-slate-300" role="status"></p>
+
+              <div class="space-y-3">
+                <div>
+                  <label for="fluv-endpoint" class="block text-xs font-medium text-slate-600 dark:text-slate-300" data-i18n="modals.userSettings.fluv.endpointLabel">Adresse de réception de Fluv</label>
+                  <input type="text" id="fluv-endpoint" inputmode="url" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" maxlength="2048" enterkeyhint="next"
+                         placeholder="https://fluv.example.com/api/v1/integrations/trakka/purchases"
+                         class="mt-1 min-h-[44px] w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 font-mono text-xs text-slate-900 dark:text-slate-100 focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500/30">
+                </div>
+                <!-- The IP lock is automatic (Policy.lockTarget): the address is resolved when the
+                     connection is saved or tested, then shown here, read-only. -->
+                <p id="fluv-locked-ips" hidden class="rounded-lg bg-slate-50 dark:bg-slate-800/60 px-3 py-2 text-xs text-slate-600 dark:text-slate-300"></p>
+                <div>
+                  <label for="fluv-token" class="block text-xs font-medium text-slate-600 dark:text-slate-300" data-i18n="modals.userSettings.fluv.tokenLabel">Jeton de liaison Fluv</label>
+                  <input type="password" id="fluv-token" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" maxlength="64" enterkeyhint="done"
+                         placeholder="fluv_trk_…"
+                         class="mt-1 min-h-[44px] w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 font-mono text-xs text-slate-900 dark:text-slate-100 focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500/30">
+                  <p id="fluv-token-hint" class="mt-1 text-xs text-slate-500 dark:text-slate-400"></p>
+                </div>
+                <label class="flex min-h-[44px] items-center gap-3 text-sm text-slate-700 dark:text-slate-200">
+                  <input type="checkbox" id="fluv-enabled" checked class="h-5 w-5 rounded border-slate-300 dark:border-slate-600 text-sky-500 focus:ring-sky-500">
+                  <span data-i18n="modals.userSettings.fluv.enabledLabel">Envoyer mes achats à Fluv</span>
+                </label>
+              </div>
+
+              <div class="flex flex-wrap gap-2">
+                <button type="button" id="fluv-save-button" data-i18n="modals.userSettings.fluv.save"
+                        class="min-h-[44px] rounded-xl bg-sky-500 px-4 py-2.5 text-sm font-semibold text-white hover:bg-sky-400 disabled:opacity-60">Enregistrer la connexion</button>
+                <button type="button" id="fluv-test-button" hidden data-i18n="modals.userSettings.fluv.test"
+                        class="min-h-[44px] rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-100 dark:bg-slate-800 px-3 py-2 text-sm font-medium text-slate-700 dark:text-slate-200 hover:bg-slate-200 dark:hover:bg-slate-700 disabled:opacity-60">Tester</button>
+                <button type="button" id="fluv-retry-button" hidden data-i18n="modals.userSettings.fluv.retry"
+                        class="min-h-[44px] rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-100 dark:bg-slate-800 px-3 py-2 text-sm font-medium text-slate-700 dark:text-slate-200 hover:bg-slate-200 dark:hover:bg-slate-700 disabled:opacity-60">Renvoyer les achats en échec</button>
+                <button type="button" id="fluv-disconnect-button" hidden
+                        class="min-h-[44px] rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-100 dark:bg-slate-800 px-3 py-2 text-sm font-medium text-slate-600 dark:text-slate-300 hover:bg-rose-500/10 hover:text-rose-600 dark:hover:text-rose-400 disabled:opacity-60"></button>
+              </div>
+              <p id="fluv-error" hidden class="text-xs text-rose-600 dark:text-rose-400" role="alert"></p>
+
+              <details class="group border-t border-slate-200 dark:border-slate-700 pt-3">
+                <summary class="flex cursor-pointer list-none items-center justify-between text-sm font-medium text-slate-600 dark:text-slate-300">
+                  <span data-i18n="modals.userSettings.fluv.howTo">Relier Fluv</span>
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="h-4 w-4 transition-transform group-open:rotate-180" aria-hidden="true"><polyline points="6 9 12 15 18 9"/></svg>
+                </summary>
+                <div class="mt-3 space-y-2 text-xs text-slate-600 dark:text-slate-300">
+                  <ol class="list-decimal space-y-1 pl-4">
+                    <li data-i18n="modals.userSettings.fluv.step1">L'administrateur de Fluv autorise l'adresse IP de ce serveur Trakka (FLUV_TRAKKA_ALLOWED_IPS).</li>
+                    <li data-i18n="modals.userSettings.fluv.step2">Dans Fluv : Paramètres → Trakka, choisissez le compte des dépenses, puis copiez l'adresse de réception et le jeton (affiché une seule fois).</li>
+                    <li data-i18n="modals.userSettings.fluv.step3">Collez-les ici avec l'adresse IP de Fluv, enregistrez, puis « Tester ».</li>
+                  </ol>
+                  <p data-i18n="modals.userSettings.fluv.note">Seuls les articles avec un prix sont envoyés : le prix payé s'il a été saisi, sinon le prix estimé, multiplié par la quantité. L'envoi a lieu une vingtaine de secondes après avoir coché, et reprend tout seul si Fluv est injoignable.</p>
+                </div>
+              </details>
+            </section>
           </div>
         </div>
 
@@ -3334,6 +3400,7 @@
   <script src="/js/local-reminders.js" defer></script>
   <script src="/js/calendar-feed.js" defer></script>
   <script src="/js/api-tokens.js" defer></script>
+  <script src="/js/fluv.js" defer></script>
   <script src="/js/qrcode.js" defer></script>
   <script src="/js/qr-login.js" defer></script>
   <script src="/js/install-help.js" defer></script>

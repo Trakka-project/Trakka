@@ -8,7 +8,7 @@ importScripts('/js/db.js', '/js/recurrence.js');
 
 // Bump both on any change to APP_SHELL's contents so activate()
 // evicts the old cache instead of serving stale assets forever.
-const SHELL_CACHE = 'trakka-shell-v155';
+const SHELL_CACHE = 'trakka-shell-v157';
 const RUNTIME_CACHE = 'trakka-runtime-v142';
 const KNOWN_CACHES = [SHELL_CACHE, RUNTIME_CACHE];
 
@@ -50,6 +50,7 @@ const APP_SHELL = [
   '/js/local-reminders.js',
   '/js/calendar-feed.js',
   '/js/api-tokens.js',
+  '/js/fluv.js',
   '/js/qrcode.js',
   '/js/qr-login.js',
   '/js/install-help.js',
@@ -305,6 +306,13 @@ self.addEventListener('fetch', (event) => {
   // is only ever shown in the live POST response, so creating one must never
   // be queued and replayed, nor revoking one deferred.
   if (url.pathname === API_PREFIX + '/api-tokens' || url.pathname.startsWith(API_PREFIX + '/api-tokens/')) {
+    return;
+  }
+
+  // The connection to Fluv (fluv.js, docs/FLUV.md) likewise: saving it,
+  // testing it or disconnecting it acts on where the user's purchases go,
+  // and must happen now or not at all — never be replayed later.
+  if (url.pathname.startsWith(API_PREFIX + '/integrations/')) {
     return;
   }
 
