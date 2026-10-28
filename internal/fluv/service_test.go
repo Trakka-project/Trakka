@@ -176,7 +176,7 @@ func newTestEnv(t *testing.T) *testEnv {
 
 func (e *testEnv) connect(t *testing.T) {
 	t.Helper()
-	if _, err := e.svc.Save(context.Background(), e.user.ID, Update{EndpointURL: e.endpoint, PinnedIPs: []string{"127.0.0.1"}, Token: testToken}); err != nil {
+	if _, err := e.svc.Save(context.Background(), e.user.ID, Update{EndpointURL: e.endpoint, Token: testToken}); err != nil {
 		t.Fatalf("saving the connection: %v", err)
 	}
 }
@@ -363,7 +363,7 @@ func TestFailuresAreClassified(t *testing.T) {
 		t.Fatal("a failed purchase was retried on its own")
 	}
 	// A new token, saved: the failed cancellation goes through.
-	if _, err := env.svc.Save(ctx, env.user.ID, Update{EndpointURL: env.endpoint, PinnedIPs: []string{"127.0.0.1"}, Token: "fluv_trk_zzzzzzzzzzzzzzzzzzzzzzzzzz"}); err != nil {
+	if _, err := env.svc.Save(ctx, env.user.ID, Update{EndpointURL: env.endpoint, Token: "fluv_trk_zzzzzzzzzzzzzzzzzzzzzzzzzz"}); err != nil {
 		t.Fatal(err)
 	}
 	env.svc.SendDue(ctx)
@@ -386,7 +386,7 @@ func TestRedirectIsNotFollowed(t *testing.T) {
 		http.Redirect(w, r, "/elsewhere", http.StatusTemporaryRedirect)
 	}))
 	t.Cleanup(redirector.Close)
-	if _, err := env.svc.Save(ctx, env.user.ID, Update{EndpointURL: redirector.URL + purchasesPath, PinnedIPs: []string{"127.0.0.1"}, Token: testToken}); err != nil {
+	if _, err := env.svc.Save(ctx, env.user.ID, Update{EndpointURL: redirector.URL + purchasesPath, Token: testToken}); err != nil {
 		t.Fatal(err)
 	}
 	env.tick(true)
@@ -411,7 +411,7 @@ func TestOnlyConnectedBuyersOnPurchaseLists(t *testing.T) {
 
 	env.connect(t)
 	disabled := false
-	if _, err := env.svc.Save(ctx, env.user.ID, Update{EndpointURL: env.endpoint, PinnedIPs: []string{"127.0.0.1"}, Enabled: &disabled}); err != nil {
+	if _, err := env.svc.Save(ctx, env.user.ID, Update{EndpointURL: env.endpoint, Enabled: &disabled}); err != nil {
 		t.Fatal(err)
 	}
 	env.tick(true)
@@ -419,7 +419,7 @@ func TestOnlyConnectedBuyersOnPurchaseLists(t *testing.T) {
 		t.Fatalf("queued while paused: %+v", s)
 	}
 
-	if _, err := env.svc.Save(ctx, env.user.ID, Update{EndpointURL: env.endpoint, PinnedIPs: []string{"127.0.0.1"}}); err != nil {
+	if _, err := env.svc.Save(ctx, env.user.ID, Update{EndpointURL: env.endpoint}); err != nil {
 		t.Fatal(err)
 	}
 	todo := *env.list
@@ -483,10 +483,74 @@ func TestTestConnection(t *testing.T) {
 	ln, _ := net.Listen("tcp", "127.0.0.1:0")
 	addr := ln.Addr().String()
 	_ = ln.Close()
-	if _, err := env.svc.Save(ctx, env.user.ID, Update{EndpointURL: "http://" + addr + purchasesPath, PinnedIPs: []string{"127.0.0.1"}}); err != nil {
+	if _, err := env.svc.Save(ctx, env.user.ID, Update{EndpointURL: "http://" + addr + purchasesPath}); err != nil {
 		t.Fatal(err)
 	}
 	if got, _ := env.svc.Test(ctx, env.user.ID); got.OK || got.Code != "unreachable" {
 		t.Fatalf("test against nothing = %+v", got)
+	}
+}
+
+// TestAutomaticIPLock: saving resolves the host once and locks it; sending
+// never resolves; a test re-locks only where Fluv accepts it.
+func TestAutomaticIPLock(t *testing.T) {
+	env := newTestEnv(t)
+	ctx := context.Background()
+	_, port, _ := net.SplitHostPort(strings.TrimPrefix(strings.TrimSuffix(env.endpoint, purchasesPath), "http://"))
+	resolver := &fakeResolver{answers: map[string][]netip.Addr{"fluv.lan": addrs("127.0.0.1")}}
+	env.svc.resolve = resolver.resolve
+	env.svc.policy = Policy{Allowed: []netip.Prefix{netip.MustParsePrefix("127.0.0.0/8")}}
+	endpoint := "http://fluv.lan:" + port + purchasesPath
+
+	got, err := env.svc.Save(ctx, env.user.ID, Update{EndpointURL: endpoint, Token: testToken})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Join(got.PinnedIPs, ",") != "127.0.0.1" || resolver.calls != 1 {
+		t.Fatalf("after saving: pins %v, %d lookups", got.PinnedIPs, resolver.calls)
+	}
+
+	// The DNS record now points elsewhere (or the resolver is poisoned):
+	// purchases still go to the locked address, without any lookup.
+	resolver.answers["fluv.lan"] = addrs("127.0.0.2")
+	env.tick(true)
+	env.advance(settleDelay)
+	env.svc.SendDue(ctx)
+	if purchases, _ := env.fluv.snapshot(); len(purchases) != 1 {
+		t.Fatal("purchase not delivered to the locked address")
+	}
+	if resolver.calls != 1 {
+		t.Fatalf("sending resolved the host (%d lookups)", resolver.calls)
+	}
+
+	// A test resolves again; nothing answers at the new address, so the
+	// lock stays where Fluv is.
+	res, err := env.svc.Test(ctx, env.user.ID)
+	if err != nil || res.OK || res.Relocked {
+		t.Fatalf("test against the moved record = %+v, %v", res, err)
+	}
+	if s := env.settings(t); strings.Join(s.PinnedIPs, ",") != "127.0.0.1" {
+		t.Fatalf("a failed test moved the lock to %v", s.PinnedIPs)
+	}
+
+	// Fluv really moved (127.0.0.2 is loopback too: the test server
+	// answers there): the test re-locks.
+	ln, err := net.Listen("tcp", "127.0.0.2:"+port)
+	if err != nil {
+		t.Skipf("127.0.0.2 not usable here: %v", err)
+	}
+	moved := &http.Server{Handler: env.fluv, ReadHeaderTimeout: time.Second}
+	go func() { _ = moved.Serve(ln) }()
+	t.Cleanup(func() { _ = moved.Close() })
+	res, err = env.svc.Test(ctx, env.user.ID)
+	if err != nil || !res.OK || !res.Relocked || strings.Join(res.PinnedIPs, ",") != "127.0.0.2" {
+		t.Fatalf("test after Fluv moved = %+v, %v", res, err)
+	}
+	if s := env.settings(t); strings.Join(s.PinnedIPs, ",") != "127.0.0.2" {
+		t.Fatalf("lock not moved: %v", s.PinnedIPs)
+	}
+	res, _ = env.svc.Test(ctx, env.user.ID)
+	if !res.OK || res.Relocked {
+		t.Fatalf("a test with an unchanged record = %+v", res)
 	}
 }

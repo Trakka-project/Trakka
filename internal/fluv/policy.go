@@ -1,9 +1,12 @@
 package fluv
 
 import (
+	"context"
 	"errors"
+	"net"
 	"net/netip"
 	"net/url"
+	"slices"
 	"strings"
 
 	"trakka/internal/validate"
@@ -47,10 +50,11 @@ func invalid(field, code, message string) error {
 // This is this package's SSRF defense, the fourth place (after
 // internal/scraper, internal/webpush and internal/backup) where the server
 // sends a request to an address entered at runtime. It is stricter than
-// those three: the URL's host name is never resolved, the request only ever
-// goes to the pinned addresses (see pinnedDialer), and each one must pass
-// allows — at save time and again at every dial, so narrowing the
-// operator's list takes effect on what is already saved.
+// those three: the URL's host name is resolved only when the user saves or
+// tests the connection (lockTarget), never when a purchase is sent — that
+// only ever goes to the locked addresses (see pinnedDialer) — and each one
+// must pass allows: when it is locked and again at every dial, so narrowing
+// the operator's list takes effect on what is already saved.
 type Policy struct {
 	// Allowed are the networks a pinned address must fall in. Empty: any
 	// public address, and no other.
@@ -118,9 +122,9 @@ type target struct {
 	pins     []netip.Addr
 }
 
-// validateTarget checks a user's endpoint URL and pinned addresses against
-// p, returning the URL in canonical form.
-func (p Policy) validateTarget(rawURL string, rawIPs []string) (*target, error) {
+// parseEndpoint checks a user's endpoint URL — validate.URL first, then
+// Fluv's shape — and returns it in canonical form.
+func parseEndpoint(rawURL string) (*url.URL, error) {
 	if len(rawURL) > maxEndpointURLLength {
 		return nil, invalid("endpoint_url", "invalid_url", "the URL is too long")
 	}
@@ -146,6 +150,74 @@ func (p Policy) validateTarget(rawURL string, rawIPs []string) (*target, error) 
 	}
 	if u.Port() != "" && !validPort(u.Port()) {
 		return nil, invalid("endpoint_url", "invalid_url", "invalid port")
+	}
+	return u, nil
+}
+
+// Resolver looks a host name up: net.DefaultResolver.LookupNetIP, or a
+// stand-in in tests.
+type Resolver func(ctx context.Context, host string) ([]netip.Addr, error)
+
+func defaultResolver(ctx context.Context, host string) ([]netip.Addr, error) {
+	return net.DefaultResolver.LookupNetIP(ctx, "ip", host)
+}
+
+// lockTarget is the automatic IP lock: it resolves the endpoint's host once
+// — the only time Trakka ever resolves it, when the user saves or tests the
+// connection — and pins the addresses it resolves to that p allows (at most
+// maxPinnedIPs; an IP literal host is its own pin). Every purchase is then
+// sent to those addresses only (pinnedDialer), so a later change of the DNS
+// record, legitimate or not, can't redirect the token until the user saves
+// or tests again. Addresses p refuses are dropped; if none is left, the
+// connection is refused, with the reason for the first.
+func (p Policy) lockTarget(ctx context.Context, resolve Resolver, rawURL string) (*target, error) {
+	u, err := parseEndpoint(rawURL)
+	if err != nil {
+		return nil, err
+	}
+	host := strings.Trim(u.Hostname(), "[]")
+	var resolved []netip.Addr
+	if ip, err := netip.ParseAddr(host); err == nil {
+		resolved = []netip.Addr{ip}
+	} else {
+		lookupCtx, cancel := context.WithTimeout(ctx, dialTimeout)
+		defer cancel()
+		if resolved, err = resolve(lookupCtx, host); err != nil || len(resolved) == 0 {
+			return nil, invalid("endpoint_url", "unresolvable", "the host name "+host+" could not be resolved")
+		}
+	}
+	var pins []string
+	var refused netip.Addr
+	for _, ip := range resolved {
+		ip = ip.Unmap()
+		if ip.Zone() != "" || !p.allows(ip) {
+			if !refused.IsValid() {
+				refused = ip
+			}
+			continue
+		}
+		if !slices.Contains(pins, ip.String()) && len(pins) < maxPinnedIPs {
+			pins = append(pins, ip.String())
+		}
+	}
+	if len(pins) == 0 {
+		return nil, invalid("endpoint_url", "address_not_allowed", addressRefusal(p, refused))
+	}
+	t, err := p.validateTarget(u.String(), pins)
+	var verr *ValidationError
+	if errors.As(err, &verr) {
+		verr.Field = "endpoint_url"
+	}
+	return t, err
+}
+
+// validateTarget checks an endpoint URL and its pinned addresses against p
+// — those lockTarget just resolved, or those stored, re-checked before each
+// use since the operator may have narrowed p since.
+func (p Policy) validateTarget(rawURL string, rawIPs []string) (*target, error) {
+	u, err := parseEndpoint(rawURL)
+	if err != nil {
+		return nil, err
 	}
 
 	if len(rawIPs) == 0 {

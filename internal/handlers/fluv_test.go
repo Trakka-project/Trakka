@@ -118,11 +118,13 @@ func TestFluvSettingsLifecycle(t *testing.T) {
 	}
 
 	refusals := []struct{ body, code string }{
-		{`{"endpoint_url":"` + env.endpoint + `","pinned_ips":["127.0.0.1"]}`, "required"},
-		{`{"endpoint_url":"` + env.endpoint + `","pinned_ips":["127.0.0.1"],"token":"trk_nope"}`, "invalid_token"},
-		{`{"endpoint_url":"javascript:alert(1)","pinned_ips":["127.0.0.1"],"token":"` + fluvTestToken + `"}`, "invalid_url"},
-		{`{"endpoint_url":"` + env.endpoint + `","pinned_ips":["10.0.0.1"],"token":"` + fluvTestToken + `"}`, "address_not_allowed"},
-		{`{"endpoint_url":"` + env.endpoint + `","pinned_ips":["169.254.169.254"],"token":"` + fluvTestToken + `"}`, "address_not_allowed"},
+		{`{"endpoint_url":"` + env.endpoint + `"}`, "required"},
+		{`{"endpoint_url":"` + env.endpoint + `","token":"trk_nope"}`, "invalid_token"},
+		{`{"endpoint_url":"javascript:alert(1)","token":"` + fluvTestToken + `"}`, "invalid_url"},
+		{`{"endpoint_url":"http://10.0.0.1/api/v1/integrations/trakka/purchases","token":"` + fluvTestToken + `"}`, "address_not_allowed"},
+		{`{"endpoint_url":"http://169.254.169.254/api/v1/integrations/trakka/purchases","token":"` + fluvTestToken + `"}`, "address_not_allowed"},
+		// The address is locked automatically: the old manual field is refused.
+		{`{"endpoint_url":"` + env.endpoint + `","pinned_ips":["127.0.0.1"],"token":"` + fluvTestToken + `"}`, ""},
 	}
 	for _, c := range refusals {
 		rec := callAs(user, app.handleFluvSave, http.MethodPut, "/api/v1/integrations/fluv", c.body)
@@ -134,7 +136,7 @@ func TestFluvSettingsLifecycle(t *testing.T) {
 	}
 
 	decodeInto(t, callAs(user, app.handleFluvSave, http.MethodPut, "/api/v1/integrations/fluv",
-		`{"endpoint_url":"`+env.endpoint+`","pinned_ips":["127.0.0.1"],"token":"`+fluvTestToken+`"}`), http.StatusOK, &got)
+		`{"endpoint_url":"`+env.endpoint+`","token":"`+fluvTestToken+`"}`), http.StatusOK, &got)
 	if !got.Configured || !got.Enabled || !got.TokenSet || got.EndpointURL != env.endpoint || len(got.PinnedIPs) != 1 {
 		t.Fatalf("after saving: %+v", got)
 	}
@@ -163,7 +165,7 @@ func TestFluvSettingsLifecycle(t *testing.T) {
 
 	// Saving without a token keeps the stored one.
 	decodeInto(t, callAs(user, app.handleFluvSave, http.MethodPut, "/api/v1/integrations/fluv",
-		`{"endpoint_url":"`+env.endpoint+`","pinned_ips":["127.0.0.1"],"enabled":false}`), http.StatusOK, &got)
+		`{"endpoint_url":"`+env.endpoint+`","enabled":false}`), http.StatusOK, &got)
 	if got.Enabled || !got.TokenSet {
 		t.Fatalf("after pausing: %+v", got)
 	}
@@ -213,7 +215,7 @@ func TestFluvCheckOffSendsThePurchase(t *testing.T) {
 	app := env.app
 	owner, list := itemTestFixture(t, app)
 	decodeInto(t, callAs(owner, app.handleFluvSave, http.MethodPut, "/api/v1/integrations/fluv",
-		`{"endpoint_url":"`+env.endpoint+`","pinned_ips":["127.0.0.1"],"token":"`+fluvTestToken+`"}`), http.StatusOK, nil)
+		`{"endpoint_url":"`+env.endpoint+`","token":"`+fluvTestToken+`"}`), http.StatusOK, nil)
 
 	var item models.Item
 	decodeInto(t, callAs(owner, app.handleItemsCreate, http.MethodPost, "/api/v1/items",

@@ -164,3 +164,81 @@ func TestPinnedDialerIgnoresHostName(t *testing.T) {
 		t.Errorf("dial after the policy changed: %v, want errBlockedAddress", err)
 	}
 }
+
+// fakeResolver answers from a fixed table, counting lookups.
+type fakeResolver struct {
+	answers map[string][]netip.Addr
+	calls   int
+}
+
+func (f *fakeResolver) resolve(_ context.Context, host string) ([]netip.Addr, error) {
+	f.calls++
+	if ips, ok := f.answers[host]; ok {
+		return ips, nil
+	}
+	return nil, errors.New("no such host")
+}
+
+func addrs(ips ...string) []netip.Addr {
+	out := make([]netip.Addr, len(ips))
+	for i, ip := range ips {
+		out[i] = netip.MustParseAddr(ip)
+	}
+	return out
+}
+
+func TestLockTarget(t *testing.T) {
+	r := &fakeResolver{answers: map[string][]netip.Addr{
+		"fluv.example.com":    addrs("93.184.216.34", "2606:4700::1111"),
+		"mixed.example.com":   addrs("10.0.0.5", "169.254.169.254", "93.184.216.34", "93.184.216.34"),
+		"private.example.com": addrs("192.168.1.20"),
+		"many.example.com":    addrs("1.1.1.1", "1.0.0.1", "8.8.8.8", "8.8.4.4", "9.9.9.9"),
+		"empty.example.com":   nil,
+	}}
+	lan := Policy{Allowed: []netip.Prefix{netip.MustParsePrefix("192.168.1.0/24")}}
+	cases := []struct {
+		name     string
+		policy   Policy
+		url      string
+		wantPins string
+		wantCode string
+	}{
+		{name: "resolved and locked", url: testEndpoint, wantPins: "93.184.216.34,2606:4700::1111"},
+		{name: "refused addresses dropped", url: "https://mixed.example.com" + purchasesPath, wantPins: "93.184.216.34"},
+		{name: "at most four", url: "https://many.example.com" + purchasesPath, wantPins: "1.1.1.1,1.0.0.1,8.8.8.8,8.8.4.4"},
+		{name: "private refused by default", url: "https://private.example.com" + purchasesPath, wantCode: "address_not_allowed"},
+		{name: "private allowed by the operator", policy: lan, url: "http://private.example.com:8080" + purchasesPath, wantPins: "192.168.1.20"},
+		{name: "http to a public address", url: "http://fluv.example.com" + purchasesPath, wantCode: "https_required"},
+		{name: "unknown host", url: "https://nowhere.example.com" + purchasesPath, wantCode: "unresolvable"},
+		{name: "no address", url: "https://empty.example.com" + purchasesPath, wantCode: "unresolvable"},
+		{name: "ip literal, no lookup", policy: lan, url: "http://192.168.1.20" + purchasesPath, wantPins: "192.168.1.20"},
+		{name: "metadata literal", url: "http://169.254.169.254" + purchasesPath, wantCode: "address_not_allowed"},
+		{name: "invalid url first", url: "javascript:alert(1)", wantCode: "invalid_url"},
+		{name: "other path", url: "https://fluv.example.com/api/v1/admin", wantCode: "not_fluv_endpoint"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			got, err := c.policy.lockTarget(context.Background(), r.resolve, c.url)
+			if c.wantCode != "" {
+				var verr *ValidationError
+				if !errors.As(err, &verr) || verr.Code != c.wantCode || verr.Field != "endpoint_url" {
+					t.Fatalf("got %v, want code %s on endpoint_url", err, c.wantCode)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if pins := joinPins(got.pins); pins != c.wantPins {
+				t.Errorf("locked to %s, want %s", pins, c.wantPins)
+			}
+		})
+	}
+	before := r.calls
+	if _, err := (Policy{}).lockTarget(context.Background(), r.resolve, "https://[2606:4700::1111]"+purchasesPath); err != nil {
+		t.Fatal(err)
+	}
+	if r.calls != before {
+		t.Error("an IP literal host was looked up")
+	}
+}

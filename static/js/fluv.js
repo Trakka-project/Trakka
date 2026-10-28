@@ -9,6 +9,9 @@
 //
 // The token is write-only: the server only says whether one is stored, so
 // the field stays empty and an empty field on save keeps the stored token.
+// There is no address to enter: the server resolves Fluv's host name when
+// the connection is saved or tested and locks the connection to those IPs
+// (the automatic IP lock, docs/FLUV.md), shown read-only in #fluv-locked-ips.
 // The section stays hidden when the server has the integration off (the GET
 // answers 404). Disconnecting takes a second click to confirm, like
 // api-tokens.js (this app uses no confirm()).
@@ -23,7 +26,7 @@ const fluvEls = {
   section: document.getElementById('fluv-section'),
   status: document.getElementById('fluv-status'),
   endpoint: document.getElementById('fluv-endpoint'),
-  pinnedIps: document.getElementById('fluv-pinned-ips'),
+  lockedIps: document.getElementById('fluv-locked-ips'),
   token: document.getElementById('fluv-token'),
   tokenHint: document.getElementById('fluv-token-hint'),
   enabled: document.getElementById('fluv-enabled'),
@@ -40,8 +43,8 @@ const FLUV_CONFIRM_WINDOW_MS = 4000;
 // with a translated message; any other code — one of Fluv's own — falls back
 // on fluvErrorText's generic one.
 const FLUV_ERROR_CODES = [
-  'required', 'invalid_url', 'not_fluv_endpoint', 'too_many', 'invalid_ip', 'address_not_allowed',
-  'host_not_pinned', 'https_required', 'invalid_token', 'unauthenticated', 'not_found', 'rate_limited',
+  'required', 'invalid_url', 'not_fluv_endpoint', 'unresolvable', 'address_not_allowed',
+  'https_required', 'invalid_token', 'unauthenticated', 'not_found', 'rate_limited',
   'server_error', 'redirect_refused', 'rejected', 'unreachable', 'timeout', 'tls_error', 'blocked_address',
   'token_unreadable',
 ];
@@ -84,6 +87,9 @@ function renderFluvSection() {
     if (s.failed > 0) lines.push(t('modals.userSettings.fluv.failed', { count: s.failed }));
   }
   fluvEls.status.textContent = lines.join(' · ');
+  const locked = s.pinned_ips || [];
+  fluvEls.lockedIps.hidden = !s.configured || locked.length === 0;
+  fluvEls.lockedIps.textContent = t('modals.userSettings.fluv.lockedTo', { ips: locked.join(', ') });
   fluvEls.tokenHint.textContent = t(s.token_set ? 'modals.userSettings.fluv.tokenKept' : 'modals.userSettings.fluv.tokenHint');
   fluvEls.testButton.hidden = !s.configured;
   fluvEls.retryButton.hidden = !(s.configured && s.failed > 0);
@@ -98,7 +104,6 @@ function renderFluvSection() {
 function fillFluvFields() {
   const s = fluvSettings;
   fluvEls.endpoint.value = s.endpoint_url || '';
-  fluvEls.pinnedIps.value = (s.pinned_ips || []).join(', ');
   fluvEls.token.value = '';
   fluvEls.enabled.checked = !s.configured || s.enabled;
 }
@@ -132,10 +137,8 @@ async function refreshFluvSection() {
 async function saveFluvSettings() {
   disarmFluvDisconnect();
   fluvEls.error.hidden = true;
-  const pinnedIps = fluvEls.pinnedIps.value.split(/[\s,;]+/).filter(Boolean);
   const payload = {
     endpoint_url: fluvEls.endpoint.value.trim(),
-    pinned_ips: pinnedIps,
     token: fluvEls.token.value.trim(),
     enabled: fluvEls.enabled.checked,
   };
@@ -158,7 +161,9 @@ async function testFluvConnection() {
   fluvEls.testButton.disabled = true;
   try {
     const result = await apiRequest('/integrations/fluv/test', { method: 'POST' });
-    if (result.ok) TrakkaToast.success(t('modals.userSettings.fluv.testOk'));
+    if (result.ok && result.relocked) {
+      TrakkaToast.success(t('modals.userSettings.fluv.testRelocked', { ips: (result.pinned_ips || []).join(', ') }));
+    } else if (result.ok) TrakkaToast.success(t('modals.userSettings.fluv.testOk'));
     else {
       fluvEls.error.textContent = t('modals.userSettings.fluv.testFailed', { reason: fluvErrorText(result.code) });
       fluvEls.error.hidden = false;
@@ -220,7 +225,7 @@ fluvEls.retryButton.addEventListener('click', retryFluvPurchases);
 fluvEls.disconnectButton.addEventListener('click', disconnectFluv);
 // The fields sit inside #user-settings-form: Enter must save the
 // connection, not submit (and close) the settings.
-for (const input of [fluvEls.endpoint, fluvEls.pinnedIps, fluvEls.token]) {
+for (const input of [fluvEls.endpoint, fluvEls.token]) {
   input.addEventListener('keydown', (event) => {
     if (event.key !== 'Enter' || event.isComposing) return;
     event.preventDefault();

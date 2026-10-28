@@ -416,7 +416,7 @@ A user's connection to their Fluv, the personal finance app purchases are sent t
 |---|---|---|
 | `user_id` | `INTEGER PRIMARY KEY` | `REFERENCES users(id) ON DELETE CASCADE` |
 | `endpoint_url` | `TEXT NOT NULL` | Fluv's purchase endpoint, canonical form (validated by `internal/fluv`: `internal/validate.URL`, path ending with `/api/v1/integrations/trakka/purchases`) |
-| `pinned_ips` | `TEXT NOT NULL` | comma-separated IP addresses (1 to 4): the only ones the purchases are ever sent to — the endpoint's host name is never resolved |
+| `pinned_ips` | `TEXT NOT NULL` | comma-separated IP addresses (1 to 4) the connection is locked to: resolved from the endpoint's host by the server when the connection is saved, moved by a connection test that succeeds at new addresses (`SetFluvPinnedIPs`), never entered by the user. The only addresses the purchases are ever sent to — sending never resolves the host |
 | `token_sealed` | `TEXT NOT NULL` | Fluv's `fluv_trk_…` token **sealed** with the instance key (`backup.Service.SealSecret`, `v1:` + base64 of AES-256-GCM nonce‖ciphertext under a per-purpose HKDF subkey) — never the token as is. An outbound credential, so unlike `api_tokens.token_hash` it can't be a hash; the key lives in `backup.key` next to the database, not in it, so the database alone holds no working token |
 | `enabled` | `INTEGER NOT NULL DEFAULT 1` | 0/1: 0 pauses it (nothing is queued) |
 | `created_at` / `updated_at` | `TEXT NOT NULL` | ISO-8601 UTC |

@@ -75,18 +75,23 @@ type Options struct {
 	// Now is the clock; nil means time.Now. Tests move it forward rather
 	// than wait for settleDelay or a backoff.
 	Now func() time.Time
+	// Resolver looks Fluv's host name up when a connection is saved or
+	// tested (the automatic IP lock, Policy.lockTarget); nil means the
+	// system resolver. Never used to send a purchase.
+	Resolver Resolver
 }
 
 // Service owns the users' Fluv connections and the outbox sender. Safe for
 // concurrent use.
 type Service struct {
-	db     *db.DB
-	sealer Sealer
-	logger *slog.Logger
-	loc    *time.Location
-	policy Policy
-	now    func() time.Time
-	wake   chan struct{}
+	db      *db.DB
+	sealer  Sealer
+	logger  *slog.Logger
+	loc     *time.Location
+	policy  Policy
+	now     func() time.Time
+	resolve Resolver
+	wake    chan struct{}
 }
 
 // New builds a Service. Run starts its sender.
@@ -99,14 +104,19 @@ func New(opts Options) *Service {
 	if now == nil {
 		now = time.Now
 	}
+	resolve := opts.Resolver
+	if resolve == nil {
+		resolve = defaultResolver
+	}
 	return &Service{
-		db:     opts.DB,
-		sealer: opts.Sealer,
-		logger: opts.Logger,
-		loc:    loc,
-		policy: opts.Policy,
-		now:    now,
-		wake:   make(chan struct{}, 1),
+		db:      opts.DB,
+		sealer:  opts.Sealer,
+		logger:  opts.Logger,
+		loc:     loc,
+		policy:  opts.Policy,
+		now:     now,
+		resolve: resolve,
+		wake:    make(chan struct{}, 1),
 	}
 }
 
@@ -117,12 +127,14 @@ func New(opts Options) *Service {
 // Settings is a user's connection as Paramètres shows it. The token is
 // write-only: only whether one is stored.
 type Settings struct {
-	Configured  bool     `json:"configured"`
-	Enabled     bool     `json:"enabled"`
-	EndpointURL string   `json:"endpoint_url,omitempty"`
-	PinnedIPs   []string `json:"pinned_ips"`
-	TokenSet    bool     `json:"token_set"`
-	// OperatorAllowlist says FLUV_INTEGRATION_ALLOWED_IPS is set: a pinned
+	Configured  bool   `json:"configured"`
+	Enabled     bool   `json:"enabled"`
+	EndpointURL string `json:"endpoint_url,omitempty"`
+	// PinnedIPs are the addresses the connection is locked to, resolved
+	// from the endpoint's host when it was saved or last tested: read-only.
+	PinnedIPs []string `json:"pinned_ips"`
+	TokenSet  bool     `json:"token_set"`
+	// OperatorAllowlist says FLUV_INTEGRATION_ALLOWED_IPS is set: a locked
 	// address must be in it, rather than public.
 	OperatorAllowlist bool    `json:"operator_allowlist"`
 	LastSuccessAt     *string `json:"last_success_at,omitempty"`
@@ -134,10 +146,10 @@ type Settings struct {
 	Failed  int `json:"failed"`
 }
 
-// Update is what PUT /api/v1/integrations/fluv saves.
+// Update is what PUT /api/v1/integrations/fluv saves. There is no address
+// to enter: Save resolves and locks it (Policy.lockTarget).
 type Update struct {
-	EndpointURL string   `json:"endpoint_url"`
-	PinnedIPs   []string `json:"pinned_ips"`
+	EndpointURL string `json:"endpoint_url"`
 	// Token replaces the stored token; empty keeps it.
 	Token string `json:"token"`
 	// Enabled pauses the connection when false; absent means true.
@@ -178,10 +190,12 @@ func (s *Service) Get(ctx context.Context, userID int64) (Settings, error) {
 }
 
 // Save validates and stores userID's connection, returning it as Get
-// would. Refusals are *ValidationError. Saving also re-queues the
-// purchases that failed: most failures are fixed by new settings.
+// would: the endpoint's host is resolved now and the connection locked to
+// the addresses it resolves to (Policy.lockTarget). Refusals are
+// *ValidationError. Saving also re-queues the purchases that failed: most
+// failures are fixed by new settings.
 func (s *Service) Save(ctx context.Context, userID int64, u Update) (Settings, error) {
-	t, err := s.policy.validateTarget(u.EndpointURL, u.PinnedIPs)
+	t, err := s.policy.lockTarget(ctx, s.resolve, u.EndpointURL)
 	if err != nil {
 		return Settings{}, err
 	}
@@ -235,22 +249,39 @@ type TestResult struct {
 	OK     bool   `json:"ok"`
 	Status int    `json:"status,omitempty"`
 	Code   string `json:"code,omitempty"`
+	// PinnedIPs are the addresses the connection is locked to after the
+	// test; Relocked says the test changed them.
+	PinnedIPs []string `json:"pinned_ips,omitempty"`
+	Relocked  bool     `json:"relocked,omitempty"`
 }
 
 // Test checks userID's saved connection end to end, with a request that
 // changes nothing: taking back a purchase that doesn't exist. Fluv answers
 // it 404 only once the address and the token are accepted (403 for an
-// address it doesn't allow, 401 for a wrong token). Returns db.ErrNotFound
-// if there is no connection.
+// address it doesn't allow, 401 for a wrong token). The endpoint's host is
+// resolved again first, and the test runs against what it resolves to now;
+// the lock moves to those addresses only if Fluv accepts the test there —
+// with https, only a server holding a valid certificate for the host name
+// can. Returns db.ErrNotFound if there is no connection.
 func (s *Service) Test(ctx context.Context, userID int64) (TestResult, error) {
 	integ, err := s.db.GetFluvIntegration(ctx, userID)
 	if err != nil {
 		return TestResult{}, err
 	}
-	t, token, code := s.prepare(integ)
-	if code != "" {
+	stored, token, code := s.prepare(integ)
+	if code == "token_unreadable" {
 		_ = s.db.RecordFluvExchange(ctx, userID, code)
 		return TestResult{Code: code}, nil
+	}
+	t, err := s.policy.lockTarget(ctx, s.resolve, integ.EndpointURL)
+	var verr *ValidationError
+	if errors.As(err, &verr) {
+		_ = s.db.RecordFluvExchange(ctx, userID, verr.Code)
+		s.logger.Warn("Fluv connection test: endpoint not lockable", "user_id", userID, "code", verr.Code)
+		return TestResult{Code: verr.Code}, nil
+	}
+	if err != nil {
+		return TestResult{}, err
 	}
 	var b [6]byte
 	if _, err := rand.Read(b[:]); err != nil {
@@ -268,6 +299,15 @@ func (s *Service) Test(ctx context.Context, userID int64) (TestResult, error) {
 		result.Status, result.Code = resp.status, statusCode(resp)
 	}
 	if result.OK {
+		newPins := joinPins(t.pins)
+		if stored == nil || newPins != joinPins(stored.pins) {
+			if err := s.db.SetFluvPinnedIPs(ctx, userID, newPins); err != nil {
+				return TestResult{}, err
+			}
+			result.Relocked = true
+			s.logger.Info("Fluv connection re-locked to new addresses", "user_id", userID, "pinned_ips", newPins)
+		}
+		result.PinnedIPs, _ = splitPins(newPins)
 		_ = s.db.RecordFluvExchange(ctx, userID, "")
 	} else {
 		_ = s.db.RecordFluvExchange(ctx, userID, result.Code)

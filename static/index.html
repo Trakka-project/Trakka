@@ -1988,13 +1988,9 @@
                          placeholder="https://fluv.example.com/api/v1/integrations/trakka/purchases"
                          class="mt-1 min-h-[44px] w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 font-mono text-xs text-slate-900 dark:text-slate-100 focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500/30">
                 </div>
-                <div>
-                  <label for="fluv-pinned-ips" class="block text-xs font-medium text-slate-600 dark:text-slate-300" data-i18n="modals.userSettings.fluv.pinnedIpsLabel">Adresse(s) IP de Fluv (verrouillage IP)</label>
-                  <input type="text" id="fluv-pinned-ips" inputmode="text" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" maxlength="200" enterkeyhint="next"
-                         placeholder="203.0.113.10, 2001:db8::10"
-                         class="mt-1 min-h-[44px] w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 font-mono text-xs text-slate-900 dark:text-slate-100 focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500/30">
-                  <p class="mt-1 text-xs text-slate-500 dark:text-slate-400" data-i18n="modals.userSettings.fluv.pinnedIpsHint">Trakka ne se connectera qu'à ces adresses (4 au plus, séparées par des virgules), jamais à ce que le nom de domaine désigne : un DNS détourné ne peut pas envoyer vos achats ailleurs.</p>
-                </div>
+                <!-- The IP lock is automatic (Policy.lockTarget): the address is resolved when the
+                     connection is saved or tested, then shown here, read-only. -->
+                <p id="fluv-locked-ips" hidden class="rounded-lg bg-slate-50 dark:bg-slate-800/60 px-3 py-2 text-xs text-slate-600 dark:text-slate-300"></p>
                 <div>
                   <label for="fluv-token" class="block text-xs font-medium text-slate-600 dark:text-slate-300" data-i18n="modals.userSettings.fluv.tokenLabel">Jeton de liaison Fluv</label>
                   <input type="password" id="fluv-token" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" maxlength="64" enterkeyhint="done"

@@ -155,6 +155,17 @@ func (d *DB) DeleteFluvIntegration(ctx context.Context, userID int64) error {
 	return nil
 }
 
+// SetFluvPinnedIPs moves userID's IP lock to pinnedIPs (comma-separated),
+// after a connection test found Fluv there.
+func (d *DB) SetFluvPinnedIPs(ctx context.Context, userID int64, pinnedIPs string) error {
+	if _, err := d.conn.ExecContext(ctx, `
+		UPDATE fluv_integrations SET pinned_ips = ?, updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now')
+		WHERE user_id = ?`, pinnedIPs, userID); err != nil {
+		return fmt.Errorf("re-locking Fluv integration of user %d: %w", userID, err)
+	}
+	return nil
+}
+
 // RecordFluvExchange stores the outcome of the latest exchange with
 // userID's Fluv: a success when code is "", else that error code.
 func (d *DB) RecordFluvExchange(ctx context.Context, userID int64, code string) error {
