@@ -754,6 +754,7 @@ func (app *Application) handleItemsUpdate(w http.ResponseWriter, r *http.Request
 			app.notifyListChange(list, userFromContext(r), item.Title, doneChange(justCompleted))
 		}
 	}
+	app.reportPurchase(r, existing, item)
 	writeJSON(w, http.StatusOK, item)
 }
 
@@ -1229,6 +1230,7 @@ func (app *Application) handleItemsPatch(w http.ResponseWriter, r *http.Request)
 			app.notifyListChange(list, userFromContext(r), updated.Title, doneChange(justCompleted))
 		}
 	}
+	app.reportPurchase(r, &before, updated)
 	writeJSON(w, http.StatusOK, updated)
 }
 

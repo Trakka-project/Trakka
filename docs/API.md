@@ -1334,6 +1334,70 @@ Creates a token. Body: `{"name": "Home Assistant"}` — required, at most 200 ch
 
 Revokes a token: it stops working at once. `204`; `404` if the calling user has no such token (including another user's).
 
+## Fluv integration
+
+Each user can connect their own [Fluv](FLUV.md), the personal finance app: checking an item off a purchase list then sends it to Fluv as an expense, in the background, and unchecking it takes it back (what is sent, when, and the security model: [docs/FLUV.md](FLUV.md)). Implementation: `internal/handlers/fluv.go`, `internal/fluv`; tables [`fluv_integrations` and `fluv_purchases`](DATABASE.md#fluv_integrations).
+
+These routes need a session — they are not open to [API tokens](#api-tokens) — and their writes go through the usual cross-origin check. All of them answer `404` when the operator turned the feature off (`FLUV_INTEGRATION_ENABLED=false`). The PWA offers them in Paramètres → Intégrations → Fluv. Nothing changes on the item routes: `PUT`/`PATCH /api/v1/items/{id}` queue the purchase (or its cancellation) after saving the item, and never fail because of Fluv.
+
+### `GET /api/v1/integrations/fluv`
+
+The calling user's connection. Never returns the token.
+
+```json
+{
+  "configured": true,
+  "enabled": true,
+  "endpoint_url": "https://fluv.example.com/api/v1/integrations/trakka/purchases",
+  "pinned_ips": ["203.0.113.10"],
+  "token_set": true,
+  "operator_allowlist": false,
+  "last_success_at": "2026-10-28T13:40:02.118Z",
+  "pending": 0,
+  "failed": 0
+}
+```
+
+`pinned_ips` are the only addresses the purchases are ever sent to. `operator_allowlist` says `FLUV_INTEGRATION_ALLOWED_IPS` is set (a pinned address must then be inside it; otherwise it must be public). `last_success_at`, or `last_error_code` and `last_error_at`, describe the latest exchange with Fluv. `pending` counts the purchases and cancellations still to send, `failed` those waiting for the user (see `retry`). Without a connection: `{"configured": false, "enabled": false, "pinned_ips": [], "token_set": false, "operator_allowlist": false, "pending": 0, "failed": 0}`.
+
+### `PUT /api/v1/integrations/fluv`
+
+Creates or replaces the calling user's connection, and re-queues the purchases that had failed. Body:
+
+```json
+{
+  "endpoint_url": "https://fluv.example.com/api/v1/integrations/trakka/purchases",
+  "pinned_ips": ["203.0.113.10", "2001:db8::10"],
+  "token": "fluv_trk_…",
+  "enabled": true
+}
+```
+
+- `endpoint_url` (required): Fluv's purchase endpoint as Fluv's settings show it — an absolute `https://` URL (`internal/validate.URL`, then: no credentials, query or fragment) whose path ends with `/api/v1/integrations/trakka/purchases`. `http://` only when every pinned address is non-public.
+- `pinned_ips` (required): 1 to 4 IP addresses. Each must be public, or inside `FLUV_INTEGRATION_ALLOWED_IPS` when the operator set it; link-local, multicast and unspecified addresses never. An IP address in the URL must be one of them.
+- `token`: the `fluv_trk_…` token of Fluv's link. Required the first time; empty or absent keeps the stored one. Stored sealed with the instance key, never returned.
+- `enabled`: `false` pauses the connection (nothing is queued; what is queued waits). Absent means `true`.
+
+`200` with the connection as `GET` returns it. A refused setting is a `400` with a code and the field: `{"error": "…", "code": "address_not_allowed", "field": "pinned_ips"}` — codes `required`, `invalid_url`, `not_fluv_endpoint`, `https_required`, `too_many`, `invalid_ip`, `address_not_allowed`, `host_not_pinned`, `invalid_token`.
+
+### `DELETE /api/v1/integrations/fluv`
+
+Disconnects Fluv: removes the connection and the purchases not sent yet. What Fluv already recorded stays there. `204`, whether or not there was one.
+
+### `POST /api/v1/integrations/fluv/test`
+
+Checks the saved connection end to end, with a request that changes nothing in Fluv (`DELETE` of a purchase that doesn't exist, which Fluv only answers `404` once it accepted the address and the token). No body. Always a `200` when the check ran, Fluv's refusals included — never a `5xx`, which the PWA would take for Trakka being unreachable:
+
+```json
+{ "ok": false, "status": 401, "code": "unauthenticated" }
+```
+
+`code` is one of those listed in [FLUV.md](FLUV.md#error-codes). `404` without a connection; `429` after 10 tests in 5 minutes.
+
+### `POST /api/v1/integrations/fluv/retry`
+
+Sends the calling user's failed purchases again, at once. No body. `200 {"retried": 2}`.
+
 ## Admin settings
 
 Every endpoint below is gated behind `models.User.IsAdmin` (`403 {"error": "admin access required"}` for anyone else) rather than house membership — these are system-wide, not scoped to a house. The frontend surfaces all of them as a "Console d'Administration" panel, reachable from a button inside the ordinary "Paramètres" modal (`#user-settings-modal`) that's only shown to admins (`static/js/admin.js`) — there is no separate header-level admin button; see CLAUDE.md's session-handoff log for the navigation restructuring session that moved it there.

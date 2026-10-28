@@ -21,6 +21,7 @@ import (
 	"trakka/internal/backup"
 	"trakka/internal/config"
 	"trakka/internal/db"
+	"trakka/internal/fluv"
 	"trakka/internal/handlers"
 	"trakka/internal/logbuffer"
 	"trakka/internal/settings"
@@ -155,6 +156,21 @@ func main() {
 		AllowPrivateNetworks: cfg.BackupWebDAVAllowPrivate,
 	})
 
+	// Purchases sent to Fluv (internal/fluv): the token is sealed with the
+	// backup service's instance key. FLUV_INTEGRATION_ALLOWED_IPS was
+	// already checked by cfg.Validate() above.
+	var fluvService *fluv.Service
+	if cfg.FluvIntegrationEnabled {
+		allowed, _ := cfg.FluvAllowedNetworks()
+		fluvService = fluv.New(fluv.Options{
+			DB:       database,
+			Sealer:   backups,
+			Logger:   logger,
+			Location: location,
+			Policy:   fluv.Policy{Allowed: allowed},
+		})
+	}
+
 	// A restart from the admin console (POST /api/v1/admin/restart) lands
 	// here, and is handled like a shutdown signal below. Buffered and
 	// non-blocking: one pending request is all that matters.
@@ -170,6 +186,7 @@ func main() {
 		LogBuffer:     logHandler,
 		Location:      location,
 		Backups:       backups,
+		Fluv:          fluvService,
 		RequestRestart: func() {
 			select {
 			case restartRequested <- struct{}{}:
@@ -236,6 +253,12 @@ func main() {
 	// is a cheap once-a-minute settings read that does nothing until an
 	// admin switches automatic backups on from the console.
 	go runBackupSchedulerLoop(priceScanCtx, backups)
+
+	// The Fluv sender delivers the queued purchases in the background, on
+	// the same detached context, with its own retries (fluv.Service.Run).
+	if fluvService != nil {
+		go fluvService.Run(priceScanCtx)
+	}
 
 	if retryOIDCDiscovery {
 		go app.RetryOIDCDiscovery(priceScanCtx)

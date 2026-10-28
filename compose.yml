@@ -26,6 +26,10 @@ services:
       # Sauvegardes) reach a server on your LAN/Tailscale, e.g. a Nextcloud
       # next to Trakka — see docs/DEPLOYMENT.md#encrypted-webdav-backups.
       # BACKUP_WEBDAV_ALLOW_PRIVATE: "true"
+      # Uncomment to let users send their purchases to a Fluv on your LAN
+      # (Paramètres → Intégrations → Fluv): the addresses or CIDR prefixes a
+      # pinned Fluv address may be in — see docs/FLUV.md#the-ip-lock.
+      # FLUV_INTEGRATION_ALLOWED_IPS: "192.168.1.20"
     ports:
       - "8080:8080"
     volumes:

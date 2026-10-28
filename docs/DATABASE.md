@@ -408,6 +408,43 @@ The people an item is assigned to (migration 34) — one row per person, none fo
 
 There is no `reminder_date` column, though the feature's spec named one: an item's reminder moment is already derived from `due_date`/`due_time` and `reminder_offset_days`/`reminder_time`/`reminder_at_due_time` (see [`items`](#items)), recomputed for every occurrence; a stored date would go stale the moment a recurring task advanced.
 
+### `fluv_integrations`
+
+A user's connection to their Fluv, the personal finance app purchases are sent to (migration 41; see [FLUV.md](FLUV.md), [API.md](API.md#fluv-integration), `internal/db/fluv.go`). At most one row per user.
+
+| Column | Type | Notes |
+|---|---|---|
+| `user_id` | `INTEGER PRIMARY KEY` | `REFERENCES users(id) ON DELETE CASCADE` |
+| `endpoint_url` | `TEXT NOT NULL` | Fluv's purchase endpoint, canonical form (validated by `internal/fluv`: `internal/validate.URL`, path ending with `/api/v1/integrations/trakka/purchases`) |
+| `pinned_ips` | `TEXT NOT NULL` | comma-separated IP addresses (1 to 4): the only ones the purchases are ever sent to — the endpoint's host name is never resolved |
+| `token_sealed` | `TEXT NOT NULL` | Fluv's `fluv_trk_…` token **sealed** with the instance key (`backup.Service.SealSecret`, `v1:` + base64 of AES-256-GCM nonce‖ciphertext under a per-purpose HKDF subkey) — never the token as is. An outbound credential, so unlike `api_tokens.token_hash` it can't be a hash; the key lives in `backup.key` next to the database, not in it, so the database alone holds no working token |
+| `enabled` | `INTEGER NOT NULL DEFAULT 1` | 0/1: 0 pauses it (nothing is queued) |
+| `created_at` / `updated_at` | `TEXT NOT NULL` | ISO-8601 UTC |
+| `last_success_at` | `TEXT` | the latest successful exchange with Fluv; cleared on each save |
+| `last_error_code` / `last_error_at` | `TEXT` | the latest failed one (an error code, see [FLUV.md](FLUV.md#error-codes)); cleared by a success or a save |
+
+### `fluv_purchases`
+
+The outbox of purchases sent to Fluv (migration 41): one row per time an item was bought by a connected user. The background sender (`fluv.Service.Run`) works on the rows where what Fluv should hold (`desired`) and what it is known to hold (`synced`) disagree.
+
+| Column | Type | Notes |
+|---|---|---|
+| `id` | `INTEGER PRIMARY KEY AUTOINCREMENT` | |
+| `user_id` | `INTEGER NOT NULL` | `REFERENCES users(id) ON DELETE CASCADE`; whose Fluv (the person who checked the item off) |
+| `item_id` | `INTEGER` | `REFERENCES items(id) ON DELETE SET NULL` — deleting a bought item is tidying up, not a refund. Also set `NULL` by `ActivateNextOccurrence` and `ReactivateItem` (`detachFluvPurchases`): the server un-checking an item for its next occurrence or a new addition doesn't take the purchase back. Index `idx_fluv_purchases_item` |
+| `ref` | `TEXT NOT NULL UNIQUE` | the reference Fluv knows the purchase by (`trakka-<item id>-<16 hex>`) |
+| `title` / `store` / `quantity` / `amount_minor` | | what is sent: the cleaned title (≤ 100 chars), the list's name (≤ 40), the quantity (≤ 9999), the amount in cents (`CHECK (amount_minor > 0)`) |
+| `purchased_at` / `purchased_on` | `TEXT NOT NULL` | when the item was checked off (RFC 3339 UTC), and that day in `APP_TIMEZONE` (`YYYY-MM-DD`, the `date` Fluv records) |
+| `desired` | `TEXT NOT NULL` | `record` or `cancel`. A row only ever goes from `record` to `cancel`: checking the item off again is a new row |
+| `synced` | `TEXT NOT NULL` | `none`, `recorded` or `cancelled` |
+| `failed` | `INTEGER NOT NULL` | 1: refused in a way retrying can't fix, or out of attempts — waits for the user (`RetryFailedFluvPurchases`, also run on each save of the connection) |
+| `in_flight` | `INTEGER NOT NULL` | 1 while the sender is sending it (claimed by `ClaimNextFluvPurchase`'s `UPDATE … RETURNING`), so a handler never rewrites what is on the wire; cleared at startup |
+| `attempts` / `next_attempt_at` | `INTEGER` / `TEXT` | the backoff (1, 2, 4 … minutes, ≤ 6 h, 16 attempts); a new row is first due 20 s after the check-off |
+| `last_status` / `last_error_code` | `INTEGER` / `TEXT` | the latest attempt's HTTP status and error code |
+| `created_at` / `updated_at` | `TEXT NOT NULL` | ISO-8601 UTC |
+
+`idx_fluv_purchases_due` is a partial index on `next_attempt_at` over the rows still to send (`failed = 0` and `desired`/`synced` disagreeing). How the handlers keep it consistent (`fluv.Service.ItemChanged`): a check-off inserts a `record` row; an uncheck marks the item's latest `record` row `cancel` — settled on the spot if it was never sent, else due at once (a `DELETE`, which Fluv answers `404` when it has nothing); a change of the amount, quantity or title while bought corrects a never-sent row in place (`RepriceUnsentFluvPurchase`, only while `attempts = 0` and not `in_flight`), else cancels it and inserts a new one with the original date. Settled rows are deleted 180 days after their last change (`PruneFluvPurchases`), so an uncheck that late no longer reaches Fluv. Deleting the connection deletes the user's rows.
+
 ## Evolving the schema
 
 Trakka has a real versioned migration engine (`internal/db/migrate.go`), not the single idempotent `schema.sql` this project used before. Every startup:

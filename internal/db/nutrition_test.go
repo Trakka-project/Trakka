@@ -6,11 +6,13 @@ import (
 	"testing"
 )
 
-// undoMigration39 drops what migrations 39 and 40 added, for the tests that
+// undoMigration39 drops what migrations 39 to 41 added, for the tests that
 // rewind user_version below them and replay every later migration.
 func undoMigration39(t *testing.T, conn *sql.DB) {
 	t.Helper()
 	for _, stmt := range []string{
+		`DROP TABLE fluv_purchases`,
+		`DROP TABLE fluv_integrations`,
 		`ALTER TABLE items DROP COLUMN nova_group`,
 		`ALTER TABLE house_products DROP COLUMN nova_group`,
 		`ALTER TABLE items DROP COLUMN nutri_score`,
