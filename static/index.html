@@ -841,6 +841,39 @@
           </select>
         </div>
 
+        <!-- "Fluv" defaults (fluv.js, GET/PUT /api/v1/integrations/fluv/lists/{id}):
+             how the purchases the current user checks off this list are filed
+             in their own Fluv. Edit mode, purchase lists, and only once the user
+             connected Fluv; hidden otherwise (and when the server has the
+             integration off). Saved with the list, by its own request. -->
+        <fieldset id="list-fluv-field" hidden class="space-y-3 rounded-xl border border-slate-200 dark:border-slate-700 p-3">
+          <legend data-i18n="modals.newList.fluv.title" class="px-1 text-sm font-medium text-slate-600 dark:text-slate-300">Envoi à Fluv</legend>
+          <p data-i18n="modals.newList.fluv.hint" class="text-xs text-slate-500 dark:text-slate-400">Pour vos achats sur cette liste. Vide : Fluv choisit (compte lié à Trakka, ses règles de catégorie).</p>
+          <div>
+            <label for="list-fluv-budget-type" data-i18n="modals.newList.fluv.budgetTypeLabel" class="mb-1 block text-sm font-medium text-slate-600 dark:text-slate-300">Besoin ou envie</label>
+            <select id="list-fluv-budget-type"
+                    class="w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-4 py-3 text-base text-slate-900 dark:text-slate-100 focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500/30">
+              <option value="" data-i18n="modals.newList.fluv.budgetTypeAuto">Selon la catégorie</option>
+              <option value="need" data-i18n="modals.newList.fluv.budgetTypeNeed">Besoin</option>
+              <option value="want" data-i18n="modals.newList.fluv.budgetTypeWant">Envie</option>
+            </select>
+          </div>
+          <div>
+            <label for="list-fluv-account" data-i18n="modals.newList.fluv.accountLabel" class="mb-1 block text-sm font-medium text-slate-600 dark:text-slate-300">Identifiant du compte Fluv (optionnel)</label>
+            <input type="text" id="list-fluv-account" autocomplete="off" autocapitalize="off" spellcheck="false" maxlength="36" data-i18n-placeholder="modals.newList.fluv.idPlaceholder" placeholder="Compte lié à Trakka"
+                   class="w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-4 py-3 font-mono text-sm text-slate-900 dark:text-slate-100 placeholder:font-sans placeholder:text-slate-500 focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500/30">
+            <select id="list-fluv-account-select" hidden
+                    class="w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-4 py-3 text-base text-slate-900 dark:text-slate-100 focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500/30"></select>
+          </div>
+          <div>
+            <label for="list-fluv-category" data-i18n="modals.newList.fluv.categoryLabel" class="mb-1 block text-sm font-medium text-slate-600 dark:text-slate-300">Identifiant de la catégorie Fluv (optionnel)</label>
+            <input type="text" id="list-fluv-category" autocomplete="off" autocapitalize="off" spellcheck="false" maxlength="36" data-i18n-placeholder="modals.newList.fluv.categoryPlaceholder" placeholder="Selon les règles de Fluv"
+                   class="w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-4 py-3 font-mono text-sm text-slate-900 dark:text-slate-100 placeholder:font-sans placeholder:text-slate-500 focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500/30">
+            <select id="list-fluv-category-select" hidden
+                    class="w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-4 py-3 text-base text-slate-900 dark:text-slate-100 focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500/30"></select>
+          </div>
+        </fieldset>
+
         <button type="submit" id="list-submit-button" data-i18n="modals.newList.submitCreate" class="w-full rounded-xl bg-sky-500 px-4 py-3 text-base font-semibold text-white transition hover:bg-sky-400 active:scale-[0.98]">Créer la liste</button>
       </form>
     </div>
@@ -1965,6 +1998,72 @@
                 </div>
               </details>
             </section>
+
+            <!-- "Fluv": sends what you buy to Fluv, the personal finance app (fluv.js,
+                 internal/handlers/fluv.go, internal/fluv, docs/FLUV.md). Hidden while the
+                 server has the integration off (GET answers 404). No required/type="url"
+                 here: an invalid field would block the "Enregistrer" of the other tabs. -->
+            <section id="fluv-section" hidden aria-labelledby="fluv-title" class="space-y-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-4 py-3">
+              <div>
+                <h3 id="fluv-title" class="flex items-center gap-2 text-sm font-semibold text-slate-700 dark:text-slate-200">
+                  <span aria-hidden="true">💸</span>
+                  <span data-i18n="modals.userSettings.fluv.title">Fluv (finances personnelles)</span>
+                </h3>
+                <p class="mt-0.5 text-xs font-normal text-slate-500 dark:text-slate-400" data-i18n="modals.userSettings.fluv.hint">Chaque article que vous cochez dans une liste d'achats, avec son prix, devient une dépense dans Fluv. Le décocher la retire.</p>
+              </div>
+
+              <p id="fluv-status" class="text-xs text-slate-600 dark:text-slate-300" role="status"></p>
+
+              <div class="space-y-3">
+                <div>
+                  <label for="fluv-endpoint" class="block text-xs font-medium text-slate-600 dark:text-slate-300" data-i18n="modals.userSettings.fluv.endpointLabel">Adresse de réception de Fluv</label>
+                  <input type="text" id="fluv-endpoint" inputmode="url" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" maxlength="2048" enterkeyhint="next"
+                         placeholder="https://fluv.example.com/api/v1/integrations/trakka/purchases"
+                         class="mt-1 min-h-[44px] w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 font-mono text-xs text-slate-900 dark:text-slate-100 focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500/30">
+                </div>
+                <!-- The IP lock is automatic (Policy.lockTarget): the address is resolved when the
+                     connection is saved or tested, then shown here, read-only. -->
+                <p id="fluv-locked-ips" hidden class="rounded-lg bg-slate-50 dark:bg-slate-800/60 px-3 py-2 text-xs text-slate-600 dark:text-slate-300"></p>
+                <div>
+                  <label for="fluv-token" class="block text-xs font-medium text-slate-600 dark:text-slate-300" data-i18n="modals.userSettings.fluv.tokenLabel">Jeton de liaison Fluv</label>
+                  <input type="password" id="fluv-token" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" maxlength="64" enterkeyhint="done"
+                         placeholder="fluv_trk_…"
+                         class="mt-1 min-h-[44px] w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 font-mono text-xs text-slate-900 dark:text-slate-100 focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500/30">
+                  <p id="fluv-token-hint" class="mt-1 text-xs text-slate-500 dark:text-slate-400"></p>
+                </div>
+                <label class="flex min-h-[44px] items-center gap-3 text-sm text-slate-700 dark:text-slate-200">
+                  <input type="checkbox" id="fluv-enabled" checked class="h-5 w-5 rounded border-slate-300 dark:border-slate-600 text-sky-500 focus:ring-sky-500">
+                  <span data-i18n="modals.userSettings.fluv.enabledLabel">Envoyer mes achats à Fluv</span>
+                </label>
+              </div>
+
+              <div class="flex flex-wrap gap-2">
+                <button type="button" id="fluv-save-button" data-i18n="modals.userSettings.fluv.save"
+                        class="min-h-[44px] rounded-xl bg-sky-500 px-4 py-2.5 text-sm font-semibold text-white hover:bg-sky-400 disabled:opacity-60">Enregistrer la connexion</button>
+                <button type="button" id="fluv-test-button" hidden data-i18n="modals.userSettings.fluv.test"
+                        class="min-h-[44px] rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-100 dark:bg-slate-800 px-3 py-2 text-sm font-medium text-slate-700 dark:text-slate-200 hover:bg-slate-200 dark:hover:bg-slate-700 disabled:opacity-60">Tester</button>
+                <button type="button" id="fluv-retry-button" hidden data-i18n="modals.userSettings.fluv.retry"
+                        class="min-h-[44px] rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-100 dark:bg-slate-800 px-3 py-2 text-sm font-medium text-slate-700 dark:text-slate-200 hover:bg-slate-200 dark:hover:bg-slate-700 disabled:opacity-60">Renvoyer les achats en échec</button>
+                <button type="button" id="fluv-disconnect-button" hidden
+                        class="min-h-[44px] rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-100 dark:bg-slate-800 px-3 py-2 text-sm font-medium text-slate-600 dark:text-slate-300 hover:bg-rose-500/10 hover:text-rose-600 dark:hover:text-rose-400 disabled:opacity-60"></button>
+              </div>
+              <p id="fluv-error" hidden class="text-xs text-rose-600 dark:text-rose-400" role="alert"></p>
+
+              <details class="group border-t border-slate-200 dark:border-slate-700 pt-3">
+                <summary class="flex cursor-pointer list-none items-center justify-between text-sm font-medium text-slate-600 dark:text-slate-300">
+                  <span data-i18n="modals.userSettings.fluv.howTo">Relier Fluv</span>
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="h-4 w-4 transition-transform group-open:rotate-180" aria-hidden="true"><polyline points="6 9 12 15 18 9"/></svg>
+                </summary>
+                <div class="mt-3 space-y-2 text-xs text-slate-600 dark:text-slate-300">
+                  <ol class="list-decimal space-y-1 pl-4">
+                    <li data-i18n="modals.userSettings.fluv.step1">L'administrateur de Fluv autorise l'adresse IP de ce serveur Trakka (FLUV_TRAKKA_ALLOWED_IPS).</li>
+                    <li data-i18n="modals.userSettings.fluv.step2">Dans Fluv : Paramètres → Trakka, choisissez le compte des dépenses, puis copiez l'adresse de réception et le jeton (affiché une seule fois).</li>
+                    <li data-i18n="modals.userSettings.fluv.step3">Collez-les ici avec l'adresse IP de Fluv, enregistrez, puis « Tester ».</li>
+                  </ol>
+                  <p data-i18n="modals.userSettings.fluv.note">Seuls les articles avec un prix sont envoyés : le prix payé s'il a été saisi, sinon le prix estimé, multiplié par la quantité. L'envoi a lieu une vingtaine de secondes après avoir coché, et reprend tout seul si Fluv est injoignable.</p>
+                </div>
+              </details>
+            </section>
           </div>
         </div>
 
@@ -2313,6 +2412,15 @@
             <input type="number" id="edit-item-actual-price" step="0.01" min="0" inputmode="decimal" data-i18n-placeholder="modals.editItem.actualPricePlaceholder" placeholder="= prix prévu"
                    class="w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-4 py-3 text-base text-slate-900 dark:text-slate-100 placeholder:text-slate-500 focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500/30 disabled:opacity-50">
           </div>
+        </div>
+
+        <!-- Shipping fee (items.shipping_price, migration 42): for the whole
+             line, not per unit; sent to Fluv with the purchase as a second
+             expense (docs/FLUV.md). Not counted in the list's budget. -->
+        <div id="edit-item-shipping-field" data-item-field="price" hidden>
+          <label for="edit-item-shipping-price" data-i18n="modals.editItem.shippingPriceLabel" class="mb-1 block text-sm font-medium text-slate-600 dark:text-slate-300">Frais de port (€, optionnel)</label>
+          <input type="number" id="edit-item-shipping-price" step="0.01" min="0" inputmode="decimal" data-i18n-placeholder="modals.editItem.shippingPricePlaceholder" placeholder="Ex. 4.99"
+                 class="w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-4 py-3 text-base text-slate-900 dark:text-slate-100 placeholder:text-slate-500 focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500/30">
         </div>
 
         <div id="edit-item-target-price-field" data-item-field="target-price" hidden>
@@ -2672,6 +2780,14 @@
           <span aria-hidden="true">💶</span>
           <span data-i18n="modals.paidPrice.title" class="shrink-0">Prix payé</span>
           <span id="item-actions-paid-price-value" class="ml-auto min-w-0 truncate text-sm font-normal text-slate-500 dark:text-slate-400"></span>
+        </button>
+        <!-- "Envoi à Fluv" (fluv.js): shown once the server says the user has a
+             purchase of this bought item for their Fluv, opening #fluv-purchase-sheet. -->
+        <button type="button" id="item-actions-fluv-button" hidden aria-haspopup="dialog" aria-controls="fluv-purchase-sheet"
+                class="flex items-center gap-3 rounded-xl px-3 py-3 text-left text-base font-medium text-slate-900 dark:text-slate-100 hover:bg-slate-200 dark:hover:bg-slate-700">
+          <span aria-hidden="true">📤</span>
+          <span data-i18n="fluvPurchase.title" class="shrink-0">Envoi à Fluv</span>
+          <span id="item-actions-fluv-value" class="ml-auto min-w-0 truncate text-sm font-normal text-slate-500 dark:text-slate-400"></span>
         </button>
         <!-- The item's store aisle on a "Courses" list, opening #aisle-picker-sheet
              (quick-shop.js) to change it. -->
@@ -3260,6 +3376,50 @@
     </div>
   </div>
 
+  <!-- "Envoi à Fluv" bottom sheet (fluv.js, GET/PUT
+       /api/v1/integrations/fluv/items/{id}): the buyer's choices for one
+       purchase — another Fluv account (an id copied from Fluv), the item's
+       shipping fee (items.shipping_price, sent as a second expense), or not
+       sending it at all. Opened from the check-off toast's "Options" and from
+       #item-actions-sheet. Online only, like every /integrations/ request. -->
+  <div id="fluv-purchase-sheet" hidden class="fixed inset-0 z-40 flex items-end justify-center bg-slate-950/30 dark:bg-slate-950/70 p-0 sm:items-center sm:p-4">
+    <div role="dialog" aria-modal="true" aria-labelledby="fluv-purchase-sheet-title" class="w-full rounded-t-2xl bg-slate-100 dark:bg-slate-800 p-5 shadow-xl sm:max-w-md sm:rounded-2xl">
+      <div class="mb-3 flex items-center justify-between gap-3">
+        <div class="min-w-0 flex-1">
+          <h2 id="fluv-purchase-sheet-title" data-i18n="fluvPurchase.title" class="truncate text-lg font-semibold">Envoi à Fluv</h2>
+          <p id="fluv-purchase-item" class="truncate text-sm text-slate-500 dark:text-slate-400"></p>
+        </div>
+        <button type="button" id="close-fluv-purchase-sheet-button" data-i18n-aria-label="modals.close" aria-label="Fermer"
+                class="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-slate-500 dark:text-slate-400 hover:bg-slate-300 dark:hover:bg-slate-700 hover:text-slate-900 dark:hover:text-slate-200">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" class="h-5 w-5" aria-hidden="true"><path d="M18 6L6 18M6 6l12 12"/></svg>
+        </button>
+      </div>
+      <form id="fluv-purchase-form" class="space-y-3">
+        <p id="fluv-purchase-state" aria-live="polite" class="text-sm text-slate-600 dark:text-slate-300"></p>
+        <label class="flex items-center gap-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-4 py-3">
+          <input type="checkbox" id="fluv-purchase-skip" class="h-5 w-5 rounded border-slate-300 dark:border-slate-600 text-sky-500 focus:ring-sky-500/30">
+          <span data-i18n="fluvPurchase.skipLabel" class="text-sm font-medium text-slate-700 dark:text-slate-200">Ne pas envoyer cet achat à Fluv</span>
+        </label>
+        <div>
+          <label for="fluv-purchase-account" data-i18n="modals.newList.fluv.accountLabel" class="mb-1 block text-sm font-medium text-slate-600 dark:text-slate-300">Identifiant du compte Fluv (optionnel)</label>
+          <input type="text" id="fluv-purchase-account" autocomplete="off" autocapitalize="off" spellcheck="false" maxlength="36" data-i18n-placeholder="modals.newList.fluv.idPlaceholder" placeholder="Compte lié à Trakka"
+                 class="w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-4 py-3 font-mono text-sm text-slate-900 dark:text-slate-100 placeholder:font-sans placeholder:text-slate-500 focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500/30">
+          <select id="fluv-purchase-account-select" hidden
+                  class="w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-4 py-3 text-base text-slate-900 dark:text-slate-100 focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500/30"></select>
+        </div>
+        <div>
+          <label for="fluv-purchase-shipping" data-i18n="modals.editItem.shippingPriceLabel" class="mb-1 block text-sm font-medium text-slate-600 dark:text-slate-300">Frais de port (€, optionnel)</label>
+          <input type="number" id="fluv-purchase-shipping" step="0.01" min="0" inputmode="decimal" data-i18n-placeholder="modals.editItem.shippingPricePlaceholder" placeholder="Ex. 4.99"
+                 class="w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-4 py-3 text-base text-slate-900 dark:text-slate-100 placeholder:text-slate-500 focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-500/30">
+        </div>
+        <button type="submit"
+                class="min-h-[48px] w-full rounded-xl bg-sky-500 px-3 text-sm font-semibold text-white hover:bg-sky-400 active:scale-[0.98]">
+          <span data-i18n="fluvPurchase.save">Enregistrer</span>
+        </button>
+      </form>
+    </div>
+  </div>
+
   <!-- "Enregistrer comme modèle" bottom sheet (budget.js): saves the open
        list as a template of its House — every item with its quantity, aisle
        and price (the price paid when one was entered). House members only,
@@ -3334,6 +3494,7 @@
   <script src="/js/local-reminders.js" defer></script>
   <script src="/js/calendar-feed.js" defer></script>
   <script src="/js/api-tokens.js" defer></script>
+  <script src="/js/fluv.js" defer></script>
   <script src="/js/qrcode.js" defer></script>
   <script src="/js/qr-login.js" defer></script>
   <script src="/js/install-help.js" defer></script>

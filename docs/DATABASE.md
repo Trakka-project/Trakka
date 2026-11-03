@@ -74,6 +74,7 @@ Since the `house_members` table (below) was added, every house also needs an own
 | `price_changed_at` | `TEXT` | nullable (migration 28); ISO-8601 UTC time of that movement |
 | `aisle` | `TEXT` | nullable (migration 30); the store aisle, one of `internal/catalog.Aisles` (`produce`, `bakery`, `meat_fish`, `dairy`, `pantry`, `breakfast`, `drinks`, `baby`, `pets`, `household`, `hygiene`, `stationery`, `clothing`, `electronics`, `diy`, `frozen`, `other` — the four non-food ones added in code alongside migration 32, no schema change needed), validated by `internal/validate.Aisle`. On a "Courses" (`groceries`) list a new item without one gets the household's usual aisle for the product, else a keyword guess (`internal/handlers.resolveItemAisle`); the list view's "Par rayon" sort groups by it. Written by `db.SetItemAisle` (another "separate method, not one more `CreateItem`/`UpdateItem` parameter", like `SetItemLabels`) and by `db.ReactivateItem`, which only fills it in when empty. Migration 31 guessed it for the items Courses lists already held. See [API.md](API.md#quick-shopping-lists-courses) |
 | `is_planned` | `INTEGER NOT NULL DEFAULT 0` | 0/1 boolean (migration 32); splits the items not bought yet (`done = 0`) into "planned" (`1`: added while estimating — every item of a list created from a template — not confirmed as needed) and "to buy" (`0`). Never exposed as such: the API reports `purchase_status` (`planned`/`to_buy`/`bought`), derived by `models.PurchaseStatusOf` from `done` and this column, `done` winning. Cleared when the item is bought (`internal/handlers.purchaseColumns`) and by `db.ReactivateItem` (a product added again is wanted) — see [API.md](API.md#purchase-cycle--budget) |
+| `shipping_price` | `REAL` | nullable (migration 42); the shipping fee in euros for the whole line, not per unit. Sent to Fluv with the purchase (`fluv_purchases.shipping_minor`); not part of the list budget |
 | `actual_price` | `REAL` | nullable (migration 32); what one unit actually cost, entered when the item was bought — a unit price like `price`, which stays the estimate it's compared with in the list's budget. `NULL` means "cost the estimate". Only ever set while `done = 1`: every write that takes an item out of "bought" clears it — the item handlers, `db.ReactivateItem` (a Courses re-add), `db.ActivateNextOccurrence` (a recurring item's next occurrence) — since the next purchase is a new one |
 | `nutri_score` | `TEXT` | nullable (migration 39); the product's Nutri-Score grade, `CHECK (nutri_score IN ('A','B','C','D','E'))` — upper case, normalized by `internal/validate.NutriScore`. From Open Food Facts on a scan, or set by a client; on a Courses list a new item without one inherits `house_products.nutri_score`. Written by `db.SetItemNutrition` (another separate method, like `SetItemAisle`). See [API.md](API.md#nutrition-scores) |
 | `nova_group` | `INTEGER` | nullable (migration 40); the product's NOVA group (how processed it is), `CHECK (nova_group BETWEEN 1 AND 4)`. From Open Food Facts (scan, text-search enrichment, on-demand lookup) or set by a client. Same inheritance and writer as `nutri_score` |
@@ -407,6 +408,57 @@ The people an item is assigned to (migration 34) — one row per person, none fo
 - **Reads**: `itemSelectColumns` ends with `itemAssigneesExpr`, a correlated subquery building the item's `[{user_id, display_name}]` with `json_group_array(... ORDER BY ia.rowid)` (SQLite JSON1 and aggregate `ORDER BY`, 3.44+; the bundled `modernc.org/sqlite` is 3.53) over the primary key, so every read that feeds `scanItem` — the list detail, `GetItem`, the price scans — carries them without a second query. `"[]"` when there are none.
 
 There is no `reminder_date` column, though the feature's spec named one: an item's reminder moment is already derived from `due_date`/`due_time` and `reminder_offset_days`/`reminder_time`/`reminder_at_due_time` (see [`items`](#items)), recomputed for every occurrence; a stored date would go stale the moment a recurring task advanced.
+
+### `fluv_integrations`
+
+A user's connection to their Fluv, the personal finance app purchases are sent to (migration 41; see [FLUV.md](FLUV.md), [API.md](API.md#fluv-integration), `internal/db/fluv.go`). At most one row per user.
+
+| Column | Type | Notes |
+|---|---|---|
+| `user_id` | `INTEGER PRIMARY KEY` | `REFERENCES users(id) ON DELETE CASCADE` |
+| `endpoint_url` | `TEXT NOT NULL` | Fluv's purchase endpoint, canonical form (validated by `internal/fluv`: `internal/validate.URL`, path ending with `/api/v1/integrations/trakka/purchases`) |
+| `pinned_ips` | `TEXT NOT NULL` | comma-separated IP addresses (1 to 4) the connection is locked to: resolved from the endpoint's host by the server when the connection is saved, moved by a connection test that succeeds at new addresses (`SetFluvPinnedIPs`), never entered by the user. The only addresses the purchases are ever sent to — sending never resolves the host |
+| `token_sealed` | `TEXT NOT NULL` | Fluv's `fluv_trk_…` token **sealed** with the instance key (`backup.Service.SealSecret`, `v1:` + base64 of AES-256-GCM nonce‖ciphertext under a per-purpose HKDF subkey) — never the token as is. An outbound credential, so unlike `api_tokens.token_hash` it can't be a hash; the key lives in `backup.key` next to the database, not in it, so the database alone holds no working token |
+| `enabled` | `INTEGER NOT NULL DEFAULT 1` | 0/1: 0 pauses it (nothing is queued) |
+| `created_at` / `updated_at` | `TEXT NOT NULL` | ISO-8601 UTC |
+| `last_success_at` | `TEXT` | the latest successful exchange with Fluv; cleared on each save |
+| `last_error_code` / `last_error_at` | `TEXT` | the latest failed one (an error code, see [FLUV.md](FLUV.md#error-codes)); cleared by a success or a save |
+
+### `fluv_purchases`
+
+The outbox of purchases sent to Fluv (migration 41): one row per time an item was bought by a connected user. The background sender (`fluv.Service.Run`) works on the rows where what Fluv should hold (`desired`) and what it is known to hold (`synced`) disagree.
+
+| Column | Type | Notes |
+|---|---|---|
+| `id` | `INTEGER PRIMARY KEY AUTOINCREMENT` | |
+| `user_id` | `INTEGER NOT NULL` | `REFERENCES users(id) ON DELETE CASCADE`; whose Fluv (the person who checked the item off) |
+| `item_id` | `INTEGER` | `REFERENCES items(id) ON DELETE SET NULL` — deleting a bought item is tidying up, not a refund. Also set `NULL` by `ActivateNextOccurrence` and `ReactivateItem` (`detachFluvPurchases`): the server un-checking an item for its next occurrence or a new addition doesn't take the purchase back. Index `idx_fluv_purchases_item` |
+| `ref` | `TEXT NOT NULL UNIQUE` | the reference Fluv knows the purchase by (`trakka-<item id>-<16 hex>`) |
+| `title` / `store` / `quantity` / `amount_minor` | | what is sent: the cleaned title (≤ 100 chars), the list's name (≤ 40), the quantity (≤ 9999), the amount in cents (`CHECK (amount_minor > 0)`) |
+| `shipping_minor` | `INTEGER NOT NULL DEFAULT 0` | migration 42: the item's `shipping_price` in cents (`shipping_amount_minor`; 0 = none, not sent) |
+| `account_id` / `category_id` / `budget_type` | `TEXT NOT NULL DEFAULT ''` | migration 42: how Fluv files it, copied from the buyer's [`fluv_list_defaults`](#fluv_list_defaults) when the row is queued and kept by its corrections (`''` = not sent, Fluv decides) |
+| `skipped` | `INTEGER NOT NULL DEFAULT 0` | migration 43: 0/1, the buyer chose not to send it ("Ne pas envoyer à Fluv", `PUT /api/v1/integrations/fluv/items/{id}`): the row is cancelled like an uncheck, and a later correction of the item doesn't record it again. Cleared when the item is un-checked (`ClearFluvSkips`) |
+| `purchased_at` / `purchased_on` | `TEXT NOT NULL` | when the item was checked off (RFC 3339 UTC), and that day in `APP_TIMEZONE` (`YYYY-MM-DD`, the `date` Fluv records) |
+| `desired` | `TEXT NOT NULL` | `record` or `cancel`. A row only ever goes from `record` to `cancel`: checking the item off again is a new row |
+| `synced` | `TEXT NOT NULL` | `none`, `recorded` or `cancelled` |
+| `failed` | `INTEGER NOT NULL` | 1: refused in a way retrying can't fix, or out of attempts — waits for the user (`RetryFailedFluvPurchases`, also run on each save of the connection) |
+| `in_flight` | `INTEGER NOT NULL` | 1 while the sender is sending it (claimed by `ClaimNextFluvPurchase`'s `UPDATE … RETURNING`), so a handler never rewrites what is on the wire; cleared at startup |
+| `attempts` / `next_attempt_at` | `INTEGER` / `TEXT` | the backoff (1, 2, 4 … minutes, ≤ 6 h, 16 attempts); a new row is first due 20 s after the check-off |
+| `last_status` / `last_error_code` | `INTEGER` / `TEXT` | the latest attempt's HTTP status and error code |
+| `created_at` / `updated_at` | `TEXT NOT NULL` | ISO-8601 UTC |
+
+`idx_fluv_purchases_due` is a partial index on `next_attempt_at` over the rows still to send (`failed = 0` and `desired`/`synced` disagreeing). How the handlers keep it consistent (`fluv.Service.ItemChanged`): a check-off inserts a `record` row; an uncheck marks the item's latest `record` row `cancel` — settled on the spot if it was never sent, else due at once (a `DELETE`, which Fluv answers `404` when it has nothing); a change of the amount, shipping fee, quantity or title while bought corrects a never-sent row in place (`RepriceUnsentFluvPurchase`, only while `attempts = 0` and not `in_flight`), else cancels it and inserts a new one with the original date. The buyer's choices for one purchase (`fluv.Service.SetItemPurchase`): another account changes a never-sent (or skipped) row in place (`SetFluvPurchaseAccount`), else cancels it and inserts a new one; skipping cancels it and sets `skipped`; sending it again clears `skipped` and inserts a new row. Settled rows are deleted 180 days after their last change (`PruneFluvPurchases`), so an uncheck that late no longer reaches Fluv. Deleting the connection deletes the user's rows.
+
+### `fluv_list_defaults`
+
+How a user's purchases from a list are filed in their Fluv (migration 42; `GET`/`PUT /api/v1/integrations/fluv/lists/{id}`, [API.md](API.md#get-apiv1integrationsfluvlistsid)). Per user **and** list: a shared list's members each send to their own Fluv, whose ids mean nothing to another's. No row = all `''`; saving all `''` deletes the row.
+
+| Column | Type | Notes |
+|---|---|---|
+| `user_id` / `list_id` | `INTEGER NOT NULL` | primary key together; `ON DELETE CASCADE` on both. Index `idx_fluv_list_defaults_list` |
+| `account_id` / `category_id` | `TEXT NOT NULL DEFAULT ''` | a Fluv account/category id (lowercase UUID, shape-checked by `internal/fluv`), `''` = Fluv's choice |
+| `budget_type` | `TEXT NOT NULL DEFAULT ''` | `CHECK (budget_type IN ('', 'need', 'want'))` |
+| `updated_at` | `TEXT NOT NULL` | ISO-8601 UTC |
 
 ## Evolving the schema
 

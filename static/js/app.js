@@ -1966,6 +1966,8 @@ function setListTypeSelection(value) {
   els.listIconInput.placeholder = LIST_TYPE_BADGE_META[value]?.icon || '📋';
   // The "Partir d'un modèle" cards (budget.js) show the type's templates.
   syncListTemplatesToType(value);
+  // "Envoi à Fluv" (fluv.js) only applies to purchase lists.
+  syncListFluvField(value);
 }
 
 // The clear button only shows while there's an icon to clear.
@@ -1994,6 +1996,8 @@ function openListModal(list) {
   loadCustomCategories().then(() => populateCategorySelect(els.listCategorySelect, list?.custom_category_id ?? null));
   // The "Partir d'un modèle" picker (budget.js), create mode only.
   resetListTemplatePicker(!editingList);
+  // "Envoi à Fluv" (fluv.js): filled in once the server answers.
+  prepareListFluvDefaults(editingList);
   els.newListModal.hidden = false;
   TrakkaScrollLock.lock();
   els.listNameInput.focus();
@@ -2061,14 +2065,22 @@ els.createListForm.addEventListener('submit', async (event) => {
   const categoryValue = els.listCategorySelect.value;
   const customCategoryId = categoryValue && categoryValue !== CREATE_CATEGORY_OPTION_VALUE ? Number(categoryValue) : null;
   if (!name) return;
+  // listFluvValidationError/saveListFluvDefaults are defined in fluv.js.
+  const fluvError = listFluvValidationError();
+  if (fluvError) {
+    showError(fluvError);
+    return;
+  }
 
   try {
     const isEdit = editingList !== null;
     if (isEdit) {
-      await apiRequest(`/lists/${editingList.id}`, {
+      const listId = editingList.id;
+      await apiRequest(`/lists/${listId}`, {
         method: 'PUT',
         body: JSON.stringify({ name, type, icon, custom_category_id: customCategoryId }),
       });
+      await saveListFluvDefaults(listId);
     } else {
       if (state.currentHouseId === null) return;
       // A template picked in the modal (budget.js): the server creates the

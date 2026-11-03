@@ -1024,6 +1024,8 @@ On a purchase list (`shopping`, `groceries`, `recurring_shopping`) an item goes 
 - **`PUT`** (full replace): `purchase_status`, when sent, decides `done` (`done` can't be told absent from `false` here); omitted, the item is `bought` or `to_buy` per `done`.
 - Buying an item clears `is_planned`, so a bought item unchecked later comes back `to_buy`.
 
+**Shipping**, `shipping_price` (migration 42), is what delivering the item cost, in euros, **for the whole line** (not per unit). On `PATCH` and `PUT`: absent leaves it (`PUT` too, so clients that predate it don't clear it), `null` or `0` clears it, negative is `400`. Not counted in the list's `budget`; sent to [Fluv](#fluv-integration) with the purchase, as a second expense.
+
 **The price actually paid**, `actual_price`, is a unit price like `price`, which stays the estimate it is compared with in the list's [`budget`](#get-apiv1lists). It can only be set on an item that is bought — in the same request or before — else `400` (`"actual_price can only be set on a bought item"`); `null` clears it (the purchase then counts at its estimate); negative is `400`. Taking an item out of `bought` (`PATCH`/`PUT`, a Courses re-add, a recurring item's next occurrence) clears it: the next purchase is a new one. `PUT` clears it when omitted. `POST` doesn't accept it.
 
 ```bash
@@ -1333,6 +1335,125 @@ Creates a token. Body: `{"name": "Home Assistant"}` — required, at most 200 ch
 ### `DELETE /api/v1/api-tokens/{id}`
 
 Revokes a token: it stops working at once. `204`; `404` if the calling user has no such token (including another user's).
+
+## Fluv integration
+
+Each user can connect their own [Fluv](FLUV.md), the personal finance app: checking an item off a purchase list then sends it to Fluv as an expense, in the background, and unchecking it takes it back (what is sent, when, and the security model: [docs/FLUV.md](FLUV.md)). Implementation: `internal/handlers/fluv.go`, `internal/fluv`; tables [`fluv_integrations` and `fluv_purchases`](DATABASE.md#fluv_integrations).
+
+These routes need a session — they are not open to [API tokens](#api-tokens) — and their writes go through the usual cross-origin check. All of them answer `404` when the operator turned the feature off (`FLUV_INTEGRATION_ENABLED=false`). The PWA offers them in Paramètres → Intégrations → Fluv, and the per-list defaults in the list's edit modal. `PUT`/`PATCH /api/v1/items/{id}` queue the purchase (or its cancellation) after saving the item, and never fail because of Fluv; an item's `shipping_price` is sent with it ([PATCH](#patch-apiv1itemsid)).
+
+### `GET /api/v1/integrations/fluv`
+
+The calling user's connection. Never returns the token.
+
+```json
+{
+  "configured": true,
+  "enabled": true,
+  "endpoint_url": "https://fluv.example.com/api/v1/integrations/trakka/purchases",
+  "pinned_ips": ["203.0.113.10"],
+  "token_set": true,
+  "operator_allowlist": false,
+  "last_success_at": "2026-10-28T13:40:02.118Z",
+  "pending": 0,
+  "failed": 0
+}
+```
+
+`pinned_ips` (read-only) are the addresses the connection is locked to — resolved from the endpoint's host when it was saved or last re-locked by a test — and the only ones the purchases are ever sent to. `operator_allowlist` says `FLUV_INTEGRATION_ALLOWED_IPS` is set (a locked address must then be inside it; otherwise it must be public). `last_success_at`, or `last_error_code` and `last_error_at`, describe the latest exchange with Fluv. `pending` counts the purchases and cancellations still to send, `failed` those waiting for the user (see `retry`). Without a connection: `{"configured": false, "enabled": false, "pinned_ips": [], "token_set": false, "operator_allowlist": false, "pending": 0, "failed": 0}`.
+
+### `PUT /api/v1/integrations/fluv`
+
+Creates or replaces the calling user's connection, locks it to Fluv's IP address(es), and re-queues the purchases that had failed. Body:
+
+```json
+{
+  "endpoint_url": "https://fluv.example.com/api/v1/integrations/trakka/purchases",
+  "token": "fluv_trk_…",
+  "enabled": true
+}
+```
+
+There is no address field (an unknown field such as `pinned_ips` is a `400`): the server resolves the endpoint's host now and locks the connection to the addresses it resolves to that the policy allows — up to 4, refused ones dropped; an IP-literal host is its own lock. Sending a purchase never resolves the host again ([FLUV.md](FLUV.md#the-ip-lock)).
+
+- `endpoint_url` (required): Fluv's purchase endpoint as Fluv's settings show it — an absolute `https://` URL (`internal/validate.URL`, then: no credentials, query or fragment) whose path ends with `/api/v1/integrations/trakka/purchases`. `http://` only when every locked address is non-public. Each locked address must be public, or inside `FLUV_INTEGRATION_ALLOWED_IPS` when the operator set it; link-local, multicast and unspecified addresses never.
+- `token`: the `fluv_trk_…` token of Fluv's link. Required the first time; empty or absent keeps the stored one. Stored sealed with the instance key, never returned.
+- `enabled`: `false` pauses the connection (nothing is queued; what is queued waits). Absent means `true`.
+
+`200` with the connection as `GET` returns it. A refused setting is a `400` with a code and the field: `{"error": "…", "code": "address_not_allowed", "field": "endpoint_url"}` — codes `required`, `invalid_url`, `not_fluv_endpoint`, `unresolvable` (the host name doesn't resolve), `address_not_allowed` (none of its addresses may be locked), `https_required`, `invalid_token`.
+
+### `DELETE /api/v1/integrations/fluv`
+
+Disconnects Fluv: removes the connection and the purchases not sent yet. What Fluv already recorded stays there. `204`, whether or not there was one.
+
+### `POST /api/v1/integrations/fluv/test`
+
+Checks the saved connection end to end, with a request that changes nothing in Fluv (`DELETE` of a purchase that doesn't exist, which Fluv only answers `404` once it accepted the address and the token). No body. Always a `200` when the check ran, Fluv's refusals included — never a `5xx`, which the PWA would take for Trakka being unreachable:
+
+```json
+{ "ok": true, "status": 404, "pinned_ips": ["203.0.113.11"], "relocked": true }
+```
+
+The endpoint's host is resolved again first and the test runs against what it resolves to now. If Fluv accepts it there and those addresses differ from the lock, the lock moves to them (`relocked: true`); a failed test (`{"ok": false, "status": 401, "code": "unauthenticated"}`, or `code` `unresolvable`/`address_not_allowed` when the host no longer resolves to an allowed address) leaves the lock as it was.
+
+`code` is one of those listed in [FLUV.md](FLUV.md#error-codes). `404` without a connection; `429` after 10 tests in 5 minutes.
+
+### `POST /api/v1/integrations/fluv/retry`
+
+Sends the calling user's failed purchases again, at once. No body. `200 {"retried": 2}`.
+
+### `GET /api/v1/integrations/fluv/metadata`
+
+The calling user's Fluv accounts and expense categories, for the PWA's menus (list defaults, one purchase's account). The server reads them from Fluv's `GET /api/v1/integrations/trakka/metadata` — with the stored token, to the locked addresses only, like a purchase — and caches the answer 2 minutes per user and language (a failure 20 seconds). Query: `lang` (`fr`, the default, or `en`), sent to Fluv as `Accept-Language` for the category names.
+
+```json
+{
+  "ok": true,
+  "default_account_id": "0192f3a4-5b6c-7d8e-9f01-23456789abcd",
+  "accounts": [{ "id": "0192f3a4-5b6c-7d8e-9f01-23456789abcd", "name": "Portefeuille", "kind": "cash" }],
+  "categories": [{ "id": "0192f3a4-0000-7d8e-9f01-23456789abcd", "name": "Courses", "emoji": "🛒" }]
+}
+```
+
+What Fluv answers is cleaned first: ids of Fluv's UUID shape only (lowercased, no duplicates), names without control or bidi characters, at most 80 characters (an emoji 8), at most 200 accounts and 500 categories, an answer over 256 KiB refused. Fluv failing is `200 {"ok": false, "status": 404, "code": "not_found", "accounts": [], "categories": []}` — a Fluv older than the endpoint, a refused token, Fluv unreachable (`code` as in [FLUV.md](FLUV.md#error-codes), plus `invalid_response` for an answer that isn't the JSON expected) —; the PWA then keeps its text fields. It doesn't change the connection's last error. `404` without a connection.
+
+### `GET /api/v1/integrations/fluv/lists/{id}`
+
+How the calling user's purchases from list `{id}` are filed in **their** Fluv — per user, not per list: a shared list's members each send to their own Fluv.
+
+```json
+{ "account_id": "0192f3a4-5b6c-7d8e-9f01-23456789abcd", "category_id": "", "budget_type": "need", "configured": true }
+```
+
+`""` leaves that choice to Fluv: the account linked to Trakka, the category Fluv's rules find, the need/want that category implies. `configured` says whether the user connected a Fluv (the PWA only offers the defaults then). Needs read [access](#sharing) to the list (`404`/`403` otherwise); `400` on a `todo`/`custom` list (nothing on it is sent).
+
+### `PUT /api/v1/integrations/fluv/lists/{id}`
+
+Replaces them — all three fields, an absent one is `""`. Body: `{"account_id": "…", "category_id": "…", "budget_type": "want"}`.
+
+- `account_id`, `category_id`: ids of the user's Fluv account/category (UUIDs; trimmed and lowercased), picked from [`…/metadata`](#get-apiv1integrationsfluvmetadata) or copied from Fluv. Only the shape is checked; Fluv refuses an unknown or loan account, which fails the purchase (`code` from Fluv, see [FLUV.md](FLUV.md#error-codes)).
+- `budget_type`: `need`, `want` (`needs`/`wants` accepted), or `""`.
+
+`200` with the defaults as `GET` returns them. `400 {"error": "…", "code": "invalid_fluv_id" | "invalid_budget_type", "field": "…"}`. Only purchases queued afterwards use them; a purchase keeps how it was filed through its corrections.
+
+### `GET /api/v1/integrations/fluv/items/{id}`
+
+How the calling user's purchase of bought item `{id}` stands in their Fluv — what the check-off toast's "Options" and the item actions sheet show.
+
+```json
+{ "queued": true, "sent": false, "skipped": false, "account_id": "" }
+```
+
+`queued`: on its way to Fluv, or there (`sent`: it was sent at least once). `skipped`: the user chose not to send it. All `false` when nothing of theirs is sent for the item: not bought, no price, bought by another House member, or Fluv not connected. `account_id` is the Fluv account it is filed in (`""`: the one linked to Trakka). Needs read [access](#sharing) to the item's list.
+
+### `PUT /api/v1/integrations/fluv/items/{id}`
+
+The buyer's choices for that one purchase. Body: `{"account_id": "…", "skip": false}`.
+
+- `account_id`: a Fluv account id (UUID, shape-checked like the list defaults), `""` for the one linked to Trakka. Changed in place while the purchase hasn't been sent; after, it is cancelled in Fluv and sent again under a new reference, on its original date.
+- `skip: true` takes it out of Fluv (cancelled, like an uncheck) while the item stays bought, and later corrections (a price typed afterwards, a shipping fee) don't send it again; `skip: false` on a skipped purchase sends it again, as the item stands. Un-checking the item ends the skip.
+
+The item's shipping fee is changed on the item itself (`shipping_price`, [PATCH](#patch-apiv1itemsid)). `200` with the purchase as `GET` returns it. `400 {"code": "invalid_fluv_id", "field": "account_id"}`; `404 {"code": "no_purchase"}` when the caller has no purchase of the item to change.
 
 ## Admin settings
 

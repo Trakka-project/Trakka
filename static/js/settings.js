@@ -237,6 +237,8 @@ function openUserSettingsModal() {
   refreshCalendarFeedSection();
   // Same for api-tokens.js: the account's API tokens.
   refreshApiTokensSection();
+  // And fluv.js: the connection to Fluv.
+  refreshFluvSection();
   // And qr-login.js: its section is hidden inside the Android app.
   refreshQrLoginSection();
   userSettingsEls.modal.hidden = false;

@@ -227,6 +227,10 @@ func sealSecret(key Key, plaintext string) (string, error) {
 	if err != nil {
 		return "", err
 	}
+	return sealWith(aead, plaintext)
+}
+
+func sealWith(aead cipher.AEAD, plaintext string) (string, error) {
 	nonce := make([]byte, aead.NonceSize())
 	if _, err := rand.Read(nonce); err != nil {
 		return "", fmt.Errorf("generating nonce: %w", err)
@@ -241,30 +245,43 @@ func sealSecret(key Key, plaintext string) (string, error) {
 var ErrSecretUnreadable = errors.New("the stored WebDAV password can't be decrypted with the current backup key; enter it again")
 
 func openSecret(key Key, sealed string) (string, error) {
-	encoded, ok := strings.CutPrefix(sealed, sealedSecretPrefix)
-	if !ok {
-		return "", ErrSecretUnreadable
-	}
-	raw, err := base64.RawStdEncoding.DecodeString(encoded)
-	if err != nil {
-		return "", ErrSecretUnreadable
-	}
 	aead, err := secretAEAD(key)
 	if err != nil {
 		return "", err
 	}
+	return openWith(aead, sealed, ErrSecretUnreadable)
+}
+
+// openWith opens a value sealWith produced, or returns unreadable.
+func openWith(aead cipher.AEAD, sealed string, unreadable error) (string, error) {
+	encoded, ok := strings.CutPrefix(sealed, sealedSecretPrefix)
+	if !ok {
+		return "", unreadable
+	}
+	raw, err := base64.RawStdEncoding.DecodeString(encoded)
+	if err != nil {
+		return "", unreadable
+	}
 	if len(raw) < aead.NonceSize() {
-		return "", ErrSecretUnreadable
+		return "", unreadable
 	}
 	plain, err := aead.Open(nil, raw[:aead.NonceSize()], raw[aead.NonceSize():], nil)
 	if err != nil {
-		return "", ErrSecretUnreadable
+		return "", unreadable
 	}
 	return string(plain), nil
 }
 
 func secretAEAD(key Key) (cipher.AEAD, error) {
-	subkey, err := hkdf.Key(sha256.New, key[:], nil, "trakka-backup-v1 credential", KeySize)
+	return secretAEADFor(key, "trakka-backup-v1 credential")
+}
+
+// secretAEADFor is secretAEAD under the subkey of another HKDF info string:
+// each kind of secret sealed with the instance key gets its own subkey (see
+// Service.SealSecret), so a sealed value can never be opened as another
+// kind.
+func secretAEADFor(key Key, info string) (cipher.AEAD, error) {
+	subkey, err := hkdf.Key(sha256.New, key[:], nil, info, KeySize)
 	if err != nil {
 		return nil, fmt.Errorf("deriving credential key: %w", err)
 	}

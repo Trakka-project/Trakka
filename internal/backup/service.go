@@ -485,6 +485,47 @@ func (s *Service) Status(ctx context.Context) (Status, error) {
 // Key export
 // ---------------------------------------------------------------------------
 
+// ErrSealedSecretUnreadable is OpenSecret's ErrSecretUnreadable: the value
+// was sealed under an instance key that has since been replaced or lost,
+// and must be entered again.
+var ErrSealedSecretUnreadable = errors.New("the stored secret can't be decrypted with the current instance key; enter it again")
+
+// SealSecret seals a small secret another feature must send again later —
+// the Fluv token (internal/fluv) — under a subkey of the instance key of
+// its own (HKDF info "trakka-secret-v1 " + purpose), generating the key
+// file if this instance has none yet. The result can be stored in the
+// database, like the sealed WebDAV password: the key never is, so a copy of
+// the database alone never holds the secret. A restore that adopts the
+// backup's key (see Restore) brings back the values sealed under it.
+func (s *Service) SealSecret(purpose, plaintext string) (string, error) {
+	key, err := s.keys.loadOrCreate(s.now())
+	if err != nil {
+		return "", err
+	}
+	aead, err := secretAEADFor(key, "trakka-secret-v1 "+purpose)
+	if err != nil {
+		return "", err
+	}
+	return sealWith(aead, plaintext)
+}
+
+// OpenSecret opens what SealSecret sealed for purpose, or returns
+// ErrSealedSecretUnreadable.
+func (s *Service) OpenSecret(purpose, sealed string) (string, error) {
+	key, ok, err := s.keys.load()
+	if err != nil {
+		return "", err
+	}
+	if !ok {
+		return "", ErrSealedSecretUnreadable
+	}
+	aead, err := secretAEADFor(key, "trakka-secret-v1 "+purpose)
+	if err != nil {
+		return "", err
+	}
+	return openWith(aead, sealed, ErrSealedSecretUnreadable)
+}
+
 // ExportedKey is what the "download the key" action returns.
 type ExportedKey struct {
 	Key         string `json:"key"`

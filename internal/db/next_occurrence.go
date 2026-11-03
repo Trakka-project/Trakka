@@ -66,7 +66,9 @@ func (d *DB) ListItemsAwaitingNextOccurrence(ctx context.Context) ([]*NextOccurr
 // edited the item in the meantime is never overridden. Reports whether the
 // row was actually updated. The due date change re-arms the reminder by
 // itself (see ListItemsForDueReminderScan). The price paid for the previous
-// occurrence is cleared: the next one is a new purchase (migration 32).
+// occurrence is cleared: the next one is a new purchase (migration 32), and
+// so the purchase sent to Fluv for it is detached from the item
+// (detachFluvPurchases).
 func (d *DB) ActivateNextOccurrence(ctx context.Context, itemID int64, nextDueDate string) (bool, error) {
 	res, err := d.conn.ExecContext(ctx,
 		`UPDATE items SET done = 0, due_date = next_due_date, next_due_date = NULL, actual_price = NULL,
@@ -79,6 +81,11 @@ func (d *DB) ActivateNextOccurrence(ctx context.Context, itemID int64, nextDueDa
 	n, err := res.RowsAffected()
 	if err != nil {
 		return false, fmt.Errorf("reading rows affected for item %d: %w", itemID, err)
+	}
+	if n > 0 {
+		if err := d.detachFluvPurchases(ctx, itemID); err != nil {
+			return false, err
+		}
 	}
 	return n > 0, nil
 }

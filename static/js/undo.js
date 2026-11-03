@@ -172,6 +172,38 @@
     setTimeout(() => toast.remove(), delay);
   }
 
+  // A confirmation toast with one button ({ label, onClick }) for a
+  // follow-up to a change that is already committed — "Options" on a
+  // purchase just queued for Fluv (fluv.js). Clicking it closes the toast.
+  function withAction(message, action, delay = 8000) {
+    const root = getContainer();
+    if (!root) return;
+
+    const toast = document.createElement('div');
+    toast.setAttribute('role', 'status');
+    toast.className =
+      'pointer-events-auto flex items-center gap-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-100 dark:bg-slate-800 py-3 pl-4 pr-3 text-sm text-slate-900 dark:text-slate-100 shadow-xl';
+
+    const text = document.createElement('span');
+    text.textContent = message;
+
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className =
+      'shrink-0 rounded-lg bg-sky-500/10 px-3 py-1.5 text-sm font-semibold text-sky-600 dark:text-sky-300 hover:bg-sky-500/20';
+    button.textContent = action.label;
+
+    toast.append(text, button);
+    root.appendChild(toast);
+
+    const timer = setTimeout(() => toast.remove(), delay);
+    button.addEventListener('click', () => {
+      clearTimeout(timer);
+      toast.remove();
+      action.onClick();
+    });
+  }
+
   window.TrakkaUndo = { schedule };
-  window.TrakkaToast = { success, warning };
+  window.TrakkaToast = { success, warning, withAction };
 })();

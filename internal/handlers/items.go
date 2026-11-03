@@ -83,7 +83,29 @@ var (
 	errPurchaseStatusConflict = errors.New("purchase_status contradicts done")
 	errActualPriceNotBought   = errors.New("actual_price can only be set on a bought item")
 	errActualPriceNegative    = errors.New("actual_price cannot be negative")
+	errShippingPriceInvalid   = errors.New("shipping_price must be a non-negative number")
 )
+
+// parseShippingPrice reads the shipping_price of a PUT or PATCH: absent
+// keeps current (a PUT too — clients that predate the field must not clear
+// it), null or 0 clears it, a non-negative number sets it (see
+// models.Item.ShippingPrice).
+func parseShippingPrice(raw json.RawMessage, current *float64) (*float64, error) {
+	if raw == nil {
+		return current, nil
+	}
+	if string(raw) == "null" {
+		return nil, nil
+	}
+	var fee float64
+	if err := json.Unmarshal(raw, &fee); err != nil || fee < 0 {
+		return nil, errShippingPriceInvalid
+	}
+	if fee == 0 {
+		return nil, nil
+	}
+	return &fee, nil
+}
 
 // parsePurchaseStatus validates a purchase_status sent by a client and
 // reports the done and is_planned flags it stands for.
@@ -512,6 +534,8 @@ func (app *Application) handleItemsUpdate(w http.ResponseWriter, r *http.Request
 		Aisle                 string   `json:"aisle"`
 		PurchaseStatus        string   `json:"purchase_status"`
 		ActualPrice           *float64 `json:"actual_price"`
+		// Left as is when absent, like nutrition: see parseShippingPrice.
+		ShippingPrice json.RawMessage `json:"shipping_price"`
 		// nutri_score/nova_group/yuka_score: left as they are when absent,
 		// unlike the other fields — see applyNutritionInput.
 		nutritionInput
@@ -561,6 +585,11 @@ func (app *Application) handleItemsUpdate(w http.ResponseWriter, r *http.Request
 			writeError(w, http.StatusBadRequest, errActualPriceNotBought.Error())
 			return
 		}
+	}
+	shippingPrice, err := parseShippingPrice(in.ShippingPrice, existing.ShippingPrice)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
 	}
 	if !validate.MaxLen(in.Title, validate.MaxTitleLen) {
 		writeError(w, http.StatusBadRequest, "title is too long")
@@ -712,6 +741,13 @@ func (app *Application) handleItemsUpdate(w http.ResponseWriter, r *http.Request
 		app.serverError(w, r, err)
 		return
 	}
+	if !sameFloat(shippingPrice, existing.ShippingPrice) {
+		item, err = app.DB.SetItemShipping(r.Context(), item.ID, shippingPrice)
+		if err != nil {
+			app.serverError(w, r, err)
+			return
+		}
+	}
 	// PUT is a full replace: an omitted aisle clears it, like labels.
 	aisleChanged := cleanAisle != stringValue(existing.Aisle)
 	if aisleChanged {
@@ -754,6 +790,7 @@ func (app *Application) handleItemsUpdate(w http.ResponseWriter, r *http.Request
 			app.notifyListChange(list, userFromContext(r), item.Title, doneChange(justCompleted))
 		}
 	}
+	app.reportPurchase(r, existing, item)
 	writeJSON(w, http.StatusOK, item)
 }
 
@@ -789,6 +826,7 @@ func (app *Application) handleItemsPatch(w http.ResponseWriter, r *http.Request)
 		Aisle                 *string         `json:"aisle"`
 		PurchaseStatus        *string         `json:"purchase_status"`
 		ActualPrice           json.RawMessage `json:"actual_price"`
+		ShippingPrice         json.RawMessage `json:"shipping_price"`
 		AssigneeIDs           *[]int64        `json:"assignee_ids"`
 		nutritionInput
 	}
@@ -921,6 +959,10 @@ func (app *Application) handleItemsPatch(w http.ResponseWriter, r *http.Request)
 		}
 	}
 	item.IsPlanned, item.ActualPrice = purchaseColumns(item.Done, item.IsPlanned, item.ActualPrice)
+	if item.ShippingPrice, err = parseShippingPrice(in.ShippingPrice, item.ShippingPrice); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
 	if in.Position != nil {
 		item.Position = *in.Position
 	}
@@ -1200,6 +1242,13 @@ func (app *Application) handleItemsPatch(w http.ResponseWriter, r *http.Request)
 			return
 		}
 	}
+	if !sameFloat(item.ShippingPrice, before.ShippingPrice) {
+		updated, err = app.DB.SetItemShipping(r.Context(), updated.ID, item.ShippingPrice)
+		if err != nil {
+			app.serverError(w, r, err)
+			return
+		}
+	}
 	nutritionChanged := !sameNutrition(scores, itemNutrition(&before))
 	if nutritionChanged {
 		updated, err = app.saveItemNutrition(r.Context(), updated, scores)
@@ -1229,6 +1278,7 @@ func (app *Application) handleItemsPatch(w http.ResponseWriter, r *http.Request)
 			app.notifyListChange(list, userFromContext(r), updated.Title, doneChange(justCompleted))
 		}
 	}
+	app.reportPurchase(r, &before, updated)
 	writeJSON(w, http.StatusOK, updated)
 }
 
