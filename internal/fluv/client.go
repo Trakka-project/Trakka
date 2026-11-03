@@ -114,23 +114,25 @@ type response struct {
 	// code is the "code" of a problem document (RFC 9457, as Fluv writes
 	// them), "" when there is none.
 	code string
+	// tooLarge: the body went past what the caller reads.
+	tooLarge bool
 }
 
-// do sends one request to Fluv with the token and returns its status and
-// problem code. The token only ever goes in the Authorization header of a
-// request to a pinned address; it is never logged, nor is the body.
-func do(ctx context.Context, client *http.Client, method, rawURL, token string, body any) (response, error) {
+// newRequest builds one request to Fluv with the token. The token only ever
+// goes in the Authorization header of a request to a pinned address; it is
+// never logged, nor is the body.
+func newRequest(ctx context.Context, method, rawURL, token string, body any) (*http.Request, error) {
 	var reader io.Reader
 	if body != nil {
 		buf, err := json.Marshal(body)
 		if err != nil {
-			return response{}, fmt.Errorf("encoding request: %w", err)
+			return nil, fmt.Errorf("encoding request: %w", err)
 		}
 		reader = bytes.NewReader(buf)
 	}
 	req, err := http.NewRequestWithContext(ctx, method, rawURL, reader)
 	if err != nil {
-		return response{}, fmt.Errorf("building request: %w", err)
+		return nil, fmt.Errorf("building request: %w", err)
 	}
 	req.Header.Set("Authorization", "Bearer "+token)
 	req.Header.Set("Accept", "application/json")
@@ -138,13 +140,25 @@ func do(ctx context.Context, client *http.Client, method, rawURL, token string, 
 	if body != nil {
 		req.Header.Set("Content-Type", "application/json")
 	}
+	return req, nil
+}
+
+// send makes one exchange and reads at most limit bytes of the answer,
+// keeping the problem code of one that isn't a success.
+func send(client *http.Client, req *http.Request, limit int64) (response, []byte, error) {
 	resp, err := client.Do(req) // #nosec G704 -- the client only dials pinned, policy-checked addresses (pinnedDialer)
 	if err != nil {
-		return response{}, err
+		return response{}, nil, err
 	}
 	defer func() { _ = resp.Body.Close() }()
 	out := response{status: resp.StatusCode}
-	data, _ := io.ReadAll(io.LimitReader(resp.Body, maxResponseBody))
+	// A body cut short is not an error: the status is what counts, and a
+	// JSON answer cut short doesn't decode.
+	data, _ := io.ReadAll(io.LimitReader(resp.Body, limit+1))
+	if int64(len(data)) > limit {
+		data = nil
+		out.tooLarge = true
+	}
 	if resp.StatusCode >= 300 {
 		var problem struct {
 			Code string `json:"code"`
@@ -152,6 +166,37 @@ func do(ctx context.Context, client *http.Client, method, rawURL, token string, 
 		if json.Unmarshal(data, &problem) == nil {
 			out.code = cleanCode(problem.Code)
 		}
+	}
+	return out, data, nil
+}
+
+// do sends one request to Fluv with the token and returns its status and
+// problem code.
+func do(ctx context.Context, client *http.Client, method, rawURL, token string, body any) (response, error) {
+	req, err := newRequest(ctx, method, rawURL, token, body)
+	if err != nil {
+		return response{}, err
+	}
+	out, _, err := send(client, req, maxResponseBody)
+	return out, err
+}
+
+// getJSON sends one GET to Fluv with the token, in lang (Accept-Language),
+// and decodes a 200 answer of at most limit bytes into dst. A 200 that is
+// too large or isn't the JSON expected comes back with code
+// "invalid_response"; any other status with its problem code, as do.
+func getJSON(ctx context.Context, client *http.Client, rawURL, token, lang string, limit int64, dst any) (response, error) {
+	req, err := newRequest(ctx, http.MethodGet, rawURL, token, nil)
+	if err != nil {
+		return response{}, err
+	}
+	req.Header.Set("Accept-Language", lang)
+	out, data, err := send(client, req, limit)
+	if err != nil || out.status != http.StatusOK {
+		return out, err
+	}
+	if out.tooLarge || json.Unmarshal(data, dst) != nil {
+		out.code = "invalid_response"
 	}
 	return out, nil
 }

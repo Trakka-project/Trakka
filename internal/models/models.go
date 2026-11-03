@@ -305,6 +305,11 @@ type Item struct {
 	// estimated". Only ever set while the item is bought: taking it out of
 	// "bought" clears it (see migration 32).
 	ActualPrice *float64 `json:"actual_price,omitempty"`
+	// ShippingPrice is what delivering the item cost, in euros, for the
+	// whole line — not per unit, unlike Price and ActualPrice (migration
+	// 42). nil means none. Sent to Fluv with the purchase, as a second
+	// expense (internal/fluv); the list's Budget doesn't count it.
+	ShippingPrice *float64 `json:"shipping_price,omitempty"`
 	// Merged is a transient, response-only field (like PriceStatus): true
 	// when POST /api/v1/items found the same product already on the
 	// "Courses" list and updated that item — unchecked it, adjusted its

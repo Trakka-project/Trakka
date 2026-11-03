@@ -110,6 +110,7 @@ const listEls = {
   editItemUrgent: document.getElementById('edit-item-urgent'),
   editItemPurchaseStatus: document.getElementById('edit-item-purchase-status'),
   editItemActualPrice: document.getElementById('edit-item-actual-price'),
+  editItemShippingPrice: document.getElementById('edit-item-shipping-price'),
   editItemAisle: document.getElementById('edit-item-aisle'),
   itemActionsSheet: document.getElementById('item-actions-sheet'),
   itemActionsSheetTitle: document.getElementById('item-actions-sheet-title'),
@@ -1714,7 +1715,7 @@ function buildNextDueBadge(item, { interactive = true } = {}) {
 const CLEARABLE_ITEM_FIELDS = [
   'due_date', 'due_time', 'next_due_date', 'notification_sent_at',
   'recurrence_rule', 'recurrence_end_date', 'reminder_offset_days', 'reminder_time', 'aisle',
-  'actual_price', 'nutri_score', 'nova_group', 'yuka_score',
+  'actual_price', 'shipping_price', 'nutri_score', 'nova_group', 'yuka_score',
 ];
 function mergeServerItem(item, updated) {
   if (updated && updated.id !== undefined) {
@@ -3624,6 +3625,9 @@ function toggleDone(item) {
       try {
         const updated = await apiRequest(`/items/${item.id}`, { method: 'PATCH', body: JSON.stringify(donePatchPayload(list, newDone)) });
         mergeServerItem(item, updated);
+        // "Options" for the purchase now queued for the user's Fluv, if any
+        // (fluv.js): another account, a shipping fee, or not sending it.
+        if (newDone && isPurchaseList(list.type)) offerFluvPurchaseOptions(item);
       } catch (err) {
         item.done = committedDone;
         item.next_due_date = committedNextDueDate;
@@ -4002,6 +4006,7 @@ function openEditItemModal(item, { focus } = {}) {
   listEls.editItemPurchaseStatus.value = purchaseStatusOf(item);
   listEls.editItemActualPrice.value = item.done && typeof item.actual_price === 'number' ? item.actual_price : '';
   syncEditItemActualPrice();
+  listEls.editItemShippingPrice.value = typeof item.shipping_price === 'number' ? item.shipping_price : '';
   renderEditItemLabelsPreview(item);
   // renderEditItemAssignees is defined in assignees.js ("Assignée à").
   renderEditItemAssignees(item);
@@ -4096,6 +4101,8 @@ function openItemActionsSheet(item, { focusLink = false } = {}) {
   updateItemActionsAssigneesButton(item);
   // The purchase status picker and "Prix payé" row (budget.js).
   updateItemActionsPurchase(item);
+  // The "Envoi à Fluv" row (fluv.js), once the server answers.
+  updateItemActionsFluv(item);
   listEls.itemActionsSheet.hidden = false;
   TrakkaScrollLock.lock();
   if (focusLink && hasLink) {
@@ -4496,6 +4503,18 @@ listEls.editItemForm.addEventListener('submit', async (event) => {
       }
       payload.actual_price = parsedActual;
     }
+    // For the whole line, sent to Fluv with the purchase; "" clears it.
+    const rawShipping = listEls.editItemShippingPrice.value.trim();
+    if (rawShipping === '') {
+      payload.shipping_price = null;
+    } else {
+      const parsedShipping = Number.parseFloat(rawShipping);
+      if (!Number.isFinite(parsedShipping) || parsedShipping < 0) {
+        showError(t('modals.editItem.shippingPriceValidationError'));
+        return;
+      }
+      payload.shipping_price = parsedShipping;
+    }
   }
   if (visibility.targetPrice) {
     const rawTarget = listEls.editItemTargetPrice.value.trim();
@@ -4558,6 +4577,7 @@ listEls.editItemForm.addEventListener('submit', async (event) => {
     done: item.done,
     purchase_status: item.purchase_status,
     actual_price: item.actual_price,
+    shipping_price: item.shipping_price,
     assignees: item.assignees,
   };
   item.title = title;
@@ -4568,6 +4588,7 @@ listEls.editItemForm.addEventListener('submit', async (event) => {
     item.purchase_status = payload.purchase_status;
     item.actual_price = payload.actual_price;
   }
+  if ('shipping_price' in payload) item.shipping_price = payload.shipping_price;
   if ('target_price' in payload) item.target_price = payload.target_price;
   if ('alert_on_price_drop' in payload) item.alert_on_price_drop = payload.alert_on_price_drop;
   if ('target_month' in payload) item.target_month = payload.target_month || null;

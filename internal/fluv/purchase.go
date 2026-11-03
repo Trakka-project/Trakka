@@ -23,9 +23,11 @@ const (
 	maxAmountMinor = 1 << 50
 )
 
-// purchaseBody is the JSON Fluv's POST …/purchases accepts — exactly these
+// purchaseBody is the JSON Fluv's POST …/purchases accepts — only these
 // fields: it refuses unknown ones. Fluv takes the day of the purchase, not
-// its time; the exact moment stays in fluv_purchases.purchased_at.
+// its time; the exact moment stays in fluv_purchases.purchased_at. The
+// optional ones are left out when unset, so a Fluv older than them (which
+// would refuse the field) still takes the purchases that don't use them.
 type purchaseBody struct {
 	ID          string `json:"id"`
 	Title       string `json:"title"`
@@ -33,6 +35,15 @@ type purchaseBody struct {
 	Quantity    int    `json:"quantity"`
 	AmountMinor int64  `json:"amount_minor"`
 	Date        string `json:"date"`
+	// ShippingMinor is the shipping fee, which Fluv records as a second
+	// expense beside the item's (same account, day, category).
+	ShippingMinor int64 `json:"shipping_amount_minor,omitempty"`
+	// AccountID, CategoryID and BudgetType file the purchase; absent, Fluv
+	// uses the account linked to Trakka, its rules and the category's
+	// need/want.
+	AccountID  string `json:"account_id,omitempty"`
+	CategoryID string `json:"category_id,omitempty"`
+	BudgetType string `json:"budget_type,omitempty"`
 }
 
 // amountOf is what item cost, in cents: the price paid per unit (or, when
@@ -47,6 +58,20 @@ func amountOf(item *models.Item) int64 {
 		return 0
 	}
 	cents := math.Round(*unit * float64(quantityOf(item)) * 100)
+	if cents < 1 || cents > maxAmountMinor {
+		return 0
+	}
+	return int64(cents)
+}
+
+// shippingOf is the item's shipping fee, in cents — for the whole line, not
+// per unit. 0 when it has none.
+func shippingOf(item *models.Item) int64 {
+	fee := item.ShippingPrice
+	if fee == nil || math.IsNaN(*fee) || math.IsInf(*fee, 0) || *fee <= 0 {
+		return 0
+	}
+	cents := math.Round(*fee * 100)
 	if cents < 1 || cents > maxAmountMinor {
 		return 0
 	}

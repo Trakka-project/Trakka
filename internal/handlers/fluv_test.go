@@ -163,6 +163,14 @@ func TestFluvSettingsLifecycle(t *testing.T) {
 		t.Fatalf("connection test = %+v", test)
 	}
 
+	// This receiver is a Fluv older than the metadata endpoint: a 200 with
+	// ok false, for the page to keep its text fields.
+	var meta fluv.Metadata
+	decodeInto(t, callAs(user, app.handleFluvMetadata, http.MethodGet, "/api/v1/integrations/fluv/metadata?lang=en", ""), http.StatusOK, &meta)
+	if meta.OK || meta.Status != http.StatusNotFound || meta.Accounts == nil {
+		t.Fatalf("metadata from an older Fluv = %+v", meta)
+	}
+
 	// Saving without a token keeps the stored one.
 	decodeInto(t, callAs(user, app.handleFluvSave, http.MethodPut, "/api/v1/integrations/fluv",
 		`{"endpoint_url":"`+env.endpoint+`","enabled":false}`), http.StatusOK, &got)
@@ -177,6 +185,9 @@ func TestFluvSettingsLifecycle(t *testing.T) {
 	if got.Configured {
 		t.Fatalf("after DELETE: %+v", got)
 	}
+	if rec := callAs(user, app.handleFluvMetadata, http.MethodGet, "/api/v1/integrations/fluv/metadata", ""); rec.Code != http.StatusNotFound {
+		t.Fatalf("metadata after DELETE: %d, want 404", rec.Code)
+	}
 	if rec := callAs(user, app.handleFluvDelete, http.MethodDelete, "/api/v1/integrations/fluv", ""); rec.Code != http.StatusNoContent {
 		t.Fatalf("second DELETE: %d", rec.Code)
 	}
@@ -185,7 +196,8 @@ func TestFluvSettingsLifecycle(t *testing.T) {
 func TestFluvRoutesOffWhenDisabled(t *testing.T) {
 	app := newTestApplication(t)
 	user := mustCreateTestUser(t, app, "buyer@example.com")
-	for _, h := range []http.HandlerFunc{app.handleFluvShow, app.handleFluvSave, app.handleFluvDelete, app.handleFluvTest, app.handleFluvRetry} {
+	for _, h := range []http.HandlerFunc{app.handleFluvShow, app.handleFluvSave, app.handleFluvDelete, app.handleFluvTest, app.handleFluvRetry,
+		app.handleFluvMetadata, app.handleFluvListDefaultsShow, app.handleFluvListDefaultsSave, app.handleFluvItemShow, app.handleFluvItemSave} {
 		if rec := callAs(user, h, http.MethodGet, "/api/v1/integrations/fluv", "{}"); rec.Code != http.StatusNotFound {
 			t.Errorf("status %d with the integration off, want 404", rec.Code)
 		}
@@ -201,6 +213,11 @@ func TestFluvRoutesClosedToAPITokens(t *testing.T) {
 		{http.MethodDelete, "/api/v1/integrations/fluv"},
 		{http.MethodPost, "/api/v1/integrations/fluv/test"},
 		{http.MethodPost, "/api/v1/integrations/fluv/retry"},
+		{http.MethodGet, "/api/v1/integrations/fluv/metadata"},
+		{http.MethodGet, "/api/v1/integrations/fluv/lists/1"},
+		{http.MethodPut, "/api/v1/integrations/fluv/lists/1"},
+		{http.MethodGet, "/api/v1/integrations/fluv/items/1"},
+		{http.MethodPut, "/api/v1/integrations/fluv/items/1"},
 	} {
 		if apiTokenAllows(httptest.NewRequest(route.method, route.path, nil)) {
 			t.Errorf("%s %s is open to API tokens", route.method, route.path)
@@ -247,5 +264,162 @@ func TestFluvCheckOffSendsThePurchase(t *testing.T) {
 	app.Fluv.SendDue(t.Context())
 	if got := env.receiver.received(); len(got) != 0 {
 		t.Fatalf("still in Fluv after un-checking: %v", got)
+	}
+}
+
+// TestFluvListDefaultsAndShipping: a user's Fluv defaults for a list and an
+// item's shipping fee, set over the API, reach Fluv with the purchase.
+func TestFluvListDefaultsAndShipping(t *testing.T) {
+	env := newFluvTestEnv(t)
+	app := env.app
+	owner, list := itemTestFixture(t, app)
+	listID := strconv.FormatInt(list.ID, 10)
+	path := "/api/v1/integrations/fluv/lists/" + listID
+	const account = "0192f3a4-5b6c-7d8e-9f01-23456789abcd"
+
+	var view struct {
+		AccountID  string `json:"account_id"`
+		CategoryID string `json:"category_id"`
+		BudgetType string `json:"budget_type"`
+		Configured bool   `json:"configured"`
+	}
+	decodeInto(t, callAs(owner, app.handleFluvListDefaultsShow, http.MethodGet, path, "", "id", listID), http.StatusOK, &view)
+	if view.Configured || view.AccountID != "" || view.BudgetType != "" {
+		t.Fatalf("before anything is set: %+v", view)
+	}
+	decodeInto(t, callAs(owner, app.handleFluvSave, http.MethodPut, "/api/v1/integrations/fluv",
+		`{"endpoint_url":"`+env.endpoint+`","token":"`+fluvTestToken+`"}`), http.StatusOK, nil)
+
+	var refusal map[string]string
+	decodeInto(t, callAs(owner, app.handleFluvListDefaultsSave, http.MethodPut, path, `{"budget_type":"luxury"}`, "id", listID), http.StatusBadRequest, &refusal)
+	if refusal["code"] != "invalid_budget_type" || refusal["field"] != "budget_type" {
+		t.Fatalf("refusal = %v", refusal)
+	}
+	decodeInto(t, callAs(owner, app.handleFluvListDefaultsSave, http.MethodPut, path,
+		`{"account_id":"`+account+`","budget_type":"need"}`, "id", listID), http.StatusOK, &view)
+	if !view.Configured || view.AccountID != account || view.BudgetType != "need" || view.CategoryID != "" {
+		t.Fatalf("saved: %+v", view)
+	}
+
+	// Someone who can't see the list can't read or set anything about it.
+	stranger := mustCreateTestUser(t, app, "stranger@example.com")
+	if rec := callAs(stranger, app.handleFluvListDefaultsSave, http.MethodPut, path, `{}`, "id", listID); rec.Code != http.StatusNotFound && rec.Code != http.StatusForbidden {
+		t.Errorf("stranger's PUT: status %d", rec.Code)
+	}
+
+	var item models.Item
+	decodeInto(t, callAs(owner, app.handleItemsCreate, http.MethodPost, "/api/v1/items",
+		`{"list_id":`+listID+`,"title":"Casque","price":79.9}`), http.StatusCreated, &item)
+	id := strconv.FormatInt(item.ID, 10)
+	if rec := callAs(owner, app.handleItemsPatch, http.MethodPatch, "/api/v1/items/"+id, `{"shipping_price":-1}`, "id", id); rec.Code != http.StatusBadRequest {
+		t.Errorf("negative shipping_price: status %d, want 400", rec.Code)
+	}
+	decodeInto(t, callAs(owner, app.handleItemsPatch, http.MethodPatch, "/api/v1/items/"+id,
+		`{"shipping_price":5.99}`, "id", id), http.StatusOK, &item)
+	if item.ShippingPrice == nil || *item.ShippingPrice != 5.99 {
+		t.Fatalf("shipping_price = %v, want 5.99", item.ShippingPrice)
+	}
+	decodeInto(t, callAs(owner, app.handleItemsPatch, http.MethodPatch, "/api/v1/items/"+id,
+		`{"done":true}`, "id", id), http.StatusOK, &item)
+	if item.ShippingPrice == nil {
+		t.Fatal("a PATCH without shipping_price cleared it")
+	}
+	env.clock = env.clock.Add(time.Minute)
+	app.Fluv.SendDue(t.Context())
+	got := env.receiver.received()
+	if len(got) != 1 {
+		t.Fatalf("Fluv received %v, want one purchase", got)
+	}
+	for _, p := range got {
+		if p["amount_minor"] != float64(7990) || p["shipping_amount_minor"] != float64(599) ||
+			p["account_id"] != account || p["budget_type"] != "need" {
+			t.Errorf("purchase = %v", p)
+		}
+		if _, sent := p["category_id"]; sent {
+			t.Errorf("an unset category_id was sent: %v", p)
+		}
+	}
+
+	// A PUT that doesn't know the field leaves it; null clears it.
+	decodeInto(t, callAs(owner, app.handleItemsUpdate, http.MethodPut, "/api/v1/items/"+id,
+		`{"title":"Casque","price":79.9,"done":true}`, "id", id), http.StatusOK, &item)
+	if item.ShippingPrice == nil {
+		t.Fatal("a PUT without shipping_price cleared it")
+	}
+	var cleared models.Item
+	decodeInto(t, callAs(owner, app.handleItemsPatch, http.MethodPatch, "/api/v1/items/"+id,
+		`{"shipping_price":null}`, "id", id), http.StatusOK, &cleared)
+	if cleared.ShippingPrice != nil {
+		t.Fatalf("shipping_price = %v after null", *cleared.ShippingPrice)
+	}
+}
+
+// TestFluvItemPurchaseOptions: the check-off toast's "Options" over the
+// API — the buyer reads their purchase, files it in another account, takes
+// it out of Fluv; a House member who didn't buy it has nothing to change.
+func TestFluvItemPurchaseOptions(t *testing.T) {
+	env := newFluvTestEnv(t)
+	app := env.app
+	owner, list := itemTestFixture(t, app)
+	listID := strconv.FormatInt(list.ID, 10)
+	const account = "0192f3a4-5b6c-7d8e-9f01-23456789abcd"
+	decodeInto(t, callAs(owner, app.handleFluvSave, http.MethodPut, "/api/v1/integrations/fluv",
+		`{"endpoint_url":"`+env.endpoint+`","token":"`+fluvTestToken+`"}`), http.StatusOK, nil)
+
+	var item models.Item
+	decodeInto(t, callAs(owner, app.handleItemsCreate, http.MethodPost, "/api/v1/items",
+		`{"list_id":`+listID+`,"title":"Casque","price":79.9}`), http.StatusCreated, &item)
+	id := strconv.FormatInt(item.ID, 10)
+	path := "/api/v1/integrations/fluv/items/" + id
+
+	var view map[string]any
+	decodeInto(t, callAs(owner, app.handleFluvItemShow, http.MethodGet, path, "", "id", id), http.StatusOK, &view)
+	if view["queued"] != false || view["skipped"] != false {
+		t.Fatalf("not bought yet: %v", view)
+	}
+	var refusal map[string]string
+	decodeInto(t, callAs(owner, app.handleFluvItemSave, http.MethodPut, path, `{"skip":true}`, "id", id), http.StatusNotFound, &refusal)
+	if refusal["code"] != "no_purchase" {
+		t.Fatalf("refusal = %v", refusal)
+	}
+
+	decodeInto(t, callAs(owner, app.handleItemsPatch, http.MethodPatch, "/api/v1/items/"+id, `{"done":true}`, "id", id), http.StatusOK, &item)
+	decodeInto(t, callAs(owner, app.handleFluvItemShow, http.MethodGet, path, "", "id", id), http.StatusOK, &view)
+	if view["queued"] != true || view["sent"] != false || view["account_id"] != "" {
+		t.Fatalf("checked off: %v", view)
+	}
+	decodeInto(t, callAs(owner, app.handleFluvItemSave, http.MethodPut, path, `{"account_id":"nope"}`, "id", id), http.StatusBadRequest, &refusal)
+	if refusal["code"] != "invalid_fluv_id" || refusal["field"] != "account_id" {
+		t.Fatalf("refusal = %v", refusal)
+	}
+	decodeInto(t, callAs(owner, app.handleFluvItemSave, http.MethodPut, path, `{"account_id":"`+account+`"}`, "id", id), http.StatusOK, &view)
+	if view["queued"] != true || view["account_id"] != account {
+		t.Fatalf("account chosen: %v", view)
+	}
+	env.clock = env.clock.Add(time.Minute)
+	app.Fluv.SendDue(t.Context())
+	got := env.receiver.received()
+	if len(got) != 1 {
+		t.Fatalf("Fluv received %v, want one purchase", got)
+	}
+	for _, p := range got {
+		if p["account_id"] != account {
+			t.Errorf("purchase = %v", p)
+		}
+	}
+
+	decodeInto(t, callAs(owner, app.handleFluvItemSave, http.MethodPut, path, `{"account_id":"`+account+`","skip":true}`, "id", id), http.StatusOK, &view)
+	if view["skipped"] != true || view["queued"] != false {
+		t.Fatalf("skipped: %v", view)
+	}
+	app.Fluv.SendDue(t.Context())
+	if got := env.receiver.received(); len(got) != 0 {
+		t.Fatalf("still in Fluv after skipping: %v", got)
+	}
+
+	// Someone who can't see the list can't read anything about it.
+	stranger := mustCreateTestUser(t, app, "stranger@example.com")
+	if rec := callAs(stranger, app.handleFluvItemShow, http.MethodGet, path, "", "id", id); rec.Code != http.StatusNotFound && rec.Code != http.StatusForbidden {
+		t.Errorf("stranger's GET: status %d", rec.Code)
 	}
 }

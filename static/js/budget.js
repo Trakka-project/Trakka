@@ -401,6 +401,8 @@ async function savePaidPrice(item, actualPrice) {
     });
     mergeServerItem(item, updated);
     window.TrakkaToast?.success(t(actualPrice === null ? 'purchase.paidPriceCleared' : 'purchase.paidPriceSaved', { title: item.title }));
+    // This PATCH checked the item off: "Options" for its Fluv purchase (fluv.js).
+    if (!previous.done) offerFluvPurchaseOptions(item);
   } catch (err) {
     Object.assign(item, previous);
     if (!isNetworkError(err)) showError(err.message);

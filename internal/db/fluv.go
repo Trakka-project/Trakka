@@ -33,14 +33,22 @@ type FluvIntegration struct {
 // was bought, as Fluv should hold it (Desired) and as it is known to hold
 // it (Synced). See migration 41.
 type FluvPurchase struct {
-	ID            int64
-	UserID        int64
-	ItemID        *int64
-	Ref           string
-	Title         string
-	Store         string
-	Quantity      int
-	AmountMinor   int64
+	ID          int64
+	UserID      int64
+	ItemID      *int64
+	Ref         string
+	Title       string
+	Store       string
+	Quantity    int
+	AmountMinor int64
+	// ShippingMinor is the item's shipping fee in cents, 0 for none;
+	// AccountID/CategoryID/BudgetType how Fluv files it, "" for Fluv's own
+	// choice — the user's defaults for the list when it was queued
+	// (migration 42).
+	ShippingMinor int64
+	AccountID     string
+	CategoryID    string
+	BudgetType    string
 	PurchasedAt   string
 	PurchasedOn   string
 	Desired       string
@@ -50,6 +58,10 @@ type FluvPurchase struct {
 	NextAttemptAt string
 	LastStatus    int
 	LastErrorCode string
+	// Skipped is a purchase its buyer chose not to send ("Ne pas envoyer à
+	// Fluv", migration 43): cancelled, and not sent again by a correction
+	// while the item stays bought.
+	Skipped bool
 }
 
 // Values of FluvPurchase.Desired and FluvPurchase.Synced.
@@ -67,16 +79,17 @@ const (
 // that partial index.
 const fluvPendingCondition = `failed = 0 AND NOT ((desired = 'record' AND synced = 'recorded') OR (desired = 'cancel' AND synced = 'cancelled'))`
 
-const fluvPurchaseColumns = `id, user_id, item_id, ref, title, store, quantity, amount_minor, purchased_at, purchased_on,
-	desired, synced, failed, attempts, next_attempt_at, COALESCE(last_status, 0), COALESCE(last_error_code, '')`
+const fluvPurchaseColumns = `id, user_id, item_id, ref, title, store, quantity, amount_minor,
+	shipping_minor, account_id, category_id, budget_type, purchased_at, purchased_on,
+	desired, synced, failed, attempts, next_attempt_at, COALESCE(last_status, 0), COALESCE(last_error_code, ''), skipped`
 
 func scanFluvPurchase(row interface{ Scan(...any) error }) (*FluvPurchase, error) {
 	p := &FluvPurchase{}
 	var itemID sql.NullInt64
-	var failed int
+	var failed, skipped int
 	if err := row.Scan(&p.ID, &p.UserID, &itemID, &p.Ref, &p.Title, &p.Store, &p.Quantity, &p.AmountMinor,
-		&p.PurchasedAt, &p.PurchasedOn, &p.Desired, &p.Synced, &failed, &p.Attempts, &p.NextAttemptAt,
-		&p.LastStatus, &p.LastErrorCode); err != nil {
+		&p.ShippingMinor, &p.AccountID, &p.CategoryID, &p.BudgetType, &p.PurchasedAt, &p.PurchasedOn, &p.Desired, &p.Synced, &failed, &p.Attempts, &p.NextAttemptAt,
+		&p.LastStatus, &p.LastErrorCode, &skipped); err != nil {
 		return nil, err
 	}
 	if itemID.Valid {
@@ -84,6 +97,7 @@ func scanFluvPurchase(row interface{ Scan(...any) error }) (*FluvPurchase, error
 		p.ItemID = &id
 	}
 	p.Failed = failed != 0
+	p.Skipped = skipped != 0
 	return p, nil
 }
 
@@ -189,10 +203,11 @@ func (d *DB) RecordFluvExchange(ctx context.Context, userID int64, code string) 
 func (d *DB) InsertFluvPurchase(ctx context.Context, p FluvPurchase, notBefore time.Time) error {
 	_, err := d.conn.ExecContext(ctx, `
 		INSERT INTO fluv_purchases (user_id, item_id, ref, title, store, quantity, amount_minor,
+		                            shipping_minor, account_id, category_id, budget_type,
 		                            purchased_at, purchased_on, next_attempt_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		p.UserID, p.ItemID, p.Ref, p.Title, p.Store, p.Quantity, p.AmountMinor,
-		p.PurchasedAt, p.PurchasedOn, notBefore.UTC().Format(timeFormat))
+		p.ShippingMinor, p.AccountID, p.CategoryID, p.BudgetType, p.PurchasedAt, p.PurchasedOn, notBefore.UTC().Format(timeFormat))
 	if err != nil {
 		return fmt.Errorf("queueing Fluv purchase for item %v: %w", p.ItemID, err)
 	}
@@ -214,16 +229,70 @@ func (d *DB) ActiveFluvPurchaseForItem(ctx context.Context, itemID int64) (*Fluv
 	return p, nil
 }
 
+// LatestFluvPurchaseForItem returns the latest purchase of itemID, whatever
+// its state, or ErrNotFound.
+func (d *DB) LatestFluvPurchaseForItem(ctx context.Context, itemID int64) (*FluvPurchase, error) {
+	p, err := scanFluvPurchase(d.conn.QueryRowContext(ctx,
+		`SELECT `+fluvPurchaseColumns+` FROM fluv_purchases WHERE item_id = ? ORDER BY id DESC LIMIT 1`, itemID))
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, ErrNotFound
+	}
+	if err != nil {
+		return nil, fmt.Errorf("querying latest Fluv purchase of item %d: %w", itemID, err)
+	}
+	return p, nil
+}
+
+// SetFluvPurchaseSkipped flags purchase id as one its buyer chose not to
+// send (CancelFluvPurchase takes it out of Fluv), or clears the flag.
+func (d *DB) SetFluvPurchaseSkipped(ctx context.Context, id int64, skipped bool) error {
+	if _, err := d.conn.ExecContext(ctx,
+		`UPDATE fluv_purchases SET skipped = ?, updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE id = ?`,
+		boolToInt(skipped), id); err != nil {
+		return fmt.Errorf("flagging Fluv purchase %d skipped: %w", id, err)
+	}
+	return nil
+}
+
+// ClearFluvSkips clears the skipped flag of itemID's purchases, when the
+// item is un-checked: skipping was about that purchase, not the next one.
+func (d *DB) ClearFluvSkips(ctx context.Context, itemID int64) error {
+	if _, err := d.conn.ExecContext(ctx,
+		`UPDATE fluv_purchases SET skipped = 0 WHERE item_id = ? AND skipped = 1`, itemID); err != nil {
+		return fmt.Errorf("clearing skipped Fluv purchases of item %d: %w", itemID, err)
+	}
+	return nil
+}
+
+// SetFluvPurchaseAccount changes the Fluv account purchase id is filed in,
+// reporting whether it could: only while Fluv doesn't hold it — never sent
+// and not being sent, or skipped. Otherwise the change must be a
+// cancellation plus a new purchase, like RepriceUnsentFluvPurchase's.
+func (d *DB) SetFluvPurchaseAccount(ctx context.Context, id int64, accountID string) (bool, error) {
+	res, err := d.conn.ExecContext(ctx, `
+		UPDATE fluv_purchases SET account_id = ?, updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now')
+		WHERE id = ? AND ((desired = 'record' AND synced = 'none' AND attempts = 0 AND in_flight = 0) OR skipped = 1)`,
+		accountID, id)
+	if err != nil {
+		return false, fmt.Errorf("changing account of Fluv purchase %d: %w", id, err)
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return false, fmt.Errorf("reading rows affected changing Fluv purchase account: %w", err)
+	}
+	return n > 0, nil
+}
+
 // RepriceUnsentFluvPurchase corrects a purchase that was never sent and
 // isn't being sent (the paid price typed right after checking the item
 // off), reporting whether it could: once a row has been on the wire, the
 // correction must be a cancellation plus a new purchase instead.
-func (d *DB) RepriceUnsentFluvPurchase(ctx context.Context, id int64, title string, quantity int, amountMinor int64) (bool, error) {
+func (d *DB) RepriceUnsentFluvPurchase(ctx context.Context, id int64, title string, quantity int, amountMinor, shippingMinor int64) (bool, error) {
 	res, err := d.conn.ExecContext(ctx, `
-		UPDATE fluv_purchases SET title = ?, quantity = ?, amount_minor = ?,
+		UPDATE fluv_purchases SET title = ?, quantity = ?, amount_minor = ?, shipping_minor = ?,
 		       updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now')
 		WHERE id = ? AND desired = 'record' AND synced = 'none' AND attempts = 0 AND in_flight = 0`,
-		title, quantity, amountMinor, id)
+		title, quantity, amountMinor, shippingMinor, id)
 	if err != nil {
 		return false, fmt.Errorf("repricing Fluv purchase %d: %w", id, err)
 	}
@@ -379,4 +448,52 @@ func (d *DB) PruneFluvPurchases(ctx context.Context, cutoff time.Time) (int64, e
 		return 0, fmt.Errorf("pruning Fluv purchases: %w", err)
 	}
 	return res.RowsAffected()
+}
+
+// FluvListDefaults is how a user's purchases from a list are filed in their
+// Fluv (fluv_list_defaults, migration 42): "" leaves each to Fluv.
+type FluvListDefaults struct {
+	AccountID  string
+	CategoryID string
+	BudgetType string
+}
+
+// GetFluvListDefaults returns userID's defaults for listID — all "" when
+// they set none.
+func (d *DB) GetFluvListDefaults(ctx context.Context, userID, listID int64) (FluvListDefaults, error) {
+	var f FluvListDefaults
+	err := d.conn.QueryRowContext(ctx,
+		`SELECT account_id, category_id, budget_type FROM fluv_list_defaults WHERE user_id = ? AND list_id = ?`,
+		userID, listID,
+	).Scan(&f.AccountID, &f.CategoryID, &f.BudgetType)
+	if errors.Is(err, sql.ErrNoRows) {
+		return FluvListDefaults{}, nil
+	}
+	if err != nil {
+		return FluvListDefaults{}, fmt.Errorf("querying Fluv defaults of user %d for list %d: %w", userID, listID, err)
+	}
+	return f, nil
+}
+
+// SetFluvListDefaults stores userID's defaults for listID (already
+// validated by internal/fluv); all "" removes the row.
+func (d *DB) SetFluvListDefaults(ctx context.Context, userID, listID int64, f FluvListDefaults) error {
+	if f == (FluvListDefaults{}) {
+		if _, err := d.conn.ExecContext(ctx,
+			`DELETE FROM fluv_list_defaults WHERE user_id = ? AND list_id = ?`, userID, listID); err != nil {
+			return fmt.Errorf("clearing Fluv defaults of user %d for list %d: %w", userID, listID, err)
+		}
+		return nil
+	}
+	_, err := d.conn.ExecContext(ctx, `
+		INSERT INTO fluv_list_defaults (user_id, list_id, account_id, category_id, budget_type)
+		VALUES (?, ?, ?, ?, ?)
+		ON CONFLICT (user_id, list_id) DO UPDATE SET
+			account_id = excluded.account_id, category_id = excluded.category_id,
+			budget_type = excluded.budget_type, updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now')`,
+		userID, listID, f.AccountID, f.CategoryID, f.BudgetType)
+	if err != nil {
+		return fmt.Errorf("saving Fluv defaults of user %d for list %d: %w", userID, listID, err)
+	}
+	return nil
 }

@@ -443,7 +443,25 @@
       "submitCreate": "Create list",
       "submitEdit": "Save",
       "templateLabel": "Start from a template",
-      "templateDelete": "Delete this template"
+      "templateDelete": "Delete this template",
+      "fluv": {
+        "title": "Sending to Fluv",
+        "hint": "For your purchases on this list. Empty: Fluv decides (the account linked to Trakka, its category rules).",
+        "budgetTypeLabel": "Need or want",
+        "budgetTypeAuto": "Per category",
+        "budgetTypeNeed": "Need",
+        "budgetTypeWant": "Want",
+        "accountLabel": "Fluv account ID (optional)",
+        "idPlaceholder": "Account linked to Trakka",
+        "categoryLabel": "Fluv category ID (optional)",
+        "categoryPlaceholder": "Per Fluv's rules",
+        "accountMenuLabel": "Fluv account",
+        "categoryMenuLabel": "Fluv category",
+        "linkedAccountNamed": "Account linked to Trakka ({name})",
+        "unknownId": "Other id: {id}",
+        "invalidId": "Paste the ID as Fluv shows it (a UUID).",
+        "saveFailed": "The list is saved, but not its Fluv settings: {reason}"
+      }
     },
     "newHouse": {
       "title": "New House",
@@ -607,7 +625,10 @@
       "purchaseStatusLabel": "Purchase status",
       "actualPriceLabel": "Price paid (€ / unit)",
       "actualPricePlaceholder": "= estimated price",
-      "actualPriceValidationError": "The price paid must be a positive number."
+      "actualPriceValidationError": "The price paid must be a positive number.",
+      "shippingPriceLabel": "Shipping (€, optional)",
+      "shippingPricePlaceholder": "E.g. 4.99",
+      "shippingPriceValidationError": "Shipping must be a positive number."
     },
     "labelManage": {
       "searchPlaceholder": "Search or create a label…",
@@ -1197,6 +1218,20 @@
     "paidPriceSaved": "Price paid saved for \"{title}\"",
     "paidPriceCleared": "\"{title}\" counted at its estimated price"
   },
+  "fluvPurchase": {
+    "title": "Sending to Fluv",
+    "toast": "\"{title}\" is on its way to Fluv.",
+    "options": "Options",
+    "stateQueued": "Waiting to be sent to Fluv.",
+    "stateSent": "Sent to Fluv.",
+    "stateSkipped": "Not sent to Fluv.",
+    "skipLabel": "Don't send this purchase to Fluv",
+    "save": "Save",
+    "saved": "Fluv sending updated for \"{title}\".",
+    "savedSkipped": "\"{title}\" won't be sent to Fluv.",
+    "noPurchase": "nothing of yours is sent to Fluv for this item any more",
+    "saveFailed": "Fluv sending not changed: {reason}"
+  },
   "templates": {
     "none": "Empty list",
     "noneSummary": "A list with no items, for you to fill in.",
@@ -1235,7 +1270,7 @@
     "pickerDone": "Done",
     "pickerSubtitleOther": "For {count} selected tasks",
     "assignedTo": "Assigned to {names}",
-    "editAriaLabel": "“{title}” is assigned to {names} — change",
+    "editAriaLabel": "\"{title}\" is assigned to {names} — change",
     "me": "Me",
     "meWithName": "{name} (me)",
     "nobody": "Nobody",
@@ -1268,7 +1303,7 @@
     "addPlaceholder": "Add an item…",
     "addQuantityLabel": "Quantity",
     "addSubmit": "Add",
-    "toggleLabel": "Check “{title}”",
+    "toggleLabel": "Check \"{title}\"",
     "notFoundTitle": "Link unavailable",
     "notFoundBody": "This share link doesn't exist, was revoked or has expired. Ask the person who sent it for a new one.",
     "networkError": "Can't connect. Retrying automatically…",
@@ -1280,7 +1315,7 @@
     "depositHint": "This list's content stays private: you can drop ideas into it without seeing what it already holds.",
     "depositPlaceholder": "Your idea…",
     "depositSubmit": "Drop",
-    "depositConfirm": "“{title}” was dropped into the list.",
+    "depositConfirm": "\"{title}\" was dropped into the list.",
     "depositSentHeading": "Dropped during this visit",
     "forbiddenError": "This link doesn't allow that: the change was undone."
   }

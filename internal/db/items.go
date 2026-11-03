@@ -33,7 +33,7 @@ const itemSelectColumns = `items.id, items.list_id, items.title, items.url, item
 		 items.due_time, items.next_due_date, items.reminder_at_due_time,
 		 CASE WHEN items.due_reminder_sent_for = ` + dueReminderKeyExpr + ` THEN items.notification_sent_at END,
 		 items.previous_price, items.price_changed_at, items.aisle, items.is_planned, items.actual_price,
-		 items.nutri_score, items.yuka_score, items.nova_group,
+		 items.nutri_score, items.yuka_score, items.nova_group, items.shipping_price,
 		 ` + itemAssigneesExpr
 
 // itemAssigneesExpr is an item's assignees (models.Item.Assignees,
@@ -75,6 +75,7 @@ func scanItem(row rowScanner) (*models.Item, error) {
 	var actualPrice sql.NullFloat64
 	var nutriScore sql.NullString
 	var yukaScore, novaGroup sql.NullInt64
+	var shippingPrice sql.NullFloat64
 	var assigneesJSON string
 	if err := row.Scan(&it.ID, &it.ListID, &it.Title, &it.URL, &it.Quantity, &done,
 		&it.Position, &it.CreatedAt, &it.UpdatedAt, &price, &priceAuto, &imageURL, &targetMonth,
@@ -82,7 +83,7 @@ func scanItem(row rowScanner) (*models.Item, error) {
 		&targetPrice, &alertOnPriceDrop, &labelsJSON, &reminderEnabled, &reminderOffsetDays, &reminderTime,
 		&dueTime, &nextDueDate, &reminderAtDueTime, &notificationSentAt,
 		&previousPrice, &priceChangedAt, &aisle, &isPlanned, &actualPrice,
-		&nutriScore, &yukaScore, &novaGroup, &assigneesJSON); err != nil {
+		&nutriScore, &yukaScore, &novaGroup, &shippingPrice, &assigneesJSON); err != nil {
 		return nil, err
 	}
 	it.Assignees = []models.ItemAssignee{}
@@ -135,6 +136,9 @@ func scanItem(row rowScanner) (*models.Item, error) {
 	it.PurchaseStatus = models.PurchaseStatusOf(it.Done, it.IsPlanned)
 	if actualPrice.Valid {
 		it.ActualPrice = &actualPrice.Float64
+	}
+	if shippingPrice.Valid {
+		it.ShippingPrice = &shippingPrice.Float64
 	}
 	return it, nil
 }
@@ -530,6 +534,28 @@ func (d *DB) SetItemPurchase(ctx context.Context, id int64, planned bool, actual
 		boolToInt(planned), actualPrice, id)
 	if err != nil {
 		return nil, fmt.Errorf("updating purchase status for item %d: %w", id, err)
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return nil, fmt.Errorf("reading rows affected for item %d: %w", id, err)
+	}
+	if n == 0 {
+		return nil, ErrNotFound
+	}
+	return d.GetItem(ctx, id)
+}
+
+// SetItemShipping writes an item's shipping fee (models.Item.ShippingPrice,
+// migration 42; nil clears it) and returns the updated row — a separate
+// method for the same "too many positional params" reason as
+// SetItemLabels. It must already be validated (non-negative). Returns
+// ErrNotFound if no such item exists.
+func (d *DB) SetItemShipping(ctx context.Context, id int64, shippingPrice *float64) (*models.Item, error) {
+	res, err := d.conn.ExecContext(ctx,
+		`UPDATE items SET shipping_price = ?, updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE id = ?`,
+		shippingPrice, id)
+	if err != nil {
+		return nil, fmt.Errorf("updating shipping fee for item %d: %w", id, err)
 	}
 	n, err := res.RowsAffected()
 	if err != nil {

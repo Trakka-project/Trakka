@@ -82,3 +82,22 @@ func TestBackoff(t *testing.T) {
 		t.Errorf("backoff(%d) = %v, want the cap %v", maxAttempts, got, maxBackoff)
 	}
 }
+
+func TestShippingOf(t *testing.T) {
+	for _, tc := range []struct {
+		fee  *float64
+		want int64
+	}{
+		{nil, 0},
+		{floatPtr(0), 0},
+		{floatPtr(-3), 0},
+		{floatPtr(4.99), 499},
+		{floatPtr(0.004), 0},
+		{floatPtr(1e300), 0},
+	} {
+		// Per line, not per unit: the quantity doesn't multiply it.
+		if got := shippingOf(&models.Item{Quantity: 3, ShippingPrice: tc.fee}); got != tc.want {
+			t.Errorf("shippingOf(%v) = %d, want %d", tc.fee, got, tc.want)
+		}
+	}
+}

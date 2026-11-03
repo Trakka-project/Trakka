@@ -443,7 +443,25 @@
       "submitCreate": "Créer la liste",
       "submitEdit": "Enregistrer",
       "templateLabel": "Partir d'un modèle",
-      "templateDelete": "Supprimer ce modèle"
+      "templateDelete": "Supprimer ce modèle",
+      "fluv": {
+        "title": "Envoi à Fluv",
+        "hint": "Pour vos achats sur cette liste. Vide : Fluv choisit (compte lié à Trakka, ses règles de catégorie).",
+        "budgetTypeLabel": "Besoin ou envie",
+        "budgetTypeAuto": "Selon la catégorie",
+        "budgetTypeNeed": "Besoin",
+        "budgetTypeWant": "Envie",
+        "accountLabel": "Identifiant du compte Fluv (optionnel)",
+        "idPlaceholder": "Compte lié à Trakka",
+        "categoryLabel": "Identifiant de la catégorie Fluv (optionnel)",
+        "categoryPlaceholder": "Selon les règles de Fluv",
+        "accountMenuLabel": "Compte Fluv",
+        "categoryMenuLabel": "Catégorie Fluv",
+        "linkedAccountNamed": "Compte lié à Trakka ({name})",
+        "unknownId": "Autre identifiant : {id}",
+        "invalidId": "Collez l'identifiant tel que Fluv l'affiche (un UUID).",
+        "saveFailed": "La liste est enregistrée, mais pas ses réglages Fluv : {reason}"
+      }
     },
     "newHouse": {
       "title": "Nouvelle Maison",
@@ -607,7 +625,10 @@
       "purchaseStatusLabel": "État d'achat",
       "actualPriceLabel": "Prix payé (€ / unité)",
       "actualPricePlaceholder": "= prix prévu",
-      "actualPriceValidationError": "Le prix payé doit être un nombre positif."
+      "actualPriceValidationError": "Le prix payé doit être un nombre positif.",
+      "shippingPriceLabel": "Frais de port (€, optionnel)",
+      "shippingPricePlaceholder": "Ex. 4.99",
+      "shippingPriceValidationError": "Les frais de port doivent être un nombre positif."
     },
     "labelManage": {
       "searchPlaceholder": "Rechercher ou créer un label…",
@@ -1196,6 +1217,20 @@
     "validatedPlannedOther": "{count} articles validés : à acheter",
     "paidPriceSaved": "Prix payé enregistré pour « {title} »",
     "paidPriceCleared": "« {title} » compté au prix prévu"
+  },
+  "fluvPurchase": {
+    "title": "Envoi à Fluv",
+    "toast": "« {title} » part vers Fluv.",
+    "options": "Options",
+    "stateQueued": "En attente d'envoi à Fluv.",
+    "stateSent": "Envoyé à Fluv.",
+    "stateSkipped": "Non envoyé à Fluv.",
+    "skipLabel": "Ne pas envoyer cet achat à Fluv",
+    "save": "Enregistrer",
+    "saved": "Envoi à Fluv mis à jour pour « {title} ».",
+    "savedSkipped": "« {title} » ne sera pas envoyé à Fluv.",
+    "noPurchase": "plus rien de vous n'est envoyé à Fluv pour cet article",
+    "saveFailed": "Envoi à Fluv inchangé : {reason}"
   },
   "templates": {
     "none": "Liste vide",

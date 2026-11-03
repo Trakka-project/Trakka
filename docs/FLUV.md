@@ -2,7 +2,7 @@
 
 Trakka can send what you buy to [Fluv](https://github.com/Zit0X/Fluv), the self-hosted personal finance app: every item you check off a purchase list (`shopping`, `groceries`, `recurring_shopping`), with its price, becomes an expense in Fluv. Unchecking it takes the expense back out.
 
-Each Trakka user connects their own Fluv, in **Paramètres → Intégrations → Fluv**. Fluv files the purchases in the account its user chose when linking Trakka, and its rules categorize them like any other operation.
+Each Trakka user connects their own Fluv, in **Paramètres → Intégrations → Fluv**. By default Fluv files the purchases in the account its user chose when linking Trakka, and its rules categorize them like any other operation; each user can override that per list (see [Filing a list's purchases](#filing-a-lists-purchases)).
 
 Code: `internal/fluv` (connection settings, IP lock, outbox sender), `internal/handlers/fluv.go` (routes and the hook on item changes), `static/js/fluv.js` (the settings section). Endpoints: [API.md](API.md#fluv-integration). Tables: [DATABASE.md](DATABASE.md#fluv_integrations). The receiving side is Fluv's `POST`/`DELETE /api/v1/integrations/trakka/purchases`.
 
@@ -25,9 +25,33 @@ The test sends a request that changes nothing (it takes back a purchase that doe
 | `quantity` | the item's quantity (at least 1) |
 | `amount_minor` | what was paid, in cents: the **price paid** (`actual_price`) if one was entered, otherwise the estimated `price`, times the quantity |
 | `date` | the day the item was checked off, in `APP_TIMEZONE` (Fluv records the day, not the time; the exact moment stays in Trakka, `fluv_purchases.purchased_at`) |
+| `shipping_amount_minor` | only if the item has a **shipping fee** (`shipping_price`, the edit-item modal's "Frais de port", for the whole line): in cents. Fluv records it as a second expense beside the item's (same account, day, category and need/want) |
+| `account_id`, `category_id`, `budget_type` | only if set in the buyer's defaults for the list (below) |
 
-- **Only items with a price** are sent. An item checked off without a price is sent as soon as a price is entered for it while it is bought (to the Fluv of whoever enters it).
-- **The purchase goes to the Fluv of whoever checked the item off.** Unchecking it, or changing its price, quantity or title while it is bought, acts on that same purchase — whoever does it, since Fluv should mirror whether the item is bought. A House member who hasn't connected Fluv checks items off as before; nothing is sent.
+Every optional field is left out when unset, so a Fluv that predates them (and refuses unknown fields) still takes the purchases that don't use them.
+
+### Filing a list's purchases
+
+In a purchase list's edit modal, **Envoi à Fluv** (shown once you connected Fluv) sets, for **your** purchases on that list:
+
+- **Besoin ou envie** (`budget_type`: `need`/`want`): the budget section; "Selon la catégorie" lets the category decide.
+- **Compte Fluv** (`account_id`): another of your Fluv accounts than the one linked to Trakka (Fluv leaves loan accounts out).
+- **Catégorie Fluv** (`category_id`): files the purchase there, shown with its emoji; Fluv's rules then leave it alone.
+
+Both are menus of **your** Fluv accounts and expense categories, which Trakka's server reads from Fluv's `GET /api/v1/integrations/trakka/metadata` with the stored token (category names in Trakka's interface language; reused for 2 minutes). When it can't — a Fluv older than that endpoint, Fluv unreachable, offline — the fields stay text fields for the ids (UUIDs) copied from Fluv, as before. Either way Trakka checks only the ids' shape; an id Fluv doesn't know (an account deleted since, shown as "Autre identifiant") fails the purchase with Fluv's code (pick another, then **Renvoyer les achats en échec**). The defaults are per user, not per list — on a shared list each member files into their own Fluv —, and are taken when an item is checked off: changing them doesn't move purchases already queued or sent, and a correction (a new price, a new shipping fee) is filed like the original.
+
+### One purchase
+
+Checking an item off shows a toast, "« Lait » part vers Fluv · **Options**", when a purchase of yours was queued (an item with a price, Fluv connected). **Options** — also in the item's actions sheet (long press) while it is bought, as **Envoi à Fluv** — opens a sheet for that purchase only:
+
+- **Ne pas envoyer cet achat à Fluv**: takes it out of Fluv (or never sends it) while the item stays bought; correcting the item afterwards doesn't send it. Untick to send it again. Un-checking the item ends it: the next purchase is sent as usual.
+- **Compte Fluv**: another account for this purchase than the list's default (the same menu, or text field, as the list modal's).
+- **Frais de port**: the item's shipping fee (the same field as in the edit-item modal).
+
+Within the ~20 seconds a purchase waits before it is sent, these change it before Fluv sees it; afterwards, Fluv's copy is cancelled and a corrected one sent, on the original date. Only the buyer has these options: the purchase goes to their Fluv.
+
+- **Only items with a price** are sent (a shipping fee alone isn't a purchase). An item checked off without a price is sent as soon as a price is entered for it while it is bought (to the Fluv of whoever enters it).
+- **The purchase goes to the Fluv of whoever checked the item off.** Unchecking it, or changing its price, shipping fee, quantity or title while it is bought, acts on that same purchase — whoever does it, since Fluv should mirror whether the item is bought. A House member who hasn't connected Fluv checks items off as before; nothing is sent.
 - **Sending is asynchronous.** A purchase waits ~20 seconds before it is sent, so that the price paid typed right after checking the item off, or an immediate uncheck, corrects or drops it before Fluv ever sees it. A correction after it was sent is a cancellation plus a new purchase, on the original date.
 - **Nothing is lost while Fluv is down.** Purchases sit in an outbox (`fluv_purchases`) and are retried with an exponential backoff (1, 2, 4 … minutes, at most 6 hours, 16 attempts — about two days). A refusal that retrying can't fix — a revoked token (`401`), an address Fluv doesn't allow (`403`), a wrong endpoint (`404`), a refused purchase (`422`), a redirect — marks the purchase **failed** right away. Paramètres shows how many are waiting and failed, and the last error; **Renvoyer les achats en échec** sends the failed ones again, and so does saving the connection (most failures are fixed by new settings). Sending the same purchase twice is harmless: Fluv ignores a reference it already has.
 - **Not sent**: tasks and items on `todo`/`custom` lists; changes made by public-share-link visitors (they aren't anyone's purchase); items the server itself unchecks — a recurring item coming back for its next occurrence, a Courses product added again — whose previous purchase stays recorded; deleting a bought item (that is tidying up, not a refund).
@@ -104,4 +128,5 @@ Shown in Paramètres (translated) and returned by the API:
 | `redirect_refused` | Fluv answered with a redirect, never followed |
 | `blocked_address` | no locked address passes `FLUV_INTEGRATION_ALLOWED_IPS` any more |
 | `token_unreadable` | the stored token can't be decrypted with the current instance key |
+| `invalid_response` | reading the accounts and categories only: Fluv's answer isn't the JSON expected, or is too large; the text fields stay |
 | *(other)* | Fluv's own problem code, e.g. a refused purchase |

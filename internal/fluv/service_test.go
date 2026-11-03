@@ -11,6 +11,7 @@ import (
 	"net/http/httptest"
 	"net/netip"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"sync"
 	"testing"
@@ -22,6 +23,24 @@ import (
 
 const testToken = "fluv_trk_abcdefghijklmnopqrstuvwxyz"
 
+// fluvPurchaseRequest is the body Fluv's handleTrakkaPurchase decodes
+// (Fluv's internal/httpapi/handlers_trakka.go), field for field — kept
+// apart from purchaseBody so that a field Trakka sends and Fluv doesn't
+// know fails here, as it would there.
+type fluvPurchaseRequest struct {
+	ID            string `json:"id"`
+	Title         string `json:"title"`
+	Store         string `json:"store"`
+	Quantity      int    `json:"quantity"`
+	AmountMinor   int64  `json:"amount_minor"`
+	ShippingMinor int64  `json:"shipping_amount_minor"`
+	Currency      string `json:"currency"`
+	Date          string `json:"date"`
+	AccountID     string `json:"account_id"`
+	CategoryID    string `json:"category_id"`
+	BudgetType    string `json:"budget_type"`
+}
+
 // fakeFluv answers like Fluv's /api/v1/integrations/trakka/purchases: the
 // link token in Authorization: Bearer, strict JSON (unknown fields
 // refused), the same id twice recorded once, DELETE of an unknown id 404.
@@ -32,6 +51,10 @@ type fakeFluv struct {
 	log       []string
 	// failWith, when set, answers every request with this status.
 	failWith int
+	// metadata is what GET metadataPath answers; nil: 404, like a Fluv
+	// older than the endpoint. lang is the Accept-Language it last got.
+	metadata any
+	lang     string
 }
 
 func (f *fakeFluv) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -57,12 +80,26 @@ func (f *fakeFluv) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			problem(http.StatusUnsupportedMediaType, "unsupported_media_type")
 			return
 		}
-		var p purchaseBody
+		var req fluvPurchaseRequest
 		dec := json.NewDecoder(r.Body)
 		dec.DisallowUnknownFields()
-		if err := dec.Decode(&p); err != nil {
+		if err := dec.Decode(&req); err != nil {
 			problem(http.StatusBadRequest, "invalid_json")
 			return
+		}
+		switch req.BudgetType {
+		case "", "need", "needs", "want", "wants":
+		default:
+			problem(http.StatusUnprocessableEntity, "invalid")
+			return
+		}
+		if req.ShippingMinor < 0 {
+			problem(http.StatusUnprocessableEntity, "invalid")
+			return
+		}
+		p := purchaseBody{
+			ID: req.ID, Title: req.Title, Store: req.Store, Quantity: req.Quantity, AmountMinor: req.AmountMinor, Date: req.Date,
+			ShippingMinor: req.ShippingMinor, AccountID: req.AccountID, CategoryID: req.CategoryID, BudgetType: req.BudgetType,
 		}
 		f.log = append(f.log, "POST "+p.ID)
 		if _, ok := f.purchases[p.ID]; ok {
@@ -80,6 +117,11 @@ func (f *fakeFluv) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 		delete(f.purchases, id)
 		w.WriteHeader(http.StatusNoContent)
+	case r.Method == http.MethodGet && r.URL.Path == metadataPath && f.metadata != nil:
+		f.log = append(f.log, "GET metadata")
+		f.lang = r.Header.Get("Accept-Language")
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(f.metadata)
 	default:
 		problem(http.StatusNotFound, "not_found")
 	}
@@ -552,5 +594,329 @@ func TestAutomaticIPLock(t *testing.T) {
 	res, _ = env.svc.Test(ctx, env.user.ID)
 	if !res.OK || res.Relocked {
 		t.Fatalf("a test with an unchanged record = %+v", res)
+	}
+}
+
+func TestListDefaultsAndShippingAreSent(t *testing.T) {
+	env := newTestEnv(t)
+	ctx := context.Background()
+	env.connect(t)
+	const account, category = "0192f3a4-5b6c-7d8e-9f01-23456789abcd", "0192f3a4-5b6c-7d8e-9f01-23456789abce"
+
+	// Refused values never reach the table.
+	for _, bad := range []ListDefaults{
+		{AccountID: "checking"},
+		{CategoryID: "0192f3a4-5b6c-7d8e-9f01-23456789abcz"},
+		{BudgetType: "luxury"},
+	} {
+		var verr *ValidationError
+		if _, err := env.svc.SaveListDefaults(ctx, env.user.ID, env.list.ID, bad); !errors.As(err, &verr) {
+			t.Errorf("SaveListDefaults(%+v) = %v, want a ValidationError", bad, err)
+		}
+	}
+	saved, err := env.svc.SaveListDefaults(ctx, env.user.ID, env.list.ID,
+		ListDefaults{AccountID: " " + strings.ToUpper(account) + " ", CategoryID: category, BudgetType: "wants"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if saved != (ListDefaults{AccountID: account, CategoryID: category, BudgetType: "want"}) {
+		t.Fatalf("saved %+v, want canonical ids and \"want\"", saved)
+	}
+	if got, _ := env.svc.ListDefaults(ctx, env.user.ID, env.list.ID); got != saved {
+		t.Fatalf("ListDefaults = %+v, want %+v", got, saved)
+	}
+
+	env.item.ShippingPrice = floatPtr(4.99)
+	env.tick(true)
+	env.advance(settleDelay)
+	env.svc.SendDue(ctx)
+	purchases, _ := env.fluv.snapshot()
+	var first purchaseBody
+	for _, p := range purchases {
+		first = p
+	}
+	if len(purchases) != 1 || first.AccountID != account || first.CategoryID != category || first.BudgetType != "want" ||
+		first.ShippingMinor != 499 || first.AmountMinor != 220 {
+		t.Fatalf("Fluv holds %+v, want the list's defaults and 499 cents of shipping", purchases)
+	}
+
+	// Changing the defaults afterwards doesn't move the purchase: a
+	// correction is filed like the original, with the new shipping fee.
+	if _, err := env.svc.SaveListDefaults(ctx, env.user.ID, env.list.ID, ListDefaults{BudgetType: "need"}); err != nil {
+		t.Fatal(err)
+	}
+	cheaper := bought(env.item, true)
+	cheaper.ShippingPrice = nil
+	env.svc.ItemChanged(ctx, env.user.ID, env.list, bought(env.item, true), cheaper)
+	env.advance(settleDelay)
+	env.svc.SendDue(ctx)
+	purchases, log := env.fluv.snapshot()
+	if len(purchases) != 1 || len(log) != 3 {
+		t.Fatalf("Fluv holds %v after %v, want the purchase replaced", purchases, log)
+	}
+	for id, p := range purchases {
+		if id == first.ID || p.ShippingMinor != 0 || p.AccountID != account || p.BudgetType != "want" {
+			t.Errorf("replacement %+v: want a new reference, no shipping, filed like the original", p)
+		}
+	}
+
+	// Cleared defaults: nothing optional is sent — what a Fluv that
+	// predates these fields still accepts.
+	if _, err := env.svc.SaveListDefaults(ctx, env.user.ID, env.list.ID, ListDefaults{}); err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := env.svc.ListDefaults(ctx, env.user.ID, env.list.ID); got != (ListDefaults{}) {
+		t.Fatalf("cleared defaults read back as %+v", got)
+	}
+	other, err := env.db.CreateItem(ctx, env.list.ID, "Pain", nil, 1, floatPtr(1.5), false, 1, nil, nil, nil, nil, false, nil, nil, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	env.svc.ItemChanged(ctx, env.user.ID, env.list, bought(other, false), bought(other, true))
+	env.advance(settleDelay)
+	env.svc.SendDue(ctx)
+	purchases, _ = env.fluv.snapshot()
+	for _, p := range purchases {
+		if p.Title == "Pain" && (p.AccountID != "" || p.CategoryID != "" || p.BudgetType != "" || p.ShippingMinor != 0) {
+			t.Errorf("purchase without defaults sent %+v", p)
+		}
+	}
+	body, err := json.Marshal(purchaseBody{ID: "x", Title: "Pain", Quantity: 1, AmountMinor: 150, Date: "2026-11-03"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, field := range []string{"account_id", "category_id", "budget_type", "shipping_amount_minor"} {
+		if strings.Contains(string(body), field) {
+			t.Errorf("unset %s is sent: %s", field, body)
+		}
+	}
+}
+
+// TestBuyerFilesOrSkipsOnePurchase: the check-off toast's "Options" — the
+// buyer files their purchase in another Fluv account (in place before it
+// is sent, cancelled and sent again after), takes it out of Fluv while the
+// item stays bought, then sends it again; nobody else can.
+func TestBuyerFilesOrSkipsOnePurchase(t *testing.T) {
+	env := newTestEnv(t)
+	ctx := context.Background()
+	env.connect(t)
+	const first, second = "0192f3a4-5b6c-7d8e-9f01-23456789abcd", "0192f3a4-5b6c-7d8e-9f01-23456789abce"
+	item := bought(env.item, true)
+	send := func() map[string]purchaseBody {
+		t.Helper()
+		env.advance(settleDelay)
+		env.svc.SendDue(ctx)
+		purchases, _ := env.fluv.snapshot()
+		return purchases
+	}
+	set := func(u ItemPurchaseUpdate) ItemPurchase {
+		t.Helper()
+		view, err := env.svc.SetItemPurchase(ctx, env.user.ID, env.list, item, u)
+		if err != nil {
+			t.Fatalf("SetItemPurchase(%+v): %v", u, err)
+		}
+		return view
+	}
+	only := func(purchases map[string]purchaseBody) purchaseBody {
+		t.Helper()
+		if len(purchases) != 1 {
+			t.Fatalf("Fluv holds %v, want one purchase", purchases)
+		}
+		for _, p := range purchases {
+			return p
+		}
+		return purchaseBody{}
+	}
+
+	if view, err := env.svc.ItemPurchase(ctx, env.user.ID, env.item); err != nil || view != (ItemPurchase{}) {
+		t.Fatalf("before the check-off: %+v, %v", view, err)
+	}
+	env.tick(true)
+	if view, err := env.svc.ItemPurchase(ctx, env.user.ID, item); err != nil || view != (ItemPurchase{Queued: true}) {
+		t.Fatalf("checked off: %+v, %v", view, err)
+	}
+
+	// Before it is sent: changed in place, one POST.
+	if view := set(ItemPurchaseUpdate{AccountID: strings.ToUpper(first)}); view != (ItemPurchase{Queued: true, AccountID: first}) {
+		t.Fatalf("account chosen: %+v", view)
+	}
+	sent := only(send())
+	if _, log := env.fluv.snapshot(); sent.AccountID != first || len(log) != 1 {
+		t.Fatalf("Fluv holds %+v after %v", sent, log)
+	}
+
+	// After: cancelled and sent again, on the same day.
+	if view := set(ItemPurchaseUpdate{AccountID: second}); !view.Queued || view.AccountID != second {
+		t.Fatalf("account changed after sending: %+v", view)
+	}
+	moved := only(send())
+	if moved.ID == sent.ID || moved.AccountID != second || moved.Date != sent.Date {
+		t.Fatalf("moved to %+v, from %+v", moved, sent)
+	}
+
+	// Skipped: taken out of Fluv, and a correction doesn't send it again.
+	if view := set(ItemPurchaseUpdate{AccountID: second, Skip: true}); view != (ItemPurchase{Skipped: true, AccountID: second}) {
+		t.Fatalf("skipped: %+v", view)
+	}
+	if purchases := send(); len(purchases) != 0 {
+		t.Fatalf("Fluv still holds %v", purchases)
+	}
+	unpriced := bought(env.item, true)
+	unpriced.Price = nil
+	env.svc.ItemChanged(ctx, env.user.ID, env.list, item, unpriced)
+	env.svc.ItemChanged(ctx, env.user.ID, env.list, unpriced, item)
+	if purchases := send(); len(purchases) != 0 {
+		t.Fatalf("a correction sent the skipped purchase: %v", purchases)
+	}
+
+	// Sent again, in the account chosen meanwhile.
+	set(ItemPurchaseUpdate{AccountID: first, Skip: true})
+	if view := set(ItemPurchaseUpdate{AccountID: first}); !view.Queued || view.AccountID != first {
+		t.Fatalf("sent again: %+v", view)
+	}
+	if again := only(send()); again.AccountID != first || again.Date != sent.Date {
+		t.Fatalf("sent again as %+v", again)
+	}
+
+	// Un-checking ends the skip: the next purchase is sent as usual.
+	set(ItemPurchaseUpdate{Skip: true})
+	env.tick(false)
+	env.tick(true)
+	if next := only(send()); next.AccountID != "" {
+		t.Fatalf("next purchase %+v, want Fluv's own account", next)
+	}
+
+	// Nobody else's, and only ids of Fluv's shape.
+	hash := "x"
+	other, err := env.db.CreateUser(ctx, "other@example.com", &hash, nil, nil, "Other")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := env.svc.SetItemPurchase(ctx, other.ID, env.list, item, ItemPurchaseUpdate{Skip: true}); !errors.Is(err, ErrNoPurchase) {
+		t.Fatalf("another user: %v, want ErrNoPurchase", err)
+	}
+	if view, err := env.svc.ItemPurchase(ctx, other.ID, item); err != nil || view != (ItemPurchase{}) {
+		t.Fatalf("another user sees %+v, %v", view, err)
+	}
+	var verr *ValidationError
+	if _, err := env.svc.SetItemPurchase(ctx, env.user.ID, env.list, item, ItemPurchaseUpdate{AccountID: "checking"}); !errors.As(err, &verr) {
+		t.Fatalf("malformed account: %v, want a ValidationError", err)
+	}
+	if _, err := env.svc.SetItemPurchase(ctx, env.user.ID, env.list, env.item, ItemPurchaseUpdate{Skip: true}); !errors.Is(err, ErrNoPurchase) {
+		t.Fatalf("item not bought: %v, want ErrNoPurchase", err)
+	}
+}
+
+// TestMetadata: the accounts and categories are read with the token from
+// the pinned address, cleaned, cached a while; a Fluv without the endpoint
+// or a bad answer is ok false, never an error.
+func TestMetadata(t *testing.T) {
+	env := newTestEnv(t)
+	ctx := context.Background()
+	if _, err := env.svc.Metadata(ctx, env.user.ID, "fr"); !errors.Is(err, db.ErrNotFound) {
+		t.Fatalf("metadata without a connection: %v", err)
+	}
+	env.connect(t)
+
+	const (
+		cash    = "0b0e5a8e-1c1d-4e7a-9f3a-7d2b8c9e0f11"
+		bank    = "1c1f6b9f-2d2e-4f8b-8a4b-8e3c9d0f1a22"
+		grocery = "2d207cab-3e3f-4a9c-9b5c-9f4d0e1a2b33"
+	)
+	env.fluv.metadata = map[string]any{
+		"default_account_id": strings.ToUpper(cash),
+		"accounts": []map[string]any{
+			{"id": cash, "name": "Portefeuille", "kind": "cash"},
+			{"id": bank, "name": "  Compte\u202e courant\x07 ", "kind": "Checking!"},
+			{"id": cash, "name": "Duplicate"},
+			{"id": "not-a-uuid", "name": "Broken"},
+		},
+		"categories": []map[string]any{
+			{"id": grocery, "name": "Groceries", "emoji": "🛒"},
+			{"id": "", "name": "No id"},
+		},
+	}
+	got, err := env.svc.Metadata(ctx, env.user.ID, "EN")
+	if err != nil || !got.OK {
+		t.Fatalf("metadata = %+v, %v; want ok", got, err)
+	}
+	want := Metadata{
+		OK: true, DefaultAccountID: cash,
+		Accounts:   []MetadataAccount{{ID: cash, Name: "Portefeuille", Kind: "cash"}, {ID: bank, Name: "Compte courant"}},
+		Categories: []MetadataCategory{{ID: grocery, Name: "Groceries", Emoji: "🛒"}},
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("metadata = %+v\nwant       %+v", got, want)
+	}
+	if env.fluv.lang != "en" {
+		t.Fatalf("Accept-Language = %q, want en", env.fluv.lang)
+	}
+
+	countGets := func() int {
+		_, log := env.fluv.snapshot()
+		n := 0
+		for _, l := range log {
+			if l == "GET metadata" {
+				n++
+			}
+		}
+		return n
+	}
+	// Cached per language a while, then asked again.
+	_, _ = env.svc.Metadata(ctx, env.user.ID, "en")
+	if n := countGets(); n != 1 {
+		t.Fatalf("%d requests, want the answer reused", n)
+	}
+	_, _ = env.svc.Metadata(ctx, env.user.ID, "de") // French
+	if n := countGets(); n != 2 || env.fluv.lang != "fr" {
+		t.Fatalf("%d requests in %q, want a second one in fr", n, env.fluv.lang)
+	}
+	env.advance(metadataTTL)
+	_, _ = env.svc.Metadata(ctx, env.user.ID, "en")
+	if n := countGets(); n != 3 {
+		t.Fatalf("%d requests, want the answer asked again once stale", n)
+	}
+
+	// Saving the connection forgets the cache. A Fluv older than the
+	// endpoint answers 404.
+	env.fluv.metadata = nil
+	env.connect(t)
+	if got, err := env.svc.Metadata(ctx, env.user.ID, "en"); err != nil || got.OK || got.Status != http.StatusNotFound || got.Code != "not_found" {
+		t.Fatalf("metadata from an older Fluv = %+v, %v", got, err)
+	}
+
+	// An answer too large to be names and ids is refused whole.
+	env.fluv.metadata = map[string]any{"accounts": []any{}, "categories": []any{}, "padding": strings.Repeat("x", maxMetadataBody)}
+	env.connect(t)
+	if got, _ := env.svc.Metadata(ctx, env.user.ID, "en"); got.OK || got.Code != "invalid_response" {
+		t.Fatalf("metadata too large = %+v", got)
+	}
+
+	// A refused token.
+	env.fluv.token = "fluv_trk_otherotherotherotherotherot"
+	env.connect(t)
+	if got, _ := env.svc.Metadata(ctx, env.user.ID, "en"); got.OK || got.Status != http.StatusUnauthorized {
+		t.Fatalf("metadata with a refused token = %+v", got)
+	}
+	if settings := env.settings(t); settings.LastErrorCode != "" {
+		t.Fatalf("a metadata failure marked the connection failing: %q", settings.LastErrorCode)
+	}
+}
+
+func TestCleanLabel(t *testing.T) {
+	for _, c := range []struct {
+		in   string
+		max  int
+		want string
+	}{
+		{"  Courses ", 80, "Courses"},
+		{"a\u202eb\u2066c\x00d", 80, "abcd"},
+		{"👨\u200d👩\u200d👧", 8, "👨\u200d👩\u200d👧"},
+		{"abcdef", 3, "abc"},
+		{"\xff\xfeok", 80, "ok"},
+	} {
+		if got := cleanLabel(c.in, c.max); got != c.want {
+			t.Errorf("cleanLabel(%q, %d) = %q, want %q", c.in, c.max, got, c.want)
+		}
 	}
 }

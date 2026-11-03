@@ -297,6 +297,68 @@ func containsAddr(addrs []netip.Addr, ip netip.Addr) bool {
 	return false
 }
 
+// ListDefaults is how a user's purchases from a list are filed in their
+// Fluv (GET/PUT /api/v1/integrations/fluv/lists/{id}): "" leaves each to
+// Fluv — the account linked to Trakka, the category its rules find, the
+// need/want of that category.
+type ListDefaults struct {
+	// AccountID and CategoryID are ids of the user's Fluv (UUIDs, copied
+	// from Fluv): Trakka can't list them — Fluv only lets Trakka's token
+	// send purchases —, so they are only checked for shape here, and Fluv
+	// refuses an unknown one (the purchase is then failed, unknown).
+	AccountID  string `json:"account_id"`
+	CategoryID string `json:"category_id"`
+	// BudgetType is "need", "want" or "".
+	BudgetType string `json:"budget_type"`
+}
+
+// clean validates d and returns it in canonical form: lowercase ids,
+// "need"/"want" (Fluv's plural spellings are accepted too).
+func (d ListDefaults) clean() (ListDefaults, error) {
+	out := ListDefaults{
+		AccountID:  strings.ToLower(strings.TrimSpace(d.AccountID)),
+		CategoryID: strings.ToLower(strings.TrimSpace(d.CategoryID)),
+	}
+	if out.AccountID != "" && !validFluvID(out.AccountID) {
+		return ListDefaults{}, invalid("account_id", "invalid_fluv_id", "copy the account's id from Fluv (a UUID)")
+	}
+	if out.CategoryID != "" && !validFluvID(out.CategoryID) {
+		return ListDefaults{}, invalid("category_id", "invalid_fluv_id", "copy the category's id from Fluv (a UUID)")
+	}
+	switch strings.TrimSpace(d.BudgetType) {
+	case "":
+	case "need", "needs":
+		out.BudgetType = "need"
+	case "want", "wants":
+		out.BudgetType = "want"
+	default:
+		return ListDefaults{}, invalid("budget_type", "invalid_budget_type", `budget_type must be "need", "want" or empty`)
+	}
+	return out, nil
+}
+
+// validFluvID reports whether id has the shape of Fluv's ids: a UUID in
+// canonical lowercase form (8-4-4-4-12 hex digits).
+func validFluvID(id string) bool {
+	if len(id) != 36 {
+		return false
+	}
+	for i := 0; i < len(id); i++ {
+		c := id[i]
+		switch i {
+		case 8, 13, 18, 23:
+			if c != '-' {
+				return false
+			}
+		default:
+			if (c < '0' || c > '9') && (c < 'a' || c > 'f') {
+				return false
+			}
+		}
+	}
+	return true
+}
+
 // errInvalidToken is a token that isn't one Fluv makes.
 var errInvalidToken = invalid("token", "invalid_token", "paste the token Fluv showed when you linked Trakka (fluv_trk_…)")
 

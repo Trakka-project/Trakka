@@ -345,6 +345,11 @@ func (app *Application) Routes() http.Handler {
 	apiMux.HandleFunc("DELETE /api/v1/integrations/fluv", app.handleFluvDelete)
 	apiMux.HandleFunc("POST /api/v1/integrations/fluv/test", app.handleFluvTest)
 	apiMux.HandleFunc("POST /api/v1/integrations/fluv/retry", app.handleFluvRetry)
+	apiMux.HandleFunc("GET /api/v1/integrations/fluv/metadata", app.handleFluvMetadata)
+	apiMux.HandleFunc("GET /api/v1/integrations/fluv/lists/{id}", app.handleFluvListDefaultsShow)
+	apiMux.HandleFunc("PUT /api/v1/integrations/fluv/lists/{id}", app.handleFluvListDefaultsSave)
+	apiMux.HandleFunc("GET /api/v1/integrations/fluv/items/{id}", app.handleFluvItemShow)
+	apiMux.HandleFunc("PUT /api/v1/integrations/fluv/items/{id}", app.handleFluvItemSave)
 
 	mux.Handle("/api/v1/", app.RequireSession(apiMux))
 	// The only /api/v1/... routes outside RequireSession, each authenticated

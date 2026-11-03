@@ -26,6 +26,8 @@ import (
 	"log/slog"
 	"net/http"
 	"net/url"
+	"strings"
+	"sync"
 	"time"
 
 	"trakka/internal/db"
@@ -92,6 +94,9 @@ type Service struct {
 	now     func() time.Time
 	resolve Resolver
 	wake    chan struct{}
+
+	metaMu    sync.Mutex
+	metaCache map[metadataKey]metadataEntry // see Metadata
 }
 
 // New builds a Service. Run starts its sender.
@@ -109,14 +114,15 @@ func New(opts Options) *Service {
 		resolve = defaultResolver
 	}
 	return &Service{
-		db:      opts.DB,
-		sealer:  opts.Sealer,
-		logger:  opts.Logger,
-		loc:     loc,
-		policy:  opts.Policy,
-		now:     now,
-		resolve: resolve,
-		wake:    make(chan struct{}, 1),
+		db:        opts.DB,
+		sealer:    opts.Sealer,
+		logger:    opts.Logger,
+		loc:       loc,
+		policy:    opts.Policy,
+		now:       now,
+		resolve:   resolve,
+		wake:      make(chan struct{}, 1),
+		metaCache: map[metadataKey]metadataEntry{},
 	}
 }
 
@@ -221,6 +227,7 @@ func (s *Service) Save(ctx context.Context, userID int64, u Update) (Settings, e
 	if err := s.db.SaveFluvIntegration(ctx, userID, t.endpoint.String(), joinPins(t.pins), sealed, enabled); err != nil {
 		return Settings{}, err
 	}
+	s.forgetMetadata(userID)
 	if n, err := s.db.RetryFailedFluvPurchases(ctx, userID); err != nil {
 		return Settings{}, err
 	} else if n > 0 {
@@ -232,6 +239,7 @@ func (s *Service) Save(ctx context.Context, userID int64, u Update) (Settings, e
 // Delete removes userID's connection and the purchases not sent yet
 // (db.DeleteFluvIntegration). Returns db.ErrNotFound if there was none.
 func (s *Service) Delete(ctx context.Context, userID int64) error {
+	s.forgetMetadata(userID)
 	return s.db.DeleteFluvIntegration(ctx, userID)
 }
 
@@ -242,6 +250,194 @@ func (s *Service) Retry(ctx context.Context, userID int64) (int64, error) {
 		s.Wake()
 	}
 	return n, err
+}
+
+// ListDefaults returns how userID's purchases from listID are filed in
+// their Fluv; all "" when they set nothing. The caller checks that userID
+// may see the list.
+func (s *Service) ListDefaults(ctx context.Context, userID, listID int64) (ListDefaults, error) {
+	f, err := s.db.GetFluvListDefaults(ctx, userID, listID)
+	if err != nil {
+		return ListDefaults{}, err
+	}
+	return ListDefaults{AccountID: f.AccountID, CategoryID: f.CategoryID, BudgetType: f.BudgetType}, nil
+}
+
+// SaveListDefaults validates and stores how userID's purchases from listID
+// are filed, returning them as stored; refusals are *ValidationError. Only
+// the purchases queued from now on use them: what was already sent stays
+// where Fluv filed it.
+func (s *Service) SaveListDefaults(ctx context.Context, userID, listID int64, d ListDefaults) (ListDefaults, error) {
+	clean, err := d.clean()
+	if err != nil {
+		return ListDefaults{}, err
+	}
+	if err := s.db.SetFluvListDefaults(ctx, userID, listID, db.FluvListDefaults{
+		AccountID: clean.AccountID, CategoryID: clean.CategoryID, BudgetType: clean.BudgetType,
+	}); err != nil {
+		return ListDefaults{}, err
+	}
+	return clean, nil
+}
+
+// ItemPurchase is how a user's purchase of a bought item stands in their
+// Fluv (GET/PUT /api/v1/integrations/fluv/items/{id}) — the check-off
+// toast's "Options". The zero value: nothing of theirs is sent for it.
+type ItemPurchase struct {
+	// Queued: their purchase is on its way to Fluv, or there.
+	Queued bool `json:"queued"`
+	// Sent: Fluv may hold it already (it was sent at least once).
+	Sent bool `json:"sent"`
+	// Skipped: they chose not to send it ("Ne pas envoyer à Fluv").
+	Skipped bool `json:"skipped"`
+	// AccountID is the Fluv account it is filed in, "" for the one linked
+	// to Trakka (the list's default when it was queued, or a choice since).
+	AccountID string `json:"account_id"`
+}
+
+// ItemPurchaseUpdate is what the buyer may change about one purchase.
+type ItemPurchaseUpdate struct {
+	AccountID string `json:"account_id"`
+	Skip      bool   `json:"skip"`
+}
+
+// ErrNoPurchase is an item without a purchase of the caller's to change:
+// not bought, without a price, bought by someone else, or Fluv not
+// connected.
+var ErrNoPurchase = errors.New("fluv: no purchase of this user for this item")
+
+// ItemPurchase returns how userID's purchase of item stands. The caller
+// checks that userID may see the item.
+func (s *Service) ItemPurchase(ctx context.Context, userID int64, item *models.Item) (ItemPurchase, error) {
+	p, err := s.buyersPurchase(ctx, userID, item)
+	if errors.Is(err, ErrNoPurchase) {
+		return ItemPurchase{}, nil
+	}
+	if err != nil {
+		return ItemPurchase{}, err
+	}
+	return purchaseView(p), nil
+}
+
+// SetItemPurchase files userID's purchase of item in another Fluv account,
+// takes it out of Fluv (Skip), or sends it again. Fluv is only asked to
+// change what it holds when it may hold it: an account changed before the
+// purchase is sent is changed in place, else the purchase is cancelled and
+// sent again under a new reference, like a correction. Returns
+// ErrNoPurchase, or a *ValidationError for a malformed account id.
+func (s *Service) SetItemPurchase(ctx context.Context, userID int64, list *models.List, item *models.Item, u ItemPurchaseUpdate) (ItemPurchase, error) {
+	account := strings.ToLower(strings.TrimSpace(u.AccountID))
+	if account != "" && !validFluvID(account) {
+		return ItemPurchase{}, invalid("account_id", "invalid_fluv_id", "copy the account's id from Fluv (a UUID)")
+	}
+	p, err := s.buyersPurchase(ctx, userID, item)
+	if err != nil {
+		return ItemPurchase{}, err
+	}
+	switch {
+	case p.Skipped && u.Skip:
+		_, err = s.db.SetFluvPurchaseAccount(ctx, p.ID, account)
+	case u.Skip:
+		err = s.skip(ctx, p, account)
+	case p.Skipped:
+		err = s.unskip(ctx, list, item, p, account)
+	case p.AccountID != account:
+		err = s.refile(ctx, list, item, p, account)
+	}
+	if err != nil {
+		return ItemPurchase{}, err
+	}
+	p, err = s.buyersPurchase(ctx, userID, item)
+	if errors.Is(err, ErrNoPurchase) {
+		return ItemPurchase{}, nil
+	}
+	if err != nil {
+		return ItemPurchase{}, err
+	}
+	return purchaseView(p), nil
+}
+
+// buyersPurchase is the latest purchase of item while it is bought, if
+// userID made it and it is either still meant for Fluv or skipped.
+func (s *Service) buyersPurchase(ctx context.Context, userID int64, item *models.Item) (*db.FluvPurchase, error) {
+	if !item.Done {
+		return nil, ErrNoPurchase
+	}
+	p, err := s.db.LatestFluvPurchaseForItem(ctx, item.ID)
+	if errors.Is(err, db.ErrNotFound) {
+		return nil, ErrNoPurchase
+	}
+	if err != nil {
+		return nil, err
+	}
+	if p.UserID != userID || (p.Desired != db.FluvDesiredRecord && !p.Skipped) {
+		return nil, ErrNoPurchase
+	}
+	return p, nil
+}
+
+func purchaseView(p *db.FluvPurchase) ItemPurchase {
+	if p.Skipped {
+		return ItemPurchase{Skipped: true, AccountID: p.AccountID}
+	}
+	return ItemPurchase{Queued: true, Sent: p.Synced == db.FluvSyncedRecorded || p.Attempts > 0, AccountID: p.AccountID}
+}
+
+// skip takes p out of Fluv and keeps it out while its item stays bought;
+// account is kept for when it is sent again.
+func (s *Service) skip(ctx context.Context, p *db.FluvPurchase, account string) error {
+	if err := s.db.CancelFluvPurchase(ctx, p.ID); err != nil {
+		return err
+	}
+	if err := s.db.SetFluvPurchaseSkipped(ctx, p.ID, true); err != nil {
+		return err
+	}
+	if _, err := s.db.SetFluvPurchaseAccount(ctx, p.ID, account); err != nil {
+		return err
+	}
+	s.Wake()
+	return nil
+}
+
+// unskip sends a skipped purchase again, as its item stands now, on its
+// original date.
+func (s *Service) unskip(ctx context.Context, list *models.List, item *models.Item, p *db.FluvPurchase, account string) error {
+	if err := s.db.SetFluvPurchaseSkipped(ctx, p.ID, false); err != nil {
+		return err
+	}
+	return s.resend(ctx, list, item, p, account)
+}
+
+// refile files p in another account: in place while Fluv doesn't hold it,
+// else cancelled and sent again.
+func (s *Service) refile(ctx context.Context, list *models.List, item *models.Item, p *db.FluvPurchase, account string) error {
+	ok, err := s.db.SetFluvPurchaseAccount(ctx, p.ID, account)
+	if err != nil || ok {
+		return err
+	}
+	if err := s.db.CancelFluvPurchase(ctx, p.ID); err != nil {
+		return err
+	}
+	return s.resend(ctx, list, item, p, account)
+}
+
+// resend queues item again for p's buyer, filed like p but in account, on
+// p's date.
+func (s *Service) resend(ctx context.Context, list *models.List, item *models.Item, p *db.FluvPurchase, account string) error {
+	amount := amountOf(item)
+	if amount == 0 {
+		return nil
+	}
+	at, err := time.Parse(time.RFC3339, p.PurchasedAt)
+	if err != nil {
+		at = s.now()
+	}
+	filing := db.FluvListDefaults{AccountID: account, CategoryID: p.CategoryID, BudgetType: p.BudgetType}
+	if err := s.insert(ctx, p.UserID, list, item, amount, filing, at); err != nil {
+		return err
+	}
+	s.Wake()
+	return nil
 }
 
 // TestResult is the outcome of Test.
@@ -379,7 +575,10 @@ func (s *Service) ItemChanged(ctx context.Context, actorID int64, list *models.L
 	case !before.Done && after.Done:
 		err = s.record(ctx, actorID, list, after, s.now())
 	case before.Done && !after.Done:
-		err = s.cancelItem(ctx, after.ID)
+		// Skipping was about this purchase: the next one is sent as usual.
+		if err = s.db.ClearFluvSkips(ctx, after.ID); err == nil {
+			err = s.cancelItem(ctx, after.ID)
+		}
 	case before.Done && after.Done:
 		err = s.correct(ctx, actorID, list, before, after)
 	}
@@ -389,7 +588,7 @@ func (s *Service) ItemChanged(ctx context.Context, actorID int64, list *models.L
 }
 
 // record queues item, bought at at, for userID's Fluv — if they connected
-// one and it is enabled.
+// one and it is enabled —, filed per their defaults for list.
 func (s *Service) record(ctx context.Context, userID int64, list *models.List, item *models.Item, at time.Time) error {
 	amount := amountOf(item)
 	if amount == 0 {
@@ -405,10 +604,16 @@ func (s *Service) record(ctx context.Context, userID int64, list *models.List, i
 	if !integ.Enabled {
 		return nil
 	}
-	return s.insert(ctx, userID, list, item, amount, at)
+	filing, err := s.db.GetFluvListDefaults(ctx, userID, list.ID)
+	if err != nil {
+		return err
+	}
+	return s.insert(ctx, userID, list, item, amount, filing, at)
 }
 
-func (s *Service) insert(ctx context.Context, userID int64, list *models.List, item *models.Item, amount int64, at time.Time) error {
+// insert queues a purchase of item, filed per filing — taken once, when
+// the item is bought, and kept by its corrections.
+func (s *Service) insert(ctx context.Context, userID int64, list *models.List, item *models.Item, amount int64, filing db.FluvListDefaults, at time.Time) error {
 	ref, err := newRef(item.ID)
 	if err != nil {
 		return err
@@ -417,6 +622,8 @@ func (s *Service) insert(ctx context.Context, userID int64, list *models.List, i
 	return s.db.InsertFluvPurchase(ctx, db.FluvPurchase{
 		UserID: userID, ItemID: &itemID, Ref: ref,
 		Title: titleOf(item), Store: storeOf(list), Quantity: labelQuantity(item), AmountMinor: amount,
+		ShippingMinor: shippingOf(item),
+		AccountID:     filing.AccountID, CategoryID: filing.CategoryID, BudgetType: filing.BudgetType,
 		PurchasedAt: at.UTC().Format(time.RFC3339), PurchasedOn: at.In(s.loc).Format(time.DateOnly),
 	}, s.now().Add(settleDelay))
 }
@@ -437,31 +644,38 @@ func (s *Service) cancelItem(ctx context.Context, itemID int64) error {
 	return nil
 }
 
-// correct follows a bought item whose cost or title changed: the purchase
-// is corrected in place while it was never sent, else cancelled and sent
-// again under a new reference (Fluv ignores a reference it already has),
-// keeping its date. A bought item that only now gets a price — checked off
+// correct follows a bought item whose cost, shipping fee or title changed:
+// the purchase is corrected in place while it was never sent, else
+// cancelled and sent again under a new reference (Fluv ignores a reference
+// it already has), keeping its date and how it was filed. A bought item that only now gets a price — checked off
 // first, the price paid typed after — is recorded then.
 func (s *Service) correct(ctx context.Context, actorID int64, list *models.List, before, after *models.Item) error {
 	amount := amountOf(after)
 	active, err := s.db.ActiveFluvPurchaseForItem(ctx, after.ID)
 	if errors.Is(err, db.ErrNotFound) {
-		if amountOf(before) == 0 && amount > 0 {
-			return s.record(ctx, actorID, list, after, s.now())
+		if amountOf(before) > 0 || amount == 0 {
+			return nil
 		}
-		return nil
+		latest, err := s.db.LatestFluvPurchaseForItem(ctx, after.ID)
+		if err == nil && latest.Skipped {
+			return nil // its buyer chose not to send it
+		}
+		if err != nil && !errors.Is(err, db.ErrNotFound) {
+			return err
+		}
+		return s.record(ctx, actorID, list, after, s.now())
 	}
 	if err != nil {
 		return err
 	}
-	title, quantity := titleOf(after), labelQuantity(after)
-	if active.AmountMinor == amount && active.Title == title && active.Quantity == quantity {
+	title, quantity, shipping := titleOf(after), labelQuantity(after), shippingOf(after)
+	if active.AmountMinor == amount && active.Title == title && active.Quantity == quantity && active.ShippingMinor == shipping {
 		return nil
 	}
 	if amount == 0 {
 		return s.cancelItem(ctx, after.ID)
 	}
-	ok, err := s.db.RepriceUnsentFluvPurchase(ctx, active.ID, title, quantity, amount)
+	ok, err := s.db.RepriceUnsentFluvPurchase(ctx, active.ID, title, quantity, amount, shipping)
 	if err != nil || ok {
 		return err
 	}
@@ -472,7 +686,8 @@ func (s *Service) correct(ctx context.Context, actorID int64, list *models.List,
 	if err != nil {
 		at = s.now()
 	}
-	if err := s.insert(ctx, active.UserID, list, after, amount, at); err != nil {
+	filing := db.FluvListDefaults{AccountID: active.AccountID, CategoryID: active.CategoryID, BudgetType: active.BudgetType}
+	if err := s.insert(ctx, active.UserID, list, after, amount, filing, at); err != nil {
 		return err
 	}
 	s.Wake()
@@ -575,6 +790,7 @@ func (s *Service) deliver(ctx context.Context, p *db.FluvPurchase) {
 	if p.Desired == db.FluvDesiredRecord {
 		resp, err = do(ctx, client, http.MethodPost, t.endpoint.String(), token, purchaseBody{
 			ID: p.Ref, Title: p.Title, Store: p.Store, Quantity: p.Quantity, AmountMinor: p.AmountMinor, Date: p.PurchasedOn,
+			ShippingMinor: p.ShippingMinor, AccountID: p.AccountID, CategoryID: p.CategoryID, BudgetType: p.BudgetType,
 		})
 	} else {
 		resp, err = do(ctx, client, http.MethodDelete, t.endpoint.String()+"/"+url.PathEscape(p.Ref), token, nil)
