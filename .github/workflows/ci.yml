@@ -230,6 +230,17 @@ jobs:
           format: sarif
           output: trivy-fs-results.sarif
           severity: CRITICAL,HIGH
+          # Without this (lowercase "true" exactly), trivy-action drops
+          # `severity` whenever format is sarif — its entrypoint.sh unsets
+          # TRIVY_SEVERITY to put every severity in the SARIF — so
+          # exit-code "1" then fails the job on any finding, UNKNOWN/LOW
+          # included, not on CRITICAL/HIGH as intended. This happened: the
+          # UNKNOWN-severity GO-2026-5932 (golang.org/x/crypto/openpgp
+          # unmaintained; Trakka only imports x/crypto/bcrypt, and
+          # govulncheck confirms it isn't reached) failed CI while the local
+          # `--severity CRITICAL,HIGH` run passed. Lower severities stay
+          # govulncheck's job (reachability-aware).
+          limit-severities-for-sarif: true
           ignore-unfixed: true
           exit-code: "1"
 
@@ -375,6 +386,8 @@ jobs:
           format: sarif
           output: trivy-image-results.sarif
           severity: CRITICAL,HIGH
+          # See the filesystem scan: without it, sarif means every severity.
+          limit-severities-for-sarif: true
           ignore-unfixed: true
           exit-code: "1"
 
