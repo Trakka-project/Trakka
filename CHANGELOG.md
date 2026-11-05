@@ -1,6 +1,29 @@
 ## [unreleased]
 
+## [1.4.0] - 2026-11-03
+
+### 🚀 Features
+
+- *(server)* Add possibility to restart trakka server from admin panel
+- *(share)* Share publicly lists with fine tuning
+- *(alerts)* Implement link on price alerts
+- *(expenses)* Customize expenses summary in buying lists
+- *(groceries)* Add nutri-score for groceries
+- *(auth)* Add QR code mobile login and bump Go to 1.27.3
+- *(install)* Add Android APK guide and QR code login tutorial
+- *(nutrition)* Replace Yuka score with NOVA classification and add info links
+- *(fluv)* Initial Fluv push integration with background worker and encrypted token
+- *(fluv)* Auto-lock Fluv IP on settings save and handle first-call pinning
+- *(ui)* Fetch Fluv metadata to populate account and category dropdowns in settings
+
+### 🐛 Bug Fixes
+
+- *(keyboard)* Fix keyboard suggestion not showing on android
+- *(security)* Resolve Trivy vulnerability scan findings and update dependencies
+
 ## [1.3.3] - 2026-10-19
+
+### 🐛 Bug Fixes
 
 - *(hacs)* fix logo not showing on home assistant extension
 
